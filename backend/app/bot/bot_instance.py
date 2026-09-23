@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import Application, ApplicationBuilder
 
+from app.bot.topics import get_parent_topic_id, get_tutor_topic_id
 from app.config import settings
 
 logger = logging.getLogger("mentorlink.bot")
@@ -79,43 +80,45 @@ def format_schedule(schedule) -> str:
 
 async def send_parent_request_card(parent_req) -> Optional[int]:
     """
-    Sends a formatted intake card to ADMIN_GROUP_ID with action buttons:
-    - [🔍 Find Best Tutors] (callback_data: match_parent:<id>)
-    - [❌ Close Request] (callback_data: close_parent:<id>)
+    Sends a compact formatted intake card to ADMIN_GROUP_ID with action buttons:
+    - [🔍 Match Tutors] (callback_data: match_parent:<id>)
+    - [❌ Close] (callback_data: close_parent:<id>)
+    Routes to get_parent_topic_id() if configured (Telegram Forum Supergroup).
     """
     if not bot_app or not settings.ADMIN_GROUP_ID:
         logger.debug("Bot or ADMIN_GROUP_ID not configured; skipping parent notification.")
         return None
 
     try:
-        landmark_info = f" ({html.escape(parent_req.location_landmark)})" if parent_req.location_landmark else ""
+        landmark_part = f" ({html.escape(parent_req.location_landmark)})" if parent_req.location_landmark else ""
         card_text = (
-            f"📋 <b>NEW PARENT TUTORING REQUEST #{parent_req.id}</b>\n\n"
-            f"👤 <b>Parent Name:</b> {html.escape(parent_req.parent_name)}\n"
-            f"📞 <b>Phone:</b> {html.escape(parent_req.phone_number)}\n"
-            f"🎓 <b>Student Level:</b> {html.escape(parent_req.student_level)}\n"
-            f"📚 <b>Subjects:</b> {format_subjects(parent_req.subjects)}\n"
-            f"📍 <b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_info}\n"
-            f"📅 <b>Schedule Days:</b> {format_schedule(parent_req.schedule_days)}\n"
-            f"⏰ <b>Time Slot:</b> {html.escape(parent_req.time_slot)} ({html.escape(parent_req.session_duration)})\n"
-            f"💰 <b>Budget:</b> {parent_req.budget_etb:,.2f} ETB\n"
-            f"🧑‍🏫 <b>Tutor Prefs:</b> {html.escape(parent_req.preferred_gender)} | {html.escape(parent_req.preferred_experience)}\n"
-            f"📊 <b>Status:</b> ⏳ {html.escape(parent_req.status).capitalize()}\n"
+            f"📋 <b>PARENT REQUEST #{parent_req.id}</b> • 🟡 <b>Pending</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>{html.escape(parent_req.parent_name)}</b> | 📞 <code>{html.escape(parent_req.phone_number)}</code>\n"
+            f"📍 <b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_part}\n"
+            f"🎓 <b>Student:</b> {html.escape(parent_req.student_level)} | 📚 <b>Subjects:</b> {format_subjects(parent_req.subjects)}\n"
+            f"⏰ <b>Schedule:</b> {format_schedule(parent_req.schedule_days)} ({html.escape(parent_req.time_slot)}, {html.escape(parent_req.session_duration)})\n"
+            f"💰 <b>Budget:</b> {parent_req.budget_etb:,.2f} ETB | ⚧ <b>Pref:</b> {html.escape(parent_req.preferred_gender)} ({html.escape(parent_req.preferred_experience)})"
         )
 
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🔍 Find Best Tutors", callback_data=f"match_parent:{parent_req.id}"),
-                InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{parent_req.id}")
+                InlineKeyboardButton("🔍 Match Tutors", callback_data=f"match_parent:{parent_req.id}"),
+                InlineKeyboardButton("❌ Close", callback_data=f"close_parent:{parent_req.id}")
             ]
         ])
 
-        msg = await bot_app.bot.send_message(
-            chat_id=settings.ADMIN_GROUP_ID,
-            text=card_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboard
-        )
+        send_kwargs = {
+            "chat_id": settings.ADMIN_GROUP_ID,
+            "text": card_text,
+            "parse_mode": ParseMode.HTML,
+            "reply_markup": keyboard
+        }
+        topic_id = get_parent_topic_id()
+        if topic_id is not None:
+            send_kwargs["message_thread_id"] = topic_id
+
+        msg = await bot_app.bot.send_message(**send_kwargs)
         return msg.message_id
     except Exception as exc:
         logger.error("Failed to forward parent request #%s to Admin Group: %s", parent_req.id, exc)
@@ -124,53 +127,55 @@ async def send_parent_request_card(parent_req) -> Optional[int]:
 
 async def send_tutor_registration_card(tutor) -> Optional[int]:
     """
-    Sends a formatted tutor verification card to ADMIN_GROUP_ID with action buttons:
-    - [✅ Approve Tutor] (callback_data: approve_tutor:<id>)
+    Sends a compact formatted tutor verification card to ADMIN_GROUP_ID with action buttons:
+    - [✅ Approve] (callback_data: approve_tutor:<id>)
     - [❌ Reject] (callback_data: reject_tutor:<id>)
+    Routes to get_tutor_topic_id() if configured (Telegram Forum Supergroup).
     """
     if not bot_app or not settings.ADMIN_GROUP_ID:
         logger.debug("Bot or ADMIN_GROUP_ID not configured; skipping tutor notification.")
         return None
 
     try:
-        id_doc_line = ""
         if tutor.id_document_url:
-            id_doc_line = f"🆔 <b>ID Document:</b> <a href=\"{html.escape(tutor.id_document_url)}\">View Document</a>\n"
+            doc_display = f'<a href="{html.escape(tutor.id_document_url)}">View Document</a>'
+        else:
+            doc_display = "Not provided"
 
-        tg_id_line = f"💬 <b>Telegram ID:</b> <code>{tutor.telegram_user_id}</code>\n" if tutor.telegram_user_id else ""
+        tg_id_str = str(tutor.telegram_user_id) if tutor.telegram_user_id else "N/A"
 
         card_text = (
-            f"🧑‍🏫 <b>NEW TUTOR REGISTRATION #{tutor.id}</b>\n\n"
-            f"👤 <b>Full Name:</b> {html.escape(tutor.full_name)} ({html.escape(tutor.gender)})\n"
-            f"📞 <b>Phone:</b> {html.escape(tutor.phone_number)}\n"
-            f"{tg_id_line}"
-            f"🏛 <b>University:</b> {html.escape(tutor.university)} - {html.escape(tutor.department)}\n"
-            f"🎓 <b>Year/Status:</b> {html.escape(tutor.education_year)}\n"
-            f"⭐ <b>Experience:</b> {tutor.years_of_experience:g} yrs\n"
+            f"🧑‍🏫 <b>TUTOR PROFILE #{tutor.id}</b> • 🟡 <b>Pending Verification</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>{html.escape(tutor.full_name)}</b> ({html.escape(tutor.gender)}) | 📞 <code>{html.escape(tutor.phone_number)}</code> | 💬 ID: <code>{tg_id_str}</code>\n"
+            f"🎓 <b>Education:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)} ({html.escape(tutor.education_year)})\n"
+            f"⭐ <b>Exp:</b> {tutor.years_of_experience:g} yrs | 💰 <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB\n"
             f"📚 <b>Subjects:</b> {format_subjects(tutor.subjects_qualified)}\n"
             f"🎯 <b>Grades:</b> {format_subjects(tutor.grades_qualified)}\n"
-            f"📍 <b>Base Subcity:</b> {html.escape(tutor.base_subcity)}\n"
-            f"🗺 <b>Coverage:</b> {format_subjects(tutor.coverage_areas)}\n"
+            f"📍 <b>Base:</b> {html.escape(tutor.base_subcity)} | 🗺 <b>Covers:</b> {format_subjects(tutor.coverage_areas)}\n"
             f"⏰ <b>Availability:</b> {format_schedule(tutor.availability_schedule)}\n"
-            f"💰 <b>Expected Fee:</b> {tutor.expected_fee_etb:,.2f} ETB\n"
-            f"{id_doc_line}"
-            f"📊 <b>Status:</b> ⏳ {html.escape(tutor.status).capitalize()}\n"
+            f"📄 <b>ID Document:</b> {doc_display}"
         )
 
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Approve Tutor", callback_data=f"approve_tutor:{tutor.id}"),
+                InlineKeyboardButton("✅ Approve", callback_data=f"approve_tutor:{tutor.id}"),
                 InlineKeyboardButton("❌ Reject", callback_data=f"reject_tutor:{tutor.id}")
             ]
         ])
 
-        msg = await bot_app.bot.send_message(
-            chat_id=settings.ADMIN_GROUP_ID,
-            text=card_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboard,
-            disable_web_page_preview=False
-        )
+        send_kwargs = {
+            "chat_id": settings.ADMIN_GROUP_ID,
+            "text": card_text,
+            "parse_mode": ParseMode.HTML,
+            "reply_markup": keyboard,
+            "disable_web_page_preview": False
+        }
+        topic_id = get_tutor_topic_id()
+        if topic_id is not None:
+            send_kwargs["message_thread_id"] = topic_id
+
+        msg = await bot_app.bot.send_message(**send_kwargs)
         return msg.message_id
     except Exception as exc:
         logger.error("Failed to forward tutor registration #%s to Admin Group: %s", tutor.id, exc)

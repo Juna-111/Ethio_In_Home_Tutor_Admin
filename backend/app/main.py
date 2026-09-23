@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.bot.bot_instance import init_bot_app, shutdown_bot_app
-from app.database import engine, Base
+from app.bot.bot_instance import init_bot_app, shutdown_bot_app, bot_app
+from app.bot.topics import ensure_forum_topics
+from app.database import engine, Base, AsyncSessionLocal
 import app.models  # noqa: F401
 from app.routes.health import router as health_router
 from app.routes.parents import router as parents_router
@@ -18,6 +19,11 @@ async def lifespan(app: FastAPI):
     
     # Initialize Telegram Bot Application & background listeners
     await init_bot_app()
+
+    # Automatically verify, create, and cache dedicated forum topics if enabled
+    from app.bot.bot_instance import bot_app
+    if bot_app and bot_app.bot:
+        await ensure_forum_topics(bot_app.bot, AsyncSessionLocal)
 
     yield
 

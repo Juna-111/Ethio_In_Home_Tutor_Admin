@@ -228,23 +228,24 @@ async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, mo
     assert mock_send_message.called
     call_kwargs = mock_send_message.call_args.kwargs
     assert call_kwargs["chat_id"] == -1001999999999
-    assert "NEW PARENT TUTORING REQUEST" in call_kwargs["text"]
+    assert "PARENT REQUEST" in call_kwargs["text"]
+    assert "Pending" in call_kwargs["text"]
     assert "Tigist Alemu" in call_kwargs["text"]
     assert "Arada" in call_kwargs["text"]
     assert "Near Piassa" in call_kwargs["text"]
 
-    # Verify inline buttons
+    # Verify compact inline buttons
     reply_markup = call_kwargs["reply_markup"]
     buttons = reply_markup.inline_keyboard[0]
-    assert buttons[0].text == "🔍 Find Best Tutors"
+    assert buttons[0].text == "🔍 Match Tutors"
     assert buttons[0].callback_data == f"match_parent:{created_id}"
-    assert buttons[1].text == "❌ Close Request"
+    assert buttons[1].text == "❌ Close"
     assert buttons[1].callback_data == f"close_parent:{created_id}"
 
 
 @pytest.mark.asyncio
 async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient, monkeypatch):
-    """Verifies that registering a tutor formats a verification card with inline buttons and dispatches to ADMIN_GROUP_ID."""
+    """Verifies that registering a tutor formats a compact verification card with inline buttons and dispatches to ADMIN_GROUP_ID."""
     from unittest.mock import AsyncMock, MagicMock
     from app.config import settings
     import app.bot.bot_instance as bot_inst
@@ -258,6 +259,7 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
 
     monkeypatch.setattr(bot_inst, "bot_app", mock_app)
     monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
+    monkeypatch.setattr(settings, "TUTOR_REGISTRATION_TOPIC_ID", None)
 
     payload = {
         "telegram_user_id": 554433221,
@@ -284,17 +286,126 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
     assert mock_send_message.called
     call_kwargs = mock_send_message.call_args.kwargs
     assert call_kwargs["chat_id"] == -1001999999999
-    assert "NEW TUTOR REGISTRATION" in call_kwargs["text"]
+    assert "TUTOR PROFILE" in call_kwargs["text"]
+    assert "Pending Verification" in call_kwargs["text"]
     assert "Dawit Bekele" in call_kwargs["text"]
     assert "Kirkos" in call_kwargs["text"]
     assert "https://example.com/id/dawit.pdf" in call_kwargs["text"]
 
-    # Verify inline buttons
+    # Verify compact inline buttons
     reply_markup = call_kwargs["reply_markup"]
     buttons = reply_markup.inline_keyboard[0]
-    assert buttons[0].text == "✅ Approve Tutor"
+    assert buttons[0].text == "✅ Approve"
     assert buttons[0].callback_data == f"approve_tutor:{created_id}"
     assert buttons[1].text == "❌ Reject"
     assert buttons[1].callback_data == f"reject_tutor:{created_id}"
+
+
+@pytest.mark.asyncio
+async def test_topic_routing_when_configured(async_client: AsyncClient, monkeypatch):
+    """Verifies that message_thread_id is passed when topic IDs are configured."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.config import settings
+    import app.bot.bot_instance as bot_inst
+
+    mock_send_message = AsyncMock(return_value=MagicMock(message_id=2000))
+    mock_bot = MagicMock()
+    mock_bot.send_message = mock_send_message
+    mock_app = MagicMock()
+    mock_app.bot = mock_bot
+
+    monkeypatch.setattr(bot_inst, "bot_app", mock_app)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
+    monkeypatch.setattr(settings, "PARENT_REQUESTS_TOPIC_ID", 101)
+    monkeypatch.setattr(settings, "TUTOR_REGISTRATION_TOPIC_ID", 202)
+
+    # 1. Parent Request topic check
+    payload_parent = {
+        "parent_name": "Topic Parent",
+        "phone_number": "+251911882233",
+        "student_level": "Primary 5-8",
+        "subjects": ["Maths"],
+        "preferred_gender": "No preference",
+        "preferred_experience": "Fresh Graduate",
+        "location_subcity": "Bole",
+        "schedule_days": ["Mon"],
+        "time_slot": "4:00 PM",
+        "session_duration": "1 hr",
+        "budget_etb": 2000.0
+    }
+    resp1 = await async_client.post("/api/v1/parents/request", json=payload_parent)
+    assert resp1.status_code == 201
+    assert mock_send_message.call_args.kwargs.get("message_thread_id") == 101
+
+    # 2. Tutor Registration topic check
+    payload_tutor = {
+        "telegram_user_id": 999111222,
+        "full_name": "Topic Tutor",
+        "gender": "Female",
+        "phone_number": "+251922776655",
+        "university": "AAU",
+        "department": "Physics",
+        "education_year": "Graduate",
+        "subjects_qualified": ["Physics"],
+        "grades_qualified": ["High School 9-10"],
+        "years_of_experience": 2.0,
+        "expected_fee_etb": 300.0,
+        "base_subcity": "Bole",
+        "coverage_areas": ["Bole"],
+        "availability_schedule": "Weekends"
+    }
+    resp2 = await async_client.post("/api/v1/tutors/register", json=payload_tutor)
+    assert resp2.status_code == 201
+    assert mock_send_message.call_args.kwargs.get("message_thread_id") == 202
+
+
+@pytest.mark.asyncio
+async def test_topic_routing_fallback_to_main_group(async_client: AsyncClient, monkeypatch):
+    """Verifies that omitting topic IDs falls back cleanly without message_thread_id."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.config import settings
+    import app.bot.bot_instance as bot_inst
+
+    mock_send_message = AsyncMock(return_value=MagicMock(message_id=2001))
+    mock_bot = MagicMock()
+    mock_bot.send_message = mock_send_message
+    mock_app = MagicMock()
+    mock_app.bot = mock_bot
+
+    monkeypatch.setattr(bot_inst, "bot_app", mock_app)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
+    monkeypatch.setattr(settings, "PARENT_REQUESTS_TOPIC_ID", None)
+
+    payload = {
+        "parent_name": "Fallback Parent",
+        "phone_number": "+251911000111",
+        "student_level": "Primary 1-4",
+        "subjects": ["English"],
+        "preferred_gender": "No preference",
+        "preferred_experience": "Fresh Graduate",
+        "location_subcity": "Yeka",
+        "schedule_days": ["Tue"],
+        "time_slot": "3:00 PM",
+        "session_duration": "1 hr",
+        "budget_etb": 2500.0
+    }
+    resp = await async_client.post("/api/v1/parents/request", json=payload)
+    assert resp.status_code == 201
+    assert "message_thread_id" not in mock_send_message.call_args.kwargs
+
+
+def test_settings_topic_id_parsing():
+    """Verifies that Settings safely parses empty string or valid integers for topic IDs."""
+    from app.config import Settings
+
+    s1 = Settings(PARENT_REQUESTS_TOPIC_ID="", TUTOR_REGISTRATION_TOPIC_ID="")
+    assert s1.PARENT_REQUESTS_TOPIC_ID is None
+    assert s1.TUTOR_REGISTRATION_TOPIC_ID is None
+
+    s2 = Settings(PARENT_REQUESTS_TOPIC_ID="12345", TUTOR_REGISTRATION_TOPIC_ID=67890)
+    assert s2.PARENT_REQUESTS_TOPIC_ID == 12345
+    assert s2.TUTOR_REGISTRATION_TOPIC_ID == 67890
+
+
 
 

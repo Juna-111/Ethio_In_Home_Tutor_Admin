@@ -417,10 +417,76 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await db_session.refresh(parent)
     assert parent.status == "matched"
 
-    # Verify tutor received job alert DM
-    assert mock_context.bot.send_message.called
-    dm_args = mock_context.bot.send_message.call_args.kwargs
     assert dm_args["chat_id"] == 888999000
     assert "New Tutoring Opportunity Assigned" in dm_args["text"]
     assert "Rahel Tadesse" in dm_args["text"]
     assert "Kolfe" in dm_args["text"]
+
+
+@pytest.mark.asyncio
+async def test_match_and_assign_preserves_topic_thread_id(db_session: AsyncSession, monkeypatch):
+    """Verifies that matching engine output and assign confirmations preserve the message_thread_id."""
+    parent = ParentRequest(
+        parent_name="Topic Parent",
+        phone_number="+251911444555",
+        student_level="High School 9-10",
+        subjects=["Maths"],
+        preferred_gender="No preference",
+        preferred_experience="Senior Teacher",
+        location_subcity="Bole",
+        schedule_days=["Mon"],
+        time_slot="3:00 PM",
+        session_duration="1 hr",
+        budget_etb=3000.0,
+        status="pending"
+    )
+    tutor = Tutor(
+        full_name="Topic Match Tutor",
+        gender="Male",
+        phone_number="+251922334411",
+        university="AAU",
+        department="Mathematics",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=4.0,
+        expected_fee_etb=400.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        status="verified"
+    )
+    db_session.add_all([parent, tutor])
+    await db_session.commit()
+    await db_session.refresh(parent)
+    await db_session.refresh(tutor)
+
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+
+    # 1. Test handle_match_parent preserves message_thread_id
+    mock_query = AsyncMock()
+    mock_message = AsyncMock()
+    mock_message.message_id = 5555
+    mock_message.message_thread_id = 99999  # Topic ID in Supergroup
+    mock_query.message = mock_message
+
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_context = MagicMock()
+
+    await bot_handlers.handle_match_parent(mock_update, mock_context, f"match_parent:{parent.id}")
+
+    assert mock_message.reply_text.called
+    match_reply_kwargs = mock_message.reply_text.call_args.kwargs
+    assert match_reply_kwargs.get("message_thread_id") == 99999
+    assert match_reply_kwargs.get("reply_to_message_id") == 5555
+
+    # 2. Test handle_assign_match preserves message_thread_id
+    mock_message.reply_text.reset_mock()
+    await bot_handlers.handle_assign_match(mock_update, mock_context, f"assign_match:{parent.id}:{tutor.id}")
+
+    assert mock_message.reply_text.called
+    assign_reply_kwargs = mock_message.reply_text.call_args.kwargs
+    assert assign_reply_kwargs.get("message_thread_id") == 99999
+    assert assign_reply_kwargs.get("reply_to_message_id") == 5555
+

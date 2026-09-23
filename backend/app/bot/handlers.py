@@ -1,9 +1,7 @@
 import html
 import logging
-import re
 from typing import Optional
 
-from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
@@ -24,20 +22,13 @@ def _get_admin_name(update: Update) -> str:
     return user.first_name or "Admin"
 
 
-def _update_card_status(text: str, new_status_line: str) -> str:
-    """Replaces or appends status line in an admin card text."""
+def _replace_card_header(text: str, new_header_html: str) -> str:
+    """Non-destructively replaces the top line of a card with updated status while preserving content."""
     lines = text.split("\n")
-    updated = False
-    new_lines = []
-    for line in lines:
-        if "Status:" in line:
-            new_lines.append(new_status_line)
-            updated = True
-        else:
-            new_lines.append(line)
-    if not updated:
-        new_lines.append(new_status_line)
-    return "\n".join(new_lines)
+    if not lines:
+        return new_header_html
+    remaining_lines = [html.escape(line) for line in lines[1:]]
+    return new_header_html + "\n" + "\n".join(remaining_lines)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,7 +66,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Approves tutor, updates DB, updates admin card, and DMs tutor."""
+    """Approves tutor, updates DB, edits top line in-place, and DMs tutor."""
     query = update.callback_query
     tutor_id_str = data.split(":", 1)[1]
     admin_name = _get_admin_name(update)
@@ -98,26 +89,27 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await query.answer(f"Tutor #{tutor_id} approved!")
 
-    # Update admin card message
+    # In-place top line update: 🧑‍🏫 <b>TUTOR PROFILE #{id}</b> • 🟢 <b>Approved by @{admin}</b>
     if query.message:
         try:
             curr_text = query.message.text or ""
-            new_status_line = f"📊 Status: ✅ Approved by {admin_name}"
-            updated_text = _update_card_status(curr_text, new_status_line)
+            new_header = f"🧑‍🏫 <b>TUTOR PROFILE #{tutor_id}</b> • 🟢 <b>Approved by {admin_name}</b>"
+            updated_text = _replace_card_header(curr_text, new_header)
             await query.message.edit_text(
                 text=updated_text,
-                reply_markup=None  # Remove buttons to prevent duplicate actions
+                parse_mode=ParseMode.HTML,
+                reply_markup=None  # Remove all inline buttons
             )
         except Exception as exc:
             logger.error("Failed to edit tutor card for #%s: %s", tutor_id, exc)
 
-    # DM tutor if telegram_user_id is available
+    # Dispatch confirmation DM to tutor
     if tutor.telegram_user_id:
         try:
             dm_text = (
                 f"🎉 Congratulations, {tutor.full_name}!\n\n"
-                "Your MentorLink tutor profile has been verified and approved. "
-                "You are now eligible to receive student matching alerts!"
+                "Your MentorLink tutor profile has been approved. "
+                "You will now receive student match alerts."
             )
             await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text)
         except Exception as exc:
@@ -125,7 +117,7 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Rejects tutor, updates DB, updates admin card, and DMs tutor."""
+    """Rejects tutor, updates DB, edits top line in-place, and DMs tutor."""
     query = update.callback_query
     tutor_id_str = data.split(":", 1)[1]
     admin_name = _get_admin_name(update)
@@ -148,20 +140,21 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer(f"Tutor #{tutor_id} rejected.")
 
-    # Update admin card message
+    # In-place top line update: 🧑‍🏫 <b>TUTOR PROFILE #{id}</b> • 🔴 <b>Rejected by @{admin}</b>
     if query.message:
         try:
             curr_text = query.message.text or ""
-            new_status_line = f"📊 Status: ❌ Rejected by {admin_name}"
-            updated_text = _update_card_status(curr_text, new_status_line)
+            new_header = f"🧑‍🏫 <b>TUTOR PROFILE #{tutor_id}</b> • 🔴 <b>Rejected by {admin_name}</b>"
+            updated_text = _replace_card_header(curr_text, new_header)
             await query.message.edit_text(
                 text=updated_text,
-                reply_markup=None
+                parse_mode=ParseMode.HTML,
+                reply_markup=None  # Remove all inline buttons
             )
         except Exception as exc:
             logger.error("Failed to edit tutor card for #%s: %s", tutor_id, exc)
 
-    # DM tutor if telegram_user_id is available
+    # Dispatch rejection DM to tutor
     if tutor.telegram_user_id:
         try:
             dm_text = (
@@ -175,7 +168,7 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Closes parent request, updates DB, and updates admin card."""
+    """Closes parent request, updates DB, and edits top line in-place."""
     query = update.callback_query
     parent_id_str = data.split(":", 1)[1]
     admin_name = _get_admin_name(update)
@@ -197,21 +190,27 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer(f"Request #{parent_id} closed.")
 
+    # In-place top line update: 📋 <b>PARENT REQUEST #{id}</b> • ⚪ <b>Closed by @{admin}</b>
     if query.message:
         try:
             curr_text = query.message.text or ""
-            new_status_line = f"📊 Status: ❌ Closed by {admin_name}"
-            updated_text = _update_card_status(curr_text, new_status_line)
+            new_header = f"📋 <b>PARENT REQUEST #{parent_id}</b> • ⚪ <b>Closed by {admin_name}</b>"
+            updated_text = _replace_card_header(curr_text, new_header)
             await query.message.edit_text(
                 text=updated_text,
-                reply_markup=None
+                parse_mode=ParseMode.HTML,
+                reply_markup=None  # Remove all inline buttons
             )
         except Exception as exc:
             logger.error("Failed to edit parent card for #%s: %s", parent_id, exc)
 
 
 async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Runs the matching engine for a parent request and replies in thread with top candidates."""
+    """
+    Runs the tiered matching engine for a parent request.
+    If 0 matches: triggers native Telegram popup modal (zero chat spam).
+    If matches exist: posts a single consolidated summary card with assign buttons in topic thread.
+    """
     query = update.callback_query
     parent_id_str = data.split(":", 1)[1]
 
@@ -221,56 +220,68 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("Invalid Request ID.")
         return
 
-    await query.answer("Finding best matches...")
-
     async with AsyncSessionLocal() as session:
         parent, top_matches = await find_top_matches(parent_id, session)
 
     if not parent:
-        if query.message:
-            await query.message.reply_text(f"❌ Parent Request #{parent_id} was not found in database.")
+        await query.answer(f"Parent Request #{parent_id} not found.", show_alert=True)
         return
 
+    # Popup Alert for Zero Matches (Zero Chat Spam)
     if not top_matches:
-        if query.message:
-            await query.message.reply_text(
-                f"⚠️ No verified tutors currently match all criteria (Subject/Location/Gender) for Request #{parent_id}."
-            )
+        await query.answer(
+            text="⚠️ No eligible verified tutors found for this location/subject combination.",
+            show_alert=True
+        )
         return
 
-    # Send matching results
-    num_emojis = ["1️⃣", "2️⃣", "3️⃣"]
-    for idx, match in enumerate(top_matches):
-        tutor = match["tutor"]
-        matched_subjs = ", ".join(match["matched_subjects"])
-        emoji = num_emojis[idx] if idx < len(num_emojis) else f"{idx + 1}️⃣"
+    await query.answer("Found top matching tutors!")
 
-        card = (
-            f"🎯 <b>MATCH RESULT FOR REQUEST #{parent_id}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{emoji} <b>{html.escape(tutor.full_name)}</b> ({html.escape(tutor.gender)})\n"
-            f"🏛 <b>Uni:</b> {html.escape(tutor.university)} - {html.escape(tutor.department)}\n"
-            f"📍 <b>Base:</b> {html.escape(tutor.base_subcity)} | ⭐ <b>Exp:</b> {tutor.years_of_experience:g} yrs\n"
-            f"💵 <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB\n"
-            f"📚 <b>Matches:</b> {html.escape(matched_subjs)}\n"
-            f"📞 <b>Phone:</b> {html.escape(tutor.phone_number)}"
+    # Single-Card Compact Match Summary
+    num_emojis = ["1️⃣", "2️⃣", "3️⃣"]
+    summary_lines = [
+        f"🎯 <b>TOP MATCHES FOR REQUEST #{parent_id}</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━"
+    ]
+    keyboard_buttons = []
+
+    for idx, match in enumerate(top_matches, start=1):
+        tutor = match["tutor"]
+        score = match["match_score"]
+        matched_str = ", ".join(match["matched_subjects"])
+        emoji = num_emojis[idx - 1] if idx <= len(num_emojis) else f"{idx}️⃣"
+        first_name = tutor.full_name.split()[0] if tutor.full_name else "Tutor"
+
+        summary_lines.append(
+            f"{emoji} <b>{html.escape(tutor.full_name)}</b> ({score:.0f}% Match)\n"
+            f"   🎓 {html.escape(tutor.university)} ({html.escape(tutor.department)})\n"
+            f"   📍 Base: {html.escape(tutor.base_subcity)} | ⭐ {tutor.years_of_experience:g} yrs | 💰 {tutor.expected_fee_etb:,.2f} ETB\n"
+            f"   📚 Matched: {html.escape(matched_str)}\n"
         )
 
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    f"📲 Assign Tutor",
-                    callback_data=f"assign_match:{parent_id}:{tutor.id}"
-                )
-            ]
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                f"📲 Assign {idx}. {first_name}",
+                callback_data=f"assign_match:{parent_id}:{tutor.id}"
+            )
         ])
 
-        if query.message:
-            await query.message.reply_text(
-                text=card,
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard
-            )
+    single_card_text = "\n".join(summary_lines).strip()
+    keyboard = InlineKeyboardMarkup(keyboard_buttons)
+
+    if query.message:
+        reply_kwargs = {
+            "text": single_card_text,
+            "parse_mode": ParseMode.HTML,
+            "reply_markup": keyboard,
+            "reply_to_message_id": query.message.message_id
+        }
+        # Preserve thread context in Telegram Supergroups with Topics enabled
+        thread_id = getattr(query.message, "message_thread_id", None)
+        if thread_id:
+            reply_kwargs["message_thread_id"] = thread_id
+
+        await query.message.reply_text(**reply_kwargs)
 
 
 async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -305,18 +316,25 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer(f"Assigned {tutor.full_name} to Request #{parent_id}!")
 
-    # Update button on the match message to show assigned
+    # Lock button on match card and post thread confirmation
+    first_name = tutor.full_name.split()[0] if tutor.full_name else "Tutor"
     if query.message:
         try:
             await query.message.edit_reply_markup(
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"✅ Assigned to @{admin_name.lstrip('@')}", callback_data="assigned")]
+                    [InlineKeyboardButton(f"✅ Assigned {first_name} by {admin_name}", callback_data="assigned")]
                 ])
             )
-            await query.message.reply_text(
-                f"✅ Successfully assigned <b>{html.escape(tutor.full_name)}</b> to Parent Request #{parent_id} by {admin_name}.",
-                parse_mode=ParseMode.HTML
-            )
+            assign_reply_kwargs = {
+                "text": f"✅ Successfully assigned <b>{html.escape(tutor.full_name)}</b> to Parent Request #{parent_id} by {admin_name}.",
+                "parse_mode": ParseMode.HTML,
+                "reply_to_message_id": query.message.message_id
+            }
+            thread_id = getattr(query.message, "message_thread_id", None)
+            if thread_id:
+                assign_reply_kwargs["message_thread_id"] = thread_id
+
+            await query.message.reply_text(**assign_reply_kwargs)
         except Exception as exc:
             logger.error("Error updating match assignment message: %s", exc)
 
