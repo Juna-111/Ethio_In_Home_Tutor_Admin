@@ -49,3 +49,29 @@ export async function submitTutorRegistration(data) {
 
   return response.json();
 }
+
+export async function uploadTutorDocument(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/tutors/upload-document`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    let errorMessage = "Failed to upload document.";
+    if (errorData.detail) {
+      errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+    }
+    throw new Error(errorMessage);
+  }
+
+  const result = await response.json();
+  // Return absolute or relative URL
+  const fullUrl = result.file_url.startsWith('http') 
+    ? result.file_url 
+    : `${API_BASE_URL}${result.file_url}`;
+  return { ...result, full_url: fullUrl };
+}

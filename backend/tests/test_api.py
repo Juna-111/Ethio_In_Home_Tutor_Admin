@@ -407,5 +407,28 @@ def test_settings_topic_id_parsing():
     assert s2.TUTOR_REGISTRATION_TOPIC_ID == 67890
 
 
+@pytest.mark.asyncio
+async def test_upload_tutor_document_success(async_client: AsyncClient):
+    """Verifies that uploading a PDF/image document succeeds and returns file_url."""
+    file_content = b"%PDF-1.4 Mock PDF Document Content"
+    files = {"file": ("student_id.pdf", file_content, "application/pdf")}
+    resp = await async_client.post("/api/v1/tutors/upload-document", files=files)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["filename"] == "student_id.pdf"
+    assert data["file_url"].startswith("/uploads/")
+    assert data["file_url"].endswith(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_upload_tutor_document_invalid_extension(async_client: AsyncClient):
+    """Verifies that uploading an unsupported file type returns 400."""
+    file_content = b"malicious binary or unsupported format"
+    files = {"file": ("script.exe", file_content, "application/x-msdownload")}
+    resp = await async_client.post("/api/v1/tutors/upload-document", files=files)
+    assert resp.status_code == 400
+    assert "Unsupported file format" in resp.json()["detail"]
+
+
 
 

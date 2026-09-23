@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Loader2, AlertCircle, Plus, Check } from 'lucide-react';
+import { Loader2, AlertCircle, Check, Calculator } from 'lucide-react';
 import {
   SUBCITIES,
   STUDENT_LEVELS,
@@ -8,74 +8,114 @@ import {
   SESSION_DURATIONS,
   PREFERRED_EXPERIENCES
 } from '../constants/options';
+import { TRANSLATIONS } from '../constants/translations';
 import { submitParentRequest } from '../services/api';
 
-export default function ParentForm({ user, onSuccess }) {
+export default function ParentForm({ user, lang, onSuccess }) {
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+
   const [formData, setFormData] = useState({
     parent_name: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '',
     phone_number: '',
-    student_level: 'High School 9-10',
-    subjects: ['Maths', 'Physics'],
+    student_level: '',
+    subjects: [],
     preferred_gender: 'No preference',
-    preferred_experience: 'University Student',
-    location_subcity: 'Bole',
+    preferred_experience: '',
+    location_subcity: '',
     location_landmark: '',
-    schedule_days: ['Mon', 'Wed', 'Fri'],
-    time_slot: '4:30 PM - 6:30 PM',
-    session_duration: '2 hrs',
-    budget_etb: 4000
+    schedule_days: [],
+    time_slot: '',
+    session_duration: '',
+    budget_etb: ''
   });
 
+  const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [globalError, setGlobalError] = useState(null);
+
+  // Parse numeric duration hours
+  const getDurationHours = (durStr) => {
+    if (!durStr) return 0;
+    const match = durStr.match(/([\d.]+)/);
+    return match ? parseFloat(match[1]) : 1;
+  };
+
+  // Dynamic monthly calculation: Rate * Duration * Sessions/Week * 4
+  const hourlyRate = parseFloat(formData.budget_etb) || 0;
+  const durationHours = getDurationHours(formData.session_duration);
+  const sessionsPerWeek = formData.schedule_days.length;
+  const estimatedMonthly = Math.round(hourlyRate * (durationHours || 1) * (sessionsPerWeek || 1) * 4);
 
   const toggleSubject = (subject) => {
     setFormData((prev) => {
       const exists = prev.subjects.includes(subject);
-      if (exists) {
-        if (prev.subjects.length <= 1) return prev; // Keep at least one
-        return { ...prev, subjects: prev.subjects.filter((s) => s !== subject) };
-      } else {
-        return { ...prev, subjects: [...prev.subjects, subject] };
+      const next = exists ? prev.subjects.filter((s) => s !== subject) : [...prev.subjects, subject];
+      if (next.length > 0 && errors.subjects) {
+        setErrors((errs) => ({ ...errs, subjects: null }));
       }
+      return { ...prev, subjects: next };
     });
   };
 
   const toggleDay = (day) => {
     setFormData((prev) => {
       const exists = prev.schedule_days.includes(day);
-      if (exists) {
-        if (prev.schedule_days.length <= 1) return prev;
-        return { ...prev, schedule_days: prev.schedule_days.filter((d) => d !== day) };
-      } else {
-        return { ...prev, schedule_days: [...prev.schedule_days, day] };
+      const next = exists ? prev.schedule_days.filter((d) => d !== day) : [...prev.schedule_days, day];
+      if (next.length > 0 && errors.schedule_days) {
+        setErrors((errs) => ({ ...errs, schedule_days: null }));
       }
+      return { ...prev, schedule_days: next };
     });
+  };
+
+  const validate = () => {
+    const newErrors = {};
+
+    if (!formData.parent_name.trim()) {
+      newErrors.parent_name = t.validation.required;
+    }
+    if (!formData.phone_number.trim()) {
+      newErrors.phone_number = t.validation.required;
+    } else if (formData.phone_number.replace(/\D/g, '').length < 9) {
+      newErrors.phone_number = t.validation.phoneInvalid;
+    }
+    if (!formData.student_level) {
+      newErrors.student_level = t.validation.required;
+    }
+    if (formData.subjects.length === 0) {
+      newErrors.subjects = t.validation.atLeastOneSubject;
+    }
+    if (!formData.location_subcity) {
+      newErrors.location_subcity = t.validation.required;
+    }
+    if (formData.schedule_days.length === 0) {
+      newErrors.schedule_days = t.validation.atLeastOneDay;
+    }
+    if (!formData.time_slot.trim()) {
+      newErrors.time_slot = t.validation.required;
+    }
+    if (!formData.session_duration) {
+      newErrors.session_duration = t.validation.required;
+    }
+    if (!formData.budget_etb) {
+      newErrors.budget_etb = t.validation.required;
+    } else if (parseFloat(formData.budget_etb) <= 0) {
+      newErrors.budget_etb = t.validation.budgetMin;
+    }
+    if (!formData.preferred_experience) {
+      newErrors.preferred_experience = t.validation.required;
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
+    setGlobalError(null);
 
-    // Validation
-    if (!formData.parent_name.trim()) {
-      setError("Please enter your parent name.");
-      return;
-    }
-    if (!formData.phone_number.trim() || formData.phone_number.length < 9) {
-      setError("Please enter a valid phone number (e.g. 0911223344 or +251...).");
-      return;
-    }
-    if (formData.subjects.length === 0) {
-      setError("Please select at least one subject.");
-      return;
-    }
-    if (formData.schedule_days.length === 0) {
-      setError("Please select at least one tutoring day.");
-      return;
-    }
-    if (!formData.budget_etb || Number(formData.budget_etb) <= 0) {
-      setError("Please provide a valid budget in ETB.");
+    if (!validate()) {
+      setGlobalError(t.validation.required);
       return;
     }
 
@@ -101,79 +141,106 @@ export default function ParentForm({ user, onSuccess }) {
       const result = await submitParentRequest(payload);
       onSuccess(result, 'parent');
     } catch (err) {
-      setError(err.message || "Failed to submit request. Please try again.");
+      setGlobalError(err.message || "Failed to submit request. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="px-4 pb-12 space-y-5">
-      {error && (
+    <form onSubmit={handleSubmit} noValidate className="px-4 pb-12 space-y-5">
+      {globalError && (
         <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 animate-in fade-in">
           <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-          <span className="leading-relaxed whitespace-pre-line">{error}</span>
+          <span className="leading-relaxed whitespace-pre-line font-medium">{globalError}</span>
         </div>
       )}
 
-      {/* Parent Basic Info */}
+      {/* Parent Contact Details */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Contact Details</h2>
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionContact}</h2>
+        
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Parent Full Name *</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {t.parentForm.parentName} <span className="text-red-500">*</span>
+          </label>
           <input
             type="text"
-            required
-            placeholder="e.g. Abebe Kebede"
+            placeholder={t.parentForm.parentNamePlaceholder}
             value={formData.parent_name}
-            onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+            onChange={(e) => {
+              setFormData({ ...formData, parent_name: e.target.value });
+              if (errors.parent_name) setErrors({ ...errors, parent_name: null });
+            }}
+            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
+              errors.parent_name
+                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+            }`}
           />
+          {errors.parent_name && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.parent_name}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Phone Number *</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {t.parentForm.phone} <span className="text-red-500">*</span>
+          </label>
           <input
             type="tel"
-            required
-            placeholder="e.g. +251 911 223344"
+            placeholder={t.parentForm.phonePlaceholder}
             value={formData.phone_number}
-            onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+            onChange={(e) => {
+              setFormData({ ...formData, phone_number: e.target.value });
+              if (errors.phone_number) setErrors({ ...errors, phone_number: null });
+            }}
+            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
+              errors.phone_number
+                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+            }`}
           />
+          {errors.phone_number && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.phone_number}</p>}
         </div>
       </div>
 
       {/* Student Academic Details */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Student & Subjects</h2>
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionStudent}</h2>
         
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-2">Student Educational Level *</label>
-          <div className="grid grid-cols-2 gap-2">
+          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+            {t.parentForm.studentLevel} <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={formData.student_level}
+            onChange={(e) => {
+              setFormData({ ...formData, student_level: e.target.value });
+              if (errors.student_level) setErrors({ ...errors, student_level: null });
+            }}
+            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
+              errors.student_level
+                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-gray-800'
+            }`}
+          >
+            <option value="">{t.parentForm.selectGradePlaceholder}</option>
             {STUDENT_LEVELS.map((level) => (
-              <button
-                key={level}
-                type="button"
-                onClick={() => setFormData({ ...formData, student_level: level })}
-                className={`py-2 px-2.5 rounded-xl text-xs font-medium border text-left transition ${
-                  formData.student_level === level
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {level}
-              </button>
+              <option key={level} value={level}>{level}</option>
             ))}
-          </div>
+          </select>
+          {errors.student_level && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.student_level}</p>}
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-gray-700">Subjects Needed (Multi-select) *</label>
-            <span className="text-[11px] text-blue-600 font-medium">{formData.subjects.length} selected</span>
+            <label className="text-xs font-semibold text-gray-700">
+              {t.parentForm.subjectsNeeded} <span className="text-red-500">*</span>
+            </label>
+            <span className="text-[11px] text-blue-600 font-semibold">{formData.subjects.length} {t.parentForm.subjectsSelected}</span>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border transition ${
+            errors.subjects ? 'border-red-300 bg-red-50/10' : 'border-transparent'
+          }`}>
             {SUBJECTS_LIST.map((subject) => {
               const selected = formData.subjects.includes(subject);
               return (
@@ -183,7 +250,7 @@ export default function ParentForm({ user, onSuccess }) {
                   onClick={() => toggleSubject(subject)}
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white shadow-xs font-semibold'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -193,45 +260,58 @@ export default function ParentForm({ user, onSuccess }) {
               );
             })}
           </div>
+          {errors.subjects && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.subjects}</p>}
         </div>
       </div>
 
       {/* Location */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Home Location</h2>
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionLocation}</h2>
+        
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Sub-City *</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {t.parentForm.subcity} <span className="text-red-500">*</span>
+          </label>
           <select
             value={formData.location_subcity}
-            onChange={(e) => setFormData({ ...formData, location_subcity: e.target.value })}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition bg-white"
+            onChange={(e) => {
+              setFormData({ ...formData, location_subcity: e.target.value });
+              if (errors.location_subcity) setErrors({ ...errors, location_subcity: null });
+            }}
+            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
+              errors.location_subcity
+                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-gray-800'
+            }`}
           >
+            <option value="">{t.parentForm.selectSubcityPlaceholder}</option>
             {SUBCITIES.map((subcity) => (
-              <option key={subcity} value={subcity}>
-                {subcity}
-              </option>
+              <option key={subcity} value={subcity}>{subcity}</option>
             ))}
           </select>
+          {errors.location_subcity && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.location_subcity}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Landmark / Neighborhood</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">{t.parentForm.landmark}</label>
           <input
             type="text"
-            placeholder="e.g. Around Edna Mall, Near Total"
+            placeholder={t.parentForm.landmarkPlaceholder}
             value={formData.location_landmark}
             onChange={(e) => setFormData({ ...formData, location_landmark: e.target.value })}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 transition"
           />
         </div>
       </div>
 
-      {/* Schedule & Preferences */}
+      {/* Schedule & Budget Calculation */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Schedule & Budget</h2>
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionSchedule}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-2">Preferred Days *</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-2">
+            {t.parentForm.preferredDays} <span className="text-red-500">*</span>
+          </label>
           <div className="grid grid-cols-4 gap-1.5">
             {DAYS_OF_WEEK.map((day) => {
               const selected = formData.schedule_days.includes(day);
@@ -251,86 +331,138 @@ export default function ParentForm({ user, onSuccess }) {
               );
             })}
           </div>
+          {errors.schedule_days && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.schedule_days}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Time Slot *</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              {t.parentForm.timeSlot} <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
-              required
-              placeholder="e.g. 4:30 PM - 6:30 PM"
+              placeholder={t.parentForm.timeSlotPlaceholder}
               value={formData.time_slot}
-              onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
-              className="w-full text-xs px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
+              onChange={(e) => {
+                setFormData({ ...formData, time_slot: e.target.value });
+                if (errors.time_slot) setErrors({ ...errors, time_slot: null });
+              }}
+              className={`w-full text-xs px-3 py-2 rounded-xl border transition focus:outline-none ${
+                errors.time_slot
+                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                  : 'border-gray-200 focus:border-blue-500'
+              }`}
             />
+            {errors.time_slot && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.time_slot}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Duration *</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              {t.parentForm.duration} <span className="text-red-500">*</span>
+            </label>
             <select
               value={formData.session_duration}
-              onChange={(e) => setFormData({ ...formData, session_duration: e.target.value })}
-              className="w-full text-xs px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 bg-white"
+              onChange={(e) => {
+                setFormData({ ...formData, session_duration: e.target.value });
+                if (errors.session_duration) setErrors({ ...errors, session_duration: null });
+              }}
+              className={`w-full text-xs px-3 py-2 rounded-xl border transition focus:outline-none bg-white font-medium ${
+                errors.session_duration
+                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                  : 'border-gray-200 focus:border-blue-500 text-gray-800'
+              }`}
             >
+              <option value="">{t.parentForm.selectDurationPlaceholder}</option>
               {SESSION_DURATIONS.map((dur) => (
                 <option key={dur} value={dur}>{dur}</option>
               ))}
             </select>
+            {errors.session_duration && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.session_duration}</p>}
           </div>
         </div>
 
+        {/* Budget per Hour with Dynamic Monthly Estimation */}
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Budget in ETB (Monthly/Session) *</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {t.parentForm.budgetPerHour} <span className="text-red-500">*</span>
+          </label>
           <div className="relative">
             <input
               type="number"
-              required
-              min="100"
-              step="50"
-              placeholder="4000"
+              min="50"
+              step="25"
+              placeholder={t.parentForm.budgetPlaceholder}
               value={formData.budget_etb}
-              onChange={(e) => setFormData({ ...formData, budget_etb: e.target.value })}
-              className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold"
+              onChange={(e) => {
+                setFormData({ ...formData, budget_etb: e.target.value });
+                if (errors.budget_etb) setErrors({ ...errors, budget_etb: null });
+              }}
+              className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none font-semibold ${
+                errors.budget_etb
+                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                  : 'border-gray-200 focus:border-blue-500'
+              }`}
             />
-            <span className="absolute right-3.5 top-2.5 text-xs text-gray-400 font-medium">ETB</span>
+            <span className="absolute right-3.5 top-2.5 text-xs text-gray-400 font-medium">ETB / hr</span>
+          </div>
+          {errors.budget_etb && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.budget_etb}</p>}
+
+          {/* Dynamic Monthly Cost Card */}
+          <div className="mt-2.5 p-3 rounded-xl bg-blue-50/70 border border-blue-100 flex items-start space-x-2.5">
+            <Calculator className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <span className="text-gray-600">{t.parentForm.estimatedMonthly}: </span>
+              <span className="font-bold text-blue-700">
+                {hourlyRate > 0 ? `≈ ${estimatedMonthly.toLocaleString()} ${t.parentForm.perMonth}` : `— ${t.parentForm.perMonth}`}
+              </span>
+              <p className="text-[10px] text-gray-400 mt-0.5">{t.parentForm.formulaNote}</p>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Tutor Preferences */}
       <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tutor Preferences</h2>
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionPreferences}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">Gender Preference</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t.parentForm.genderPref}</label>
           <div className="grid grid-cols-3 gap-2">
-            {["No preference", "Male", "Female"].map((gender) => (
+            {[
+              { val: "No preference", label: t.options.noPreference },
+              { val: "Male", label: t.options.male },
+              { val: "Female", label: t.options.female }
+            ].map(({ val, label }) => (
               <button
-                key={gender}
+                key={val}
                 type="button"
-                onClick={() => setFormData({ ...formData, preferred_gender: gender })}
-                className={`py-2 px-2 text-[11px] rounded-xl font-medium border transition text-center ${
-                  formData.preferred_gender === gender
+                onClick={() => setFormData({ ...formData, preferred_gender: val })}
+                className={`py-2 px-1 text-[11px] rounded-xl font-medium border transition text-center ${
+                  formData.preferred_gender === val
                     ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {gender}
+                {label}
               </button>
             ))}
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">Preferred Experience Level</label>
+          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+            {t.parentForm.expPref} <span className="text-red-500">*</span>
+          </label>
           <div className="grid grid-cols-3 gap-2">
             {PREFERRED_EXPERIENCES.map((exp) => (
               <button
                 key={exp}
                 type="button"
-                onClick={() => setFormData({ ...formData, preferred_experience: exp })}
-                className={`py-2 px-1 text-[11px] rounded-xl font-medium border transition text-center ${
+                onClick={() => {
+                  setFormData({ ...formData, preferred_experience: exp });
+                  if (errors.preferred_experience) setErrors({ ...errors, preferred_experience: null });
+                }}
+                className={`py-2 px-1 text-[10px] sm:text-[11px] rounded-xl font-medium border transition text-center leading-tight ${
                   formData.preferred_experience === exp
                     ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -340,6 +472,7 @@ export default function ParentForm({ user, onSuccess }) {
               </button>
             ))}
           </div>
+          {errors.preferred_experience && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.preferred_experience}</p>}
         </div>
       </div>
 
@@ -347,15 +480,15 @@ export default function ParentForm({ user, onSuccess }) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-lg shadow-blue-500/25 transition disabled:opacity-60 flex items-center justify-center space-x-2"
+        className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-lg shadow-blue-500/25 transition disabled:opacity-60 flex items-center justify-center space-x-2 cursor-pointer"
       >
         {loading ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Submitting Request...</span>
+            <span>{t.parentForm.submittingBtn}</span>
           </>
         ) : (
-          <span>Find My Tutor Now 🚀</span>
+          <span>{t.parentForm.submitBtn}</span>
         )}
       </button>
     </form>

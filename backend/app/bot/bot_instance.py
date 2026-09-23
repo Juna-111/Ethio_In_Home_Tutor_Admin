@@ -1,5 +1,6 @@
 import html
 import logging
+import re
 from typing import Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -91,6 +92,20 @@ async def send_parent_request_card(parent_req) -> Optional[int]:
 
     try:
         landmark_part = f" ({html.escape(parent_req.location_landmark)})" if parent_req.location_landmark else ""
+        
+        # Calculate dynamic monthly cost estimate: Hourly Rate × Duration × Sessions/Week × 4
+        dur_match = re.search(r"([\d.]+)", str(parent_req.session_duration or ""))
+        duration_hrs = float(dur_match.group(1)) if dur_match else 1.0
+        if isinstance(parent_req.schedule_days, list):
+            sessions_count = len(parent_req.schedule_days)
+        elif isinstance(parent_req.schedule_days, str):
+            sessions_count = len([d for d in parent_req.schedule_days.split(",") if d.strip()]) or 1
+        else:
+            sessions_count = 1
+
+        monthly_est = parent_req.budget_etb * duration_hrs * (sessions_count or 1) * 4
+        monthly_part = f" (≈ {monthly_est:,.0f} ETB / mo)" if monthly_est > 0 else ""
+
         card_text = (
             f"📋 <b>PARENT REQUEST #{parent_req.id}</b> • 🟡 <b>Pending</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -98,7 +113,7 @@ async def send_parent_request_card(parent_req) -> Optional[int]:
             f"📍 <b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_part}\n"
             f"🎓 <b>Student:</b> {html.escape(parent_req.student_level)} | 📚 <b>Subjects:</b> {format_subjects(parent_req.subjects)}\n"
             f"⏰ <b>Schedule:</b> {format_schedule(parent_req.schedule_days)} ({html.escape(parent_req.time_slot)}, {html.escape(parent_req.session_duration)})\n"
-            f"💰 <b>Budget:</b> {parent_req.budget_etb:,.2f} ETB | ⚧ <b>Pref:</b> {html.escape(parent_req.preferred_gender)} ({html.escape(parent_req.preferred_experience)})"
+            f"💰 <b>Budget:</b> {parent_req.budget_etb:,.2f} ETB / hr{monthly_part} | ⚧ <b>Pref:</b> {html.escape(parent_req.preferred_gender)} ({html.escape(parent_req.preferred_experience)})"
         )
 
         keyboard = InlineKeyboardMarkup([
@@ -138,7 +153,19 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
 
     try:
         if tutor.id_document_url:
-            doc_display = f'<a href="{html.escape(tutor.id_document_url)}">View Document</a>'
+            parts = [p.strip() for p in tutor.id_document_url.split(" | ") if p.strip()]
+            links = []
+            for idx, part in enumerate(parts):
+                if part.startswith("/uploads/"):
+                    base = settings.WEBAPP_URL.rstrip("/") if settings.WEBAPP_URL else ""
+                    href = f"{base}{part}"
+                    links.append(f'<a href="{html.escape(href)}">📎 Uploaded Doc</a>')
+                elif part.startswith("http"):
+                    label = "🌐 Portfolio/URL" if len(parts) > 1 and idx > 0 else "📄 View Document"
+                    links.append(f'<a href="{html.escape(part)}">{label}</a>')
+                else:
+                    links.append(f'<a href="{html.escape(part)}">📄 Doc</a>')
+            doc_display = " | ".join(links)
         else:
             doc_display = "Not provided"
 
@@ -149,7 +176,7 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 <b>{html.escape(tutor.full_name)}</b> ({html.escape(tutor.gender)}) | 📞 <code>{html.escape(tutor.phone_number)}</code> | 💬 ID: <code>{tg_id_str}</code>\n"
             f"🎓 <b>Education:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)} ({html.escape(tutor.education_year)})\n"
-            f"⭐ <b>Exp:</b> {tutor.years_of_experience:g} yrs | 💰 <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB\n"
+            f"⭐ <b>Exp:</b> {tutor.years_of_experience:g} yrs | 💰 <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB / hr\n"
             f"📚 <b>Subjects:</b> {format_subjects(tutor.subjects_qualified)}\n"
             f"🎯 <b>Grades:</b> {format_subjects(tutor.grades_qualified)}\n"
             f"📍 <b>Base:</b> {html.escape(tutor.base_subcity)} | 🗺 <b>Covers:</b> {format_subjects(tutor.coverage_areas)}\n"

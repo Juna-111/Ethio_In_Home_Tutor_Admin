@@ -2,6 +2,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 from app.bot.bot_instance import init_bot_app, shutdown_bot_app, bot_app
 from app.bot.topics import ensure_forum_topics
 from app.database import engine, Base, AsyncSessionLocal
@@ -9,6 +12,9 @@ import app.models  # noqa: F401
 from app.routes.health import router as health_router
 from app.routes.parents import router as parents_router
 from app.routes.tutors import router as tutors_router
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 @asynccontextmanager
@@ -54,6 +60,9 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(parents_router, prefix="/api/v1")
 app.include_router(tutors_router, prefix="/api/v1")
+
+# Mount Static Files for Uploaded Documents
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/", tags=["Root"])

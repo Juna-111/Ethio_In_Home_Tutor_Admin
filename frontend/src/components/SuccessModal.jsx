@@ -1,7 +1,10 @@
 import React, { useEffect } from 'react';
-import { CheckCircle2, X, ArrowRight } from 'lucide-react';
+import { CheckCircle2, X } from 'lucide-react';
+import { TRANSLATIONS } from '../constants/translations';
 
-export default function SuccessModal({ data, type, onClose }) {
+export default function SuccessModal({ data, type, lang, onClose }) {
+  const t = (TRANSLATIONS[lang] || TRANSLATIONS.en).modal;
+
   useEffect(() => {
     // Trigger Telegram Haptic Feedback on successful modal display
     try {
@@ -40,28 +43,26 @@ export default function SuccessModal({ data, type, onClose }) {
         </div>
 
         <h3 className="text-xl font-bold text-gray-900 mb-1">
-          {type === 'parent' ? 'Request Submitted!' : 'Registration Submitted!'}
+          {type === 'parent' ? t.parentTitle : t.tutorTitle}
         </h3>
         
-        <p className="text-xs text-gray-500 mb-5 leading-relaxed">
-          {type === 'parent'
-            ? 'Your tutoring request has been forwarded to our coordinators. We are currently matching verified tutors.'
-            : 'Your profile has been forwarded for admin verification. You will receive a Telegram alert once verified.'}
+        <p className="text-xs text-gray-600 mb-5 leading-relaxed bg-blue-50/60 p-3 rounded-xl border border-blue-100/70">
+          {type === 'parent' ? t.parentTrustMsg : t.tutorTrustMsg}
         </p>
 
         <div className="bg-gray-50 rounded-2xl p-4 mb-6 text-left border border-gray-100 space-y-2">
           <div className="flex justify-between text-xs">
-            <span className="text-gray-500 font-medium">Record ID:</span>
+            <span className="text-gray-500 font-medium">{t.recordId}:</span>
             <span className="font-bold text-gray-900">#{data?.id || '—'}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-gray-500 font-medium">Initial Status:</span>
+            <span className="text-gray-500 font-medium">{t.initialStatus}:</span>
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
-              ⏳ Pending
+              {t.statusPending}
             </span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-gray-500 font-medium">Contact:</span>
+            <span className="text-gray-500 font-medium">{t.contact}:</span>
             <span className="font-semibold text-gray-900">{data?.phone_number || '—'}</span>
           </div>
         </div>
@@ -72,14 +73,14 @@ export default function SuccessModal({ data, type, onClose }) {
             onClick={onClose}
             className="w-full py-3 px-4 rounded-xl font-semibold text-xs bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm shadow-blue-500/20"
           >
-            Submit Another Request
+            {t.submitAnother}
           </button>
           <button
             type="button"
             onClick={handleTelegramClose}
             className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs text-gray-500 hover:text-gray-800 bg-gray-100 transition"
           >
-            Done & Close App
+            {t.closeApp}
           </button>
         </div>
       </div>

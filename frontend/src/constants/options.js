@@ -9,14 +9,26 @@ export const SUBCITIES = [
   "Nifas Silk-Lafto",
   "Akaki Kality",
   "Addis Ketema",
-  "Lemi Kura"
+  "Lemi Kura",
+  "Akaki",
+  "Other"
 ];
 
 export const STUDENT_LEVELS = [
-  "Primary 1-4",
-  "Primary 5-8",
-  "High School 9-10",
+  "Grade 1",
+  "Grade 2",
+  "Grade 3",
+  "Grade 4",
+  "Grade 5",
+  "Grade 6",
+  "Grade 7",
+  "Grade 8",
+  "Grade 9",
+  "Grade 10",
+  "Grade 11",
+  "Grade 12",
   "Prep 11-12",
+  "Remediation",
   "Freshman"
 ];
 
@@ -31,7 +43,6 @@ export const SUBJECTS_LIST = [
   "Geography",
   "Amharic",
   "Economics",
-  "Calculus",
   "Computer Science"
 ];
 
@@ -51,6 +62,8 @@ export const EDUCATION_YEARS = [
   "3rd Year",
   "4th Year",
   "5th Year",
+  "6th Year",
+  "7th Year",
   "Graduate",
   "Masters / PhD"
 ];

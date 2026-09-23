@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+import uuid
+import aiofiles
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +11,51 @@ from app.models import Tutor
 from app.schemas import TutorCreate, TutorResponse
 
 router = APIRouter(prefix="/tutors", tags=["Tutors"])
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".png", ".jpg", ".jpeg"}
+
+
+@router.post(
+    "/upload-document",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload Tutor Verification Document / CV"
+)
+async def upload_tutor_document(file: UploadFile = File(...)):
+    """
+    Accepts file upload (ID, Certificate, CV) and saves it to the local uploads directory.
+    Returns the file URL to be stored in the tutor profile.
+    """
+    _, ext = os.path.splitext(file.filename or "")
+    ext_lower = ext.lower()
+
+    if ext_lower not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file format '{ext}'. Allowed types: PDF, DOCX, PNG, JPG."
+        )
+
+    # Generate unique filename to prevent collisions and sanitize
+    safe_filename = f"{uuid.uuid4().hex[:12]}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+
+    try:
+        content = await file.read()
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(content)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save uploaded file: {str(exc)}"
+        )
+
+    file_url = f"/uploads/{safe_filename}"
+    return {
+        "filename": file.filename,
+        "file_url": file_url
+    }
 
 
 @router.post(

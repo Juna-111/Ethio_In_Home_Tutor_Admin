@@ -9,6 +9,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('parent');
   const [user, setUser] = useState(null);
   const [submissionSuccess, setSubmissionSuccess] = useState(null);
+  const [lang, setLang] = useState('en');
+
+  const toggleLanguage = () => {
+    setLang((prev) => (prev === 'en' ? 'am' : 'en'));
+  };
 
   useEffect(() => {
     try {
@@ -36,17 +41,17 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden">
       {/* Brand Header */}
-      <Header user={user} />
+      <Header user={user} lang={lang} onToggleLang={toggleLanguage} />
 
       {/* Tab Navigation */}
-      <TabNavigation activeTab={activeTab} onSelectTab={setActiveTab} />
+      <TabNavigation activeTab={activeTab} onSelectTab={setActiveTab} lang={lang} />
 
       {/* Main Content Area */}
       <main className="flex-1">
         {activeTab === 'parent' ? (
-          <ParentForm user={user} onSuccess={handleSuccess} />
+          <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />
         ) : (
-          <TutorForm user={user} onSuccess={handleSuccess} />
+          <TutorForm user={user} lang={lang} onSuccess={handleSuccess} />
         )}
       </main>
 
@@ -55,6 +60,7 @@ export default function App() {
         <SuccessModal
           data={submissionSuccess.data}
           type={submissionSuccess.type}
+          lang={lang}
           onClose={handleCloseModal}
         />
       )}
