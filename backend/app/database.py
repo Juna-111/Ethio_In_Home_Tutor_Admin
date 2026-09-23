@@ -1,6 +1,5 @@
-import re
 from typing import AsyncGenerator
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -15,36 +14,38 @@ from app.config import settings
 def normalize_database_url(raw_url: str) -> tuple[str, dict]:
     """
     Normalizes database URL for asyncpg compatibility:
-    - Replaces postgres:// or postgresql:// with postgresql+asyncpg://
-    - Strips sslmode query parameters which cause asyncpg driver errors
-    - Returns normalized URL and appropriate connect_args (e.g., ssl='require' for Neon)
+    - Sets scheme to postgresql+asyncpg
+    - Strips unsupported asyncpg query params (e.g. channel_binding, sslmode)
+    - Returns sanitized clean URL and connect_args with ssl='require' when applicable
     """
-    url = raw_url.strip()
-    connect_args = {}
+    url_str = raw_url.strip()
 
-    # Handle Postgres dialect replacement
-    if url.startswith("postgres://"):
-        url = "postgresql+asyncpg://" + url[len("postgres://"):]
-    elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
-        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    # If not a postgresql URL (e.g. sqlite), return as is
+    if not (url_str.startswith("postgres://") or url_str.startswith("postgresql://") or url_str.startswith("postgresql+asyncpg://")):
+        return url_str, {}
 
-    # Parse and handle SSL requirements
-    if "postgresql+asyncpg://" in url:
-        parsed = urlparse(url)
-        query_params = parse_qs(parsed.query)
+    url = urlsplit(url_str)
+    scheme = "postgresql+asyncpg"
+    query_params = parse_qs(url.query)
 
-        # Check if sslmode was requested or if it's a hosted cloud DB like Neon
-        needs_ssl = "sslmode" in query_params or (parsed.hostname and parsed.hostname != "localhost" and parsed.hostname != "127.0.0.1")
+    # Check if SSL is required (Neon cloud DB, sslmode present, or remote host)
+    needs_ssl = (
+        "neon.tech" in url_str
+        or "sslmode" in query_params
+        or "ssl" in query_params
+        or (url.hostname and url.hostname not in ("localhost", "127.0.0.1"))
+    )
+    connect_args = {"ssl": "require"} if needs_ssl else {}
 
-        if needs_ssl:
-            connect_args["ssl"] = "require"
+    # Remove query parameters that asyncpg does not support in connect()
+    unsupported_params = ["channel_binding", "sslmode", "ssl"]
+    for param in unsupported_params:
+        query_params.pop(param, None)
 
-        # Strip sslmode from query parameters to prevent asyncpg errors
-        query_params.pop("sslmode", None)
-        new_query = urlencode(query_params, doseq=True)
-        url = urlunparse(parsed._replace(query=new_query))
+    clean_query = urlencode(query_params, doseq=True)
+    clean_url = urlunsplit((scheme, url.netloc, url.path, clean_query, url.fragment))
 
-    return url, connect_args
+    return clean_url, connect_args
 
 
 DATABASE_URL, engine_connect_args = normalize_database_url(settings.DATABASE_URL)

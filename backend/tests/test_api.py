@@ -163,3 +163,28 @@ async def test_register_tutor_validation_failure(async_client: AsyncClient):
 
     response = await async_client.post("/api/v1/tutors/register", json=invalid_payload)
     assert response.status_code == 422
+
+
+def test_normalize_database_url_neon():
+    """Verifies that channel_binding and sslmode are stripped, scheme is postgresql+asyncpg, and ssl='require' is set."""
+    from app.database import normalize_database_url
+
+    raw_neon_url = "postgresql://user:secret@ep-cool-flower-123456.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=prefer"
+    clean_url, connect_args = normalize_database_url(raw_neon_url)
+
+    assert clean_url.startswith("postgresql+asyncpg://")
+    assert "channel_binding" not in clean_url
+    assert "sslmode" not in clean_url
+    assert connect_args == {"ssl": "require"}
+
+
+def test_normalize_database_url_sqlite():
+    """Verifies that non-PostgreSQL URLs like SQLite pass through untouched without SSL connect_args."""
+    from app.database import normalize_database_url
+
+    raw_sqlite_url = "sqlite+aiosqlite:///./test.db"
+    clean_url, connect_args = normalize_database_url(raw_sqlite_url)
+
+    assert clean_url == raw_sqlite_url
+    assert connect_args == {}
+
