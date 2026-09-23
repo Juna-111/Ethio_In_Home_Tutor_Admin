@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.bot_instance import send_parent_request_card
 from app.database import get_db
 from app.models import ParentRequest
 from app.schemas import ParentRequestCreate, ParentRequestResponse
@@ -21,6 +22,7 @@ async def create_parent_request(
     """
     Validates and stores a parent intake request in PostgreSQL.
     Status is initialized to 'pending'.
+    Forwards a notification card to the Telegram Admin Group.
     """
     parent_req = ParentRequest(
         telegram_user_id=payload.telegram_user_id,
@@ -43,6 +45,7 @@ async def create_parent_request(
     await db.commit()
     await db.refresh(parent_req)
 
-    # In Phase 2: Telegram Bot notification to ADMIN_GROUP_ID will be dispatched here.
+    # Broadcast intake card to Telegram Admin Group
+    await send_parent_request_card(parent_req)
 
     return parent_req

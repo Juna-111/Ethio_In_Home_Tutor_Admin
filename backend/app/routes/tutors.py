@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.bot_instance import send_tutor_registration_card
 from app.database import get_db
 from app.models import Tutor
 from app.schemas import TutorCreate, TutorResponse
@@ -23,6 +24,7 @@ async def register_tutor(
     Validates and stores a tutor registration in PostgreSQL.
     Status is initialized to 'pending'.
     Checks for duplicate telegram_user_id if provided.
+    Forwards a verification card to the Telegram Admin Group.
     """
     if payload.telegram_user_id is not None:
         query = select(Tutor).where(Tutor.telegram_user_id == payload.telegram_user_id)
@@ -57,6 +59,7 @@ async def register_tutor(
     await db.commit()
     await db.refresh(tutor)
 
-    # In Phase 2: Telegram Bot notification to ADMIN_GROUP_ID will be dispatched here.
+    # Broadcast verification card to Telegram Admin Group
+    await send_tutor_registration_card(tutor)
 
     return tutor

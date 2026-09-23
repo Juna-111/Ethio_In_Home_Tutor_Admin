@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.bot.bot_instance import init_bot_app, shutdown_bot_app
 from app.database import engine, Base
 import app.models  # noqa: F401
 from app.routes.health import router as health_router
@@ -15,7 +16,13 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
+    # Initialize Telegram Bot Application & background listeners
+    await init_bot_app()
+
     yield
+
+    # Clean up Telegram Bot
+    await shutdown_bot_app()
 
     # Clean up engine connection pools on shutdown
     await engine.dispose()

@@ -188,3 +188,113 @@ def test_normalize_database_url_sqlite():
     assert clean_url == raw_sqlite_url
     assert connect_args == {}
 
+
+@pytest.mark.asyncio
+async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, monkeypatch):
+    """Verifies that creating a parent request formats an admin card with inline buttons and dispatches to ADMIN_GROUP_ID."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.config import settings
+    import app.bot.bot_instance as bot_inst
+
+    mock_send_message = AsyncMock(return_value=MagicMock(message_id=999))
+    mock_bot = MagicMock()
+    mock_bot.send_message = mock_send_message
+
+    mock_app = MagicMock()
+    mock_app.bot = mock_bot
+
+    monkeypatch.setattr(bot_inst, "bot_app", mock_app)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
+
+    payload = {
+        "parent_name": "Tigist Alemu",
+        "phone_number": "+251911998877",
+        "student_level": "Primary 5-8",
+        "subjects": ["English", "Maths"],
+        "preferred_gender": "Female",
+        "preferred_experience": "Fresh Graduate",
+        "location_subcity": "Arada",
+        "location_landmark": "Near Piassa",
+        "schedule_days": ["Tue", "Thu", "Sat"],
+        "time_slot": "5:00 PM - 7:00 PM",
+        "session_duration": "2 hrs",
+        "budget_etb": 3500.0
+    }
+
+    response = await async_client.post("/api/v1/parents/request", json=payload)
+    assert response.status_code == 201
+    created_id = response.json()["id"]
+
+    assert mock_send_message.called
+    call_kwargs = mock_send_message.call_args.kwargs
+    assert call_kwargs["chat_id"] == -1001999999999
+    assert "NEW PARENT TUTORING REQUEST" in call_kwargs["text"]
+    assert "Tigist Alemu" in call_kwargs["text"]
+    assert "Arada" in call_kwargs["text"]
+    assert "Near Piassa" in call_kwargs["text"]
+
+    # Verify inline buttons
+    reply_markup = call_kwargs["reply_markup"]
+    buttons = reply_markup.inline_keyboard[0]
+    assert buttons[0].text == "🔍 Find Best Tutors"
+    assert buttons[0].callback_data == f"match_parent:{created_id}"
+    assert buttons[1].text == "❌ Close Request"
+    assert buttons[1].callback_data == f"close_parent:{created_id}"
+
+
+@pytest.mark.asyncio
+async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient, monkeypatch):
+    """Verifies that registering a tutor formats a verification card with inline buttons and dispatches to ADMIN_GROUP_ID."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.config import settings
+    import app.bot.bot_instance as bot_inst
+
+    mock_send_message = AsyncMock(return_value=MagicMock(message_id=1000))
+    mock_bot = MagicMock()
+    mock_bot.send_message = mock_send_message
+
+    mock_app = MagicMock()
+    mock_app.bot = mock_bot
+
+    monkeypatch.setattr(bot_inst, "bot_app", mock_app)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
+
+    payload = {
+        "telegram_user_id": 554433221,
+        "full_name": "Dawit Bekele",
+        "gender": "Male",
+        "phone_number": "+251933445566",
+        "university": "Addis Ababa University",
+        "department": "Mathematics",
+        "education_year": "Graduate",
+        "subjects_qualified": ["Maths", "Calculus"],
+        "grades_qualified": ["Prep 11-12", "Freshman"],
+        "years_of_experience": 4.0,
+        "expected_fee_etb": 500.0,
+        "base_subcity": "Kirkos",
+        "coverage_areas": ["Kirkos", "Bole", "Lideta"],
+        "availability_schedule": "Daily after 4 PM",
+        "id_document_url": "https://example.com/id/dawit.pdf"
+    }
+
+    response = await async_client.post("/api/v1/tutors/register", json=payload)
+    assert response.status_code == 201
+    created_id = response.json()["id"]
+
+    assert mock_send_message.called
+    call_kwargs = mock_send_message.call_args.kwargs
+    assert call_kwargs["chat_id"] == -1001999999999
+    assert "NEW TUTOR REGISTRATION" in call_kwargs["text"]
+    assert "Dawit Bekele" in call_kwargs["text"]
+    assert "Kirkos" in call_kwargs["text"]
+    assert "https://example.com/id/dawit.pdf" in call_kwargs["text"]
+
+    # Verify inline buttons
+    reply_markup = call_kwargs["reply_markup"]
+    buttons = reply_markup.inline_keyboard[0]
+    assert buttons[0].text == "✅ Approve Tutor"
+    assert buttons[0].callback_data == f"approve_tutor:{created_id}"
+    assert buttons[1].text == "❌ Reject"
+    assert buttons[1].callback_data == f"reject_tutor:{created_id}"
+
+
