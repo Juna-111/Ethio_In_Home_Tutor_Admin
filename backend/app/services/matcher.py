@@ -20,105 +20,138 @@ def _normalize_list(items: Any) -> List[str]:
     return []
 
 
-async def find_top_matches(
+async def get_tiered_matches(
     parent_request_id: int,
     session: AsyncSession
-) -> Tuple[Optional[ParentRequest], List[Dict[str, Any]]]:
+) -> Tuple[Optional[ParentRequest], Dict[str, List[Dict[str, Any]]]]:
     """
-    Finds and ranks the top 3 verified tutors matching a parent request.
+    Categorizes verified tutors for a parent request into three intuitive radar tiers:
+    - Tier 1 (Perfect Fit): Direct base sub-city, gender preference match, fee <= budget.
+    - Tier 2 (Commute / Proximity Match): Sub-city in coverage areas, subject match, fee <= budget * 1.20.
+    - Tier 3 (Flexible Alternatives): Subject match, differs on gender or fee exceeds up to budget * 1.35.
 
-    Hard Filters:
-    - tutor.status == 'verified'
-    - Gender: matches preferred_gender if not 'No preference'
-    - Location: parent.location_subcity matches tutor.base_subcity OR is in coverage_areas
-    - Grade: parent.student_level is in tutor.grades_qualified
-    - Subjects: At least one subject overlap between parent.subjects and tutor.subjects_qualified
-
-    Scoring / Ranking:
-    - Subject overlap count * 10
-    - Bonus (+2) if parent's location is tutor's base_subcity
-    - Sorted by: score DESC, years_of_experience DESC, expected_fee_etb ASC
+    Candidates within each tier are sorted by:
+    years_of_experience DESC, expected_fee_etb ASC.
+    Each tier is capped at the top 2 candidates.
     """
-    # 1. Fetch parent request
     query = select(ParentRequest).where(ParentRequest.id == parent_request_id)
     result = await session.execute(query)
     parent = result.scalar_one_or_none()
 
-    if not parent:
-        logger.warning("Parent request #%s not found for matching.", parent_request_id)
-        return None, []
+    empty_result: Dict[str, List[Dict[str, Any]]] = {
+        "tier1": [],
+        "tier2": [],
+        "tier3": []
+    }
 
-    # 2. Query all verified tutors
+    if not parent:
+        logger.warning("Parent request #%s not found for tiered matching.", parent_request_id)
+        return None, empty_result
+
     tutors_query = select(Tutor).where(Tutor.status == "verified")
     tutors_result = await session.execute(tutors_query)
     verified_tutors = tutors_result.scalars().all()
 
-    candidates: List[Dict[str, Any]] = []
-
     parent_pref_gender = _normalize_str(parent.preferred_gender)
+    gender_strict = parent_pref_gender and parent_pref_gender not in ("no preference", "none")
     parent_subcity = _normalize_str(parent.location_subcity)
-    parent_level = _normalize_str(parent.student_level)
     parent_subjects_norm = _normalize_list(parent.subjects)
+    budget = float(parent.budget_etb or 0.0)
+
+    tier1_candidates: List[Dict[str, Any]] = []
+    tier2_candidates: List[Dict[str, Any]] = []
+    tier3_candidates: List[Dict[str, Any]] = []
 
     for tutor in verified_tutors:
-        # A. Gender Hard Filter
-        if parent_pref_gender and parent_pref_gender != "no preference":
-            tutor_gender = _normalize_str(tutor.gender)
-            if tutor_gender != parent_pref_gender:
-                continue
-
-        # B. Location Hard Filter
-        tutor_base = _normalize_str(tutor.base_subcity)
-        tutor_coverage = _normalize_list(tutor.coverage_areas)
-        is_base_location = tutor_base == parent_subcity
-        has_coverage = parent_subcity in tutor_coverage
-
-        if not (is_base_location or has_coverage):
-            continue
-
-        # C. Grade Compatibility Hard Filter
-        tutor_grades = _normalize_list(tutor.grades_qualified)
-        if parent_level not in tutor_grades:
-            continue
-
-        # D. Subject Overlap Hard Filter
+        # Mandatory Baseline: At least one subject overlap
         tutor_subjects_norm = _normalize_list(tutor.subjects_qualified)
         matched_subjects_norm = set(parent_subjects_norm).intersection(set(tutor_subjects_norm))
         if not matched_subjects_norm:
             continue
 
-        # Find human-readable matched subjects for display
         original_matched = [
             s for s in (parent.subjects if isinstance(parent.subjects, list) else [parent.subjects])
             if _normalize_str(str(s)) in matched_subjects_norm
         ]
 
-        # Scoring
-        subject_score = len(matched_subjects_norm) * 10
-        location_bonus = 2 if is_base_location else 0
-        total_score = subject_score + location_bonus
+        tutor_gender = _normalize_str(tutor.gender)
+        gender_matches = (not gender_strict) or (tutor_gender == parent_pref_gender)
 
-        candidates.append({
+        tutor_base = _normalize_str(tutor.base_subcity)
+        tutor_coverage = _normalize_list(tutor.coverage_areas)
+        is_base_subcity = (tutor_base == parent_subcity)
+        is_in_coverage = (parent_subcity in tutor_coverage)
+        fee = float(tutor.expected_fee_etb or 0.0)
+        exp = float(tutor.years_of_experience or 0.0)
+
+        candidate_data = {
             "tutor": tutor,
             "matched_subjects": original_matched,
-            "match_score": total_score,
-            "is_base_location": is_base_location,
-            "years_of_experience": float(tutor.years_of_experience or 0.0),
-            "expected_fee_etb": float(tutor.expected_fee_etb or 0.0)
-        })
+            "years_of_experience": exp,
+            "expected_fee_etb": fee,
+            "is_base_location": is_base_subcity,
+            "match_score": len(matched_subjects_norm) * 10 + (2 if is_base_subcity else 0)
+        }
 
-    # Sort candidates by: total_score DESC, years_of_experience DESC, expected_fee_etb ASC
-    candidates.sort(
-        key=lambda c: (
-            -c["match_score"],
-            -c["years_of_experience"],
-            c["expected_fee_etb"]
-        )
-    )
+        # Check Tier 1: Perfect Fit
+        # Sub-city matches directly, gender matches, fee <= budget
+        if is_base_subcity and gender_matches and (fee <= budget or budget == 0.0):
+            tier1_candidates.append(candidate_data)
+            continue
 
-    top_3 = candidates[:3]
+        # Check Tier 2: Commute / Proximity
+        # Sub-city in coverage, gender matches, fee <= budget * 1.20
+        max_budget_tier2 = budget * 1.20 if budget > 0.0 else fee
+        if (is_in_coverage or is_base_subcity) and gender_matches and (fee <= max_budget_tier2):
+            tier2_candidates.append(candidate_data)
+            continue
+
+        # Check Tier 3: Flexible Alternatives
+        # Subject matches, but differs on gender OR exceeds budget up to +35%
+        max_budget_tier3 = budget * 1.35 if budget > 0.0 else fee
+        if (is_base_subcity or is_in_coverage or len(tutor_coverage) > 0) and (fee <= max_budget_tier3):
+            notes = []
+            if not gender_matches:
+                notes.append("Gender flex")
+            if budget > 0.0 and fee > budget:
+                notes.append(f"+{((fee - budget) / budget * 100):.0f}% budget")
+            candidate_data["flex_note"] = ", ".join(notes) if notes else "Flex match"
+            tier3_candidates.append(candidate_data)
+
+    # Sort each tier by years_of_experience DESC, expected_fee_etb ASC
+    sort_key = lambda c: (-c["years_of_experience"], c["expected_fee_etb"])
+    tier1_candidates.sort(key=sort_key)
+    tier2_candidates.sort(key=sort_key)
+    tier3_candidates.sort(key=sort_key)
+
+    tiered_matches = {
+        "tier1": tier1_candidates[:2],
+        "tier2": tier2_candidates[:2],
+        "tier3": tier3_candidates[:2],
+    }
+
+    total_count = sum(len(v) for v in tiered_matches.values())
     logger.info(
-        "Matching completed for Parent Request #%s: %s candidates evaluated, top %s returned.",
-        parent_request_id, len(candidates), len(top_3)
+        "Tiered matching for Parent Request #%s completed: T1=%s, T2=%s, T3=%s (total=%s).",
+        parent_request_id, len(tiered_matches["tier1"]), len(tiered_matches["tier2"]), len(tiered_matches["tier3"]), total_count
     )
-    return parent, top_3
+
+    return parent, tiered_matches
+
+
+async def find_top_matches(
+    parent_request_id: int,
+    session: AsyncSession
+) -> Tuple[Optional[ParentRequest], List[Dict[str, Any]]]:
+    """
+    Backward-compatible wrapper: returns a flattened list of the top 3 matches
+    derived from tiered matching.
+    """
+    parent, tiered = await get_tiered_matches(parent_request_id, session)
+    if not parent:
+        return None, []
+
+    combined = tiered["tier1"] + tiered["tier2"] + tiered["tier3"]
+    # Re-sort combined by match_score DESC, exp DESC, fee ASC for backward compatibility
+    combined.sort(key=lambda c: (-c.get("match_score", 0), -c["years_of_experience"], c["expected_fee_etb"]))
+    return parent, combined[:3]

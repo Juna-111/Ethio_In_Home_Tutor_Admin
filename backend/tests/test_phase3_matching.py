@@ -417,6 +417,8 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await db_session.refresh(parent)
     assert parent.status == "matched"
 
+    assert mock_context.bot.send_message.called
+    dm_args = mock_context.bot.send_message.call_args.kwargs
     assert dm_args["chat_id"] == 888999000
     assert "New Tutoring Opportunity Assigned" in dm_args["text"]
     assert "Rahel Tadesse" in dm_args["text"]
@@ -489,4 +491,302 @@ async def test_match_and_assign_preserves_topic_thread_id(db_session: AsyncSessi
     assign_reply_kwargs = mock_message.reply_text.call_args.kwargs
     assert assign_reply_kwargs.get("message_thread_id") == 99999
     assert assign_reply_kwargs.get("reply_to_message_id") == 5555
+
+
+@pytest.mark.asyncio
+async def test_get_tiered_matches_categorization(db_session: AsyncSession):
+    """
+    Verifies that get_tiered_matches categorizes candidates into:
+    - Tier 1: Perfect Fit (Subcity + Subject + Gender + Budget)
+    - Tier 2: Commute / Proximity (Coverage area + Subject + Budget within 20%)
+    - Tier 3: Flex Alternatives (Subject + Gender flex or Budget within 35%)
+    And strictly excludes pending status, no subject overlap, or fee > 35%.
+    """
+    from app.services.matcher import get_tiered_matches
+
+    parent = ParentRequest(
+        parent_name="Radar Parent",
+        phone_number="+251911777888",
+        student_level="High School 9-10",
+        subjects=["Maths", "Physics"],
+        preferred_gender="Male",
+        preferred_experience="University Student",
+        location_subcity="Bole",
+        schedule_days=["Mon", "Wed"],
+        time_slot="4:00 PM - 6:00 PM",
+        session_duration="2 hrs",
+        budget_etb=400.0,
+        status="pending"
+    )
+    db_session.add(parent)
+    await db_session.commit()
+    await db_session.refresh(parent)
+
+    # Tutor 1: Verified, Male, Base Bole, Maths, 350 ETB (<= 400) -> Tier 1 (Perfect Fit)
+    t1 = Tutor(
+        full_name="Sara Perfect",
+        gender="Male",
+        phone_number="+251911111001",
+        university="AAU",
+        department="CS",
+        education_year="4th Year",
+        subjects_qualified=["Maths", "Physics"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=2.5,
+        expected_fee_etb=350.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Evenings",
+        status="verified"
+    )
+
+    # Tutor 2: Verified, Male, Base Yeka, Coverage Bole, Maths, 450 ETB (<= 400 * 1.20 = 480) -> Tier 2 (Commute/Proximity)
+    t2 = Tutor(
+        full_name="Dawit Commute",
+        gender="Male",
+        phone_number="+251911111002",
+        university="AAU",
+        department="Engineering",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=3.0,
+        expected_fee_etb=450.0,
+        base_subcity="Yeka",
+        coverage_areas=["Bole", "Yeka"],
+        availability_schedule="Weekends",
+        status="verified"
+    )
+
+    # Tutor 3: Verified, Female (gender flex), Base Bole, Physics, 500 ETB (<= 400 * 1.35 = 540) -> Tier 3 (Flex)
+    t3 = Tutor(
+        full_name="Martha Flex",
+        gender="Female",
+        phone_number="+251911111003",
+        university="AAU",
+        department="Physics",
+        education_year="Graduate",
+        subjects_qualified=["Physics"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=4.0,
+        expected_fee_etb=500.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Flexible",
+        status="verified"
+    )
+
+    # Tutor 4: Pending -> Excluded from all tiers
+    t4 = Tutor(
+        full_name="Pending Tutor",
+        gender="Male",
+        phone_number="+251911111004",
+        university="AAU",
+        department="Maths",
+        education_year="1st Year",
+        subjects_qualified=["Maths"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=1.0,
+        expected_fee_etb=300.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        status="pending"
+    )
+
+    # Tutor 5: No subject overlap -> Excluded from all tiers
+    t5 = Tutor(
+        full_name="History Tutor",
+        gender="Male",
+        phone_number="+251911111005",
+        university="AAU",
+        department="History",
+        education_year="Graduate",
+        subjects_qualified=["History", "Civics"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=5.0,
+        expected_fee_etb=300.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        status="verified"
+    )
+
+    # Tutor 6: Exceeds 35% flex budget (Fee 600 > 540) -> Excluded from all tiers
+    t6 = Tutor(
+        full_name="Expensive Tutor",
+        gender="Male",
+        phone_number="+251911111006",
+        university="AAU",
+        department="Maths",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=5.0,
+        expected_fee_etb=600.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        status="verified"
+    )
+
+    db_session.add_all([t1, t2, t3, t4, t5, t6])
+    await db_session.commit()
+
+    found_parent, tiered = await get_tiered_matches(parent.id, db_session)
+    assert found_parent is not None
+
+    # Tier 1 verification
+    assert len(tiered["tier1"]) == 1
+    assert tiered["tier1"][0]["tutor"].full_name == "Sara Perfect"
+
+    # Tier 2 verification
+    assert len(tiered["tier2"]) == 1
+    assert tiered["tier2"][0]["tutor"].full_name == "Dawit Commute"
+
+    # Tier 3 verification
+    assert len(tiered["tier3"]) == 1
+    assert tiered["tier3"][0]["tutor"].full_name == "Martha Flex"
+    assert "Gender flex" in tiered["tier3"][0]["flex_note"]
+
+
+@pytest.mark.asyncio
+async def test_ping_candidates_and_availability_confirmation(db_session: AsyncSession, monkeypatch):
+    """
+    Verifies:
+    1. handle_ping_candidates broadcasts DM to tutors with telegram_user_id and updates button in-place.
+    2. handle_tutor_avail_yes edits tutor DM and posts confirmation card with assign button to Admin Group.
+    3. handle_tutor_avail_no gracefully acknowledges in tutor DM.
+    """
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    parent = ParentRequest(
+        parent_name="Ping Parent",
+        phone_number="+251911333444",
+        student_level="Grade 10",
+        subjects=["Maths"],
+        preferred_gender="No preference",
+        preferred_experience="University Student",
+        location_subcity="Bole",
+        location_landmark="Near Edna",
+        schedule_days=["Mon", "Wed"],
+        time_slot="5:00 PM",
+        session_duration="1.5 hrs",
+        budget_etb=400.0,
+        status="pending"
+    )
+    tutor = Tutor(
+        telegram_user_id=123454321,
+        full_name="Ping Tutor",
+        gender="Male",
+        phone_number="+251911002244",
+        university="AAU",
+        department="Maths",
+        education_year="3rd Year",
+        subjects_qualified=["Maths"],
+        grades_qualified=["Grade 10"],
+        years_of_experience=2.0,
+        expected_fee_etb=350.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        status="verified"
+    )
+    db_session.add_all([parent, tutor])
+    await db_session.commit()
+    await db_session.refresh(parent)
+    await db_session.refresh(tutor)
+
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+
+    # 1. Test ping_candidates broadcasts DM and deduplicates button in-place
+    mock_query = AsyncMock()
+    mock_message = AsyncMock()
+    mock_message.reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📡 Ping Candidates", callback_data=f"ping_candidates:{parent.id}")]
+    ])
+    mock_query.message = mock_message
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+
+    mock_context = MagicMock()
+    mock_context.bot = MagicMock()
+    mock_context.bot.send_message = AsyncMock()
+
+    await bot_handlers.handle_ping_candidates(mock_update, mock_context, f"ping_candidates:{parent.id}")
+
+    # Button deduplicated
+    assert mock_message.edit_reply_markup.called
+    updated_markup = mock_message.edit_reply_markup.call_args.kwargs["reply_markup"]
+    assert any("⏳ Ping Sent" in btn.text for row in updated_markup.inline_keyboard for btn in row)
+
+    # DM sent to tutor with availability buttons
+    assert mock_context.bot.send_message.called
+    dm_call = mock_context.bot.send_message.call_args.kwargs
+    assert dm_call["chat_id"] == 123454321
+    assert "NEW TUTORING OPPORTUNITY" in dm_call["text"]
+    dm_buttons = [btn.callback_data for row in dm_call["reply_markup"].inline_keyboard for btn in row]
+    assert f"tutor_avail_yes:{parent.id}:{tutor.id}" in dm_buttons
+    assert f"tutor_avail_no:{parent.id}:{tutor.id}" in dm_buttons
+
+    # 2. Test tutor_avail_yes updates tutor DM and alerts Admin Group
+    mock_context.bot.send_message.reset_mock()
+    mock_tutor_msg = AsyncMock()
+    mock_query.message = mock_tutor_msg
+    await bot_handlers.handle_tutor_avail_yes(mock_update, mock_context, f"tutor_avail_yes:{parent.id}:{tutor.id}")
+
+    assert mock_tutor_msg.edit_text.called
+    assert "Thank you, Ping Tutor" in mock_tutor_msg.edit_text.call_args.kwargs["text"]
+
+    # Admin group alert sent
+    assert mock_context.bot.send_message.called
+    admin_alert_args = mock_context.bot.send_message.call_args.kwargs
+    assert "AVAILABILITY CONFIRMED" in admin_alert_args["text"]
+    assert "Ping Tutor" in admin_alert_args["text"]
+
+    # 3. Test tutor_avail_no edits message politely
+    mock_tutor_msg.reset_mock()
+    await bot_handlers.handle_tutor_avail_no(mock_update, mock_context, f"tutor_avail_no:{parent.id}:{tutor.id}")
+    assert mock_tutor_msg.edit_text.called
+    assert "Thank you for letting us know" in mock_tutor_msg.edit_text.call_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_match_parent_zero_matches_shows_alert(db_session: AsyncSession, monkeypatch):
+    """
+    Verifies that when zero matches exist across all tiers, handle_match_parent
+    triggers a non-disruptive Telegram popup alert (show_alert=True) with zero chat spam.
+    """
+    parent = ParentRequest(
+        parent_name="Lonely Parent",
+        phone_number="+251911999888",
+        student_level="Grade 1",
+        subjects=["Astrophysics"],
+        preferred_gender="No preference",
+        preferred_experience="Senior Teacher",
+        location_subcity="Bole",
+        schedule_days=["Mon"],
+        time_slot="1:00 PM",
+        session_duration="1 hr",
+        budget_etb=100.0,
+        status="pending"
+    )
+    db_session.add(parent)
+    await db_session.commit()
+    await db_session.refresh(parent)
+
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+
+    mock_query = AsyncMock()
+    mock_message = AsyncMock()
+    mock_query.message = mock_message
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_context = MagicMock()
+
+    await bot_handlers.handle_match_parent(mock_update, mock_context, f"match_parent:{parent.id}")
+
+    assert mock_query.answer.called
+    assert mock_query.answer.call_args.kwargs.get("show_alert") is True
+    assert not mock_message.reply_text.called
 
