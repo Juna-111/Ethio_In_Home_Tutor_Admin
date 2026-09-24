@@ -12,12 +12,19 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./mentorlink.db"
     BOT_TOKEN: Optional[str] = None
     ADMIN_GROUP_ID: Optional[Union[int, str]] = None
+    SUPER_ADMIN_ID: Optional[int] = None
     PARENT_REQUESTS_TOPIC_ID: Optional[int] = None
     TUTOR_REGISTRATION_TOPIC_ID: Optional[int] = None
     WEBAPP_URL: Optional[str] = None
+    MINI_APP_URL: Optional[str] = None
     ENVIRONMENT: str = "development"
 
-    @field_validator("PARENT_REQUESTS_TOPIC_ID", "TUTOR_REGISTRATION_TOPIC_ID", mode="before")
+    @field_validator(
+        "PARENT_REQUESTS_TOPIC_ID",
+        "TUTOR_REGISTRATION_TOPIC_ID",
+        "SUPER_ADMIN_ID",
+        mode="before",
+    )
     @classmethod
     def empty_str_to_none(cls, v):
         if v == "" or v is None:
