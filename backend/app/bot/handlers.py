@@ -113,7 +113,7 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_tutor_card(tutor, status_override=f"🟢 <b>Approved by {admin_name}</b>")
+            updated_text = format_tutor_card(tutor, status_override="🟢 <b>Approved</b>", admin_username=admin_name)
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -163,7 +163,7 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_tutor_card(tutor, status_override=f"🔴 <b>Rejected by {admin_name}</b>")
+            updated_text = format_tutor_card(tutor, status_override="🔴 <b>Rejected</b>", admin_username=admin_name)
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -587,7 +587,7 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"🏛 <b>Background:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)}\n"
                 f"⭐ <b>Experience:</b> {tutor.years_of_experience:g} years\n"
                 f"📞 <b>Phone:</b> {html.escape(tutor.phone_number)}\n\n"
-                f"Our team or your mentor will contact you shortly to confirm your first trial session. Thank you for choosing MentorLink! 🌟"
+                f"Our coordinator or your mentor will contact you shortly to confirm your first trial session. Thank you for trusting MentorLink! 🌟"
             )
             await context.bot.send_message(
                 chat_id=parent.telegram_user_id,

@@ -286,10 +286,11 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
     assert mock_send_message.called
     call_kwargs = mock_send_message.call_args.kwargs
     assert call_kwargs["chat_id"] == -1001999999999
-    assert "TUTOR PROFILE" in call_kwargs["text"]
+    assert ("TUTOR TICKET" in call_kwargs["text"] or "TUTOR PROFILE" in call_kwargs["text"])
     assert "Pending Verification" in call_kwargs["text"]
     assert "Dawit Bekele" in call_kwargs["text"]
     assert "Kirkos" in call_kwargs["text"]
+    assert "<blockquote>" in call_kwargs["text"]
     assert "https://example.com/id/dawit.pdf" in call_kwargs["text"]
 
     # Verify compact inline buttons
@@ -495,6 +496,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     assert call1_kwargs["chat_id"] == -1002345678901
     assert call1_kwargs["message_thread_id"] == 7788
     assert "PARENT REQUEST #" in call1_kwargs["text"]
+    assert "<blockquote>" in call1_kwargs["text"]
     assert "Hiwot Tadesse" in call1_kwargs["text"]
     call1_buttons = call1_kwargs["reply_markup"].inline_keyboard[0]
     assert call1_buttons[0].text == "🔍 Match Radar"
@@ -510,7 +512,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     assert "Hiwot Tadesse" in call2_kwargs["text"]
     assert "Bole" in call2_kwargs["text"]
     call2_buttons = call2_kwargs["reply_markup"].inline_keyboard[0]
-    assert call2_buttons[0].text == "🔗 Open Ticket"
+    assert call2_buttons[0].text == "🔗 Open Workspace / Ticket ↗️"
     assert call2_buttons[0].url == "https://t.me/c/2345678901/7788"
 
 

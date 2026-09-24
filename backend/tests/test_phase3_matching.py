@@ -263,7 +263,9 @@ async def test_approve_tutor_callback_updates_db_and_notifies(db_session: AsyncS
     # Verify card edited in Admin Group
     assert mock_query.message.edit_text.called
     edit_args = mock_query.message.edit_text.call_args.kwargs
-    assert "✅ Approved by @test_admin" in edit_args["text"]
+    assert "Approved" in edit_args["text"]
+    assert "Admin: @test_admin" in edit_args["text"]
+    assert "<blockquote>" in edit_args["text"]
 
     # Verify direct message sent to tutor
     assert mock_context.bot.send_message.called
@@ -314,7 +316,9 @@ async def test_reject_tutor_callback_updates_db(db_session: AsyncSession, monkey
 
     await db_session.refresh(tutor)
     assert tutor.status == "rejected"
-    assert "❌ Rejected by @lead_admin" in mock_query.message.edit_text.call_args.kwargs["text"]
+    assert "Rejected" in mock_query.message.edit_text.call_args.kwargs["text"]
+    assert "Admin: @lead_admin" in mock_query.message.edit_text.call_args.kwargs["text"]
+    assert "<blockquote>" in mock_query.message.edit_text.call_args.kwargs["text"]
 
 
 @pytest.mark.asyncio
@@ -358,6 +362,7 @@ async def test_close_parent_callback_updates_db(db_session: AsyncSession, monkey
     await db_session.refresh(parent)
     assert parent.status == "closed"
     assert "Closed by @support_admin" in mock_query.message.edit_text.call_args.kwargs["text"]
+    assert "<blockquote>" in mock_query.message.edit_text.call_args.kwargs["text"]
 
     # Verify dedicated forum topic was closed
     assert mock_context.bot.close_forum_topic.called
@@ -441,6 +446,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     assert "Selamawit Tefera" in parent_dm_call.kwargs["text"]
     assert "AAU" in parent_dm_call.kwargs["text"]
     assert "+251911887766" in parent_dm_call.kwargs["text"]
+    assert "trusting MentorLink" in parent_dm_call.kwargs["text"]
 
     # Tutor DM verification
     tutor_dm_call = next(c for c in sent_calls if c.kwargs["chat_id"] == 888999000)
