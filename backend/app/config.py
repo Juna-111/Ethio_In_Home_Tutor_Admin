@@ -26,10 +26,37 @@ class Settings(BaseSettings):
         mode="before",
     )
     @classmethod
-    def empty_str_to_none(cls, v):
+    def empty_str_to_none_int(cls, v):
         if v == "" or v is None:
             return None
         return int(v)
+
+    @field_validator("ADMIN_GROUP_ID", mode="before")
+    @classmethod
+    def validate_admin_group_id(cls, v):
+        if v == "" or v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            try:
+                return int(v)
+            except ValueError:
+                return v
+        return v
+
+    @field_validator("MINI_APP_URL", "WEBAPP_URL", mode="before")
+    @classmethod
+    def sanitize_urls(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            return v.rstrip("/")
+        return v
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -174,10 +174,20 @@ from app.database import AsyncSessionLocal
 from app.models import ParentRequest
 
 
+def get_clean_chat_id(chat_id: int | str) -> str:
+    """Extracts the clean numerical ID from Telegram -100 supergroup format for web deep links."""
+    raw = str(chat_id).strip()
+    if raw.startswith("-100"):
+        return raw[4:]
+    elif raw.startswith("-"):
+        return raw[1:]
+    return raw
+
+
 async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession] = None) -> Optional[int]:
     """
     Sends parent request notification cards to ADMIN_GROUP_ID:
-    1. Dynamically creates a dedicated forum topic: `REQ-{id:04d} — {parent_name} ({location_subcity})`
+    1. Dynamically creates a dedicated forum topic: `REQ-{id:04d} — {parent_name} ({location_subcity})` (max 128 chars)
     2. Sends the full management card with [ 🔍 Match Radar ] and [ ❌ Close Request ] inside the dedicated topic.
     3. Posts an index ticket link with [ 🔗 Open Ticket ] into the Parent Requests Directory Topic.
     Fallback: If forum topics are not supported or creation fails, posts directly to the parent index topic.
@@ -190,7 +200,13 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
         topic = None
         if hasattr(bot_app.bot, "create_forum_topic"):
             try:
-                topic_name = f"REQ-{parent_req.id:04d} — {parent_req.parent_name} ({parent_req.location_subcity})"
+                prefix = f"REQ-{parent_req.id:04d} — "
+                subcity_part = f" ({parent_req.location_subcity})" if parent_req.location_subcity else ""
+                max_name_len = 128 - len(prefix) - len(subcity_part)
+                name_clean = parent_req.parent_name or "Parent"
+                name_part = name_clean[:max_name_len] if max_name_len > 5 else name_clean[:20]
+                topic_name = f"{prefix}{name_part}{subcity_part}"[:128]
+
                 topic = await bot_app.bot.create_forum_topic(
                     chat_id=settings.ADMIN_GROUP_ID,
                     name=topic_name
@@ -229,8 +245,7 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
             )
 
             # 2. Post Ticket Notification to the Index Topic ("📥 Parent Requests")
-            raw_id = str(settings.ADMIN_GROUP_ID)
-            clean_id = raw_id.replace("-100", "").lstrip("-")
+            clean_id = get_clean_chat_id(settings.ADMIN_GROUP_ID)
             topic_url = f"https://t.me/c/{clean_id}/{topic.message_thread_id}"
 
             index_text = format_parent_directory_badge(parent_req)

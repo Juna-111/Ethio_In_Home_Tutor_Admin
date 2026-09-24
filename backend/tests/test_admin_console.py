@@ -280,3 +280,113 @@ async def test_admin_broadcast_flow(db_session: AsyncSession, monkeypatch):
     assert mock_context.bot.send_message.called
     assert mock_context.bot.send_message.call_args.kwargs["chat_id"] == 111222
     assert admin_id not in bot_handlers.admin_states
+
+
+@pytest.mark.asyncio
+async def test_admin_cancel_command_and_text_escape():
+    """Verifies that /cancel and typing 'cancel' cleanly clears active wizard states."""
+    admin_id = 999000111
+    bot_handlers.admin_states[admin_id] = {
+        "state": "AWAITING_BROADCAST_TEXT",
+        "target": "all"
+    }
+
+    mock_msg = AsyncMock()
+    mock_update = MagicMock()
+    mock_update.message = mock_msg
+    mock_update.effective_message = mock_msg
+    mock_update.effective_user.id = admin_id
+    mock_context = MagicMock()
+
+    # 1. /cancel command
+    await bot_handlers.cancel_command(mock_update, mock_context)
+    assert admin_id not in bot_handlers.admin_states
+    assert "cancelled" in mock_msg.reply_text.call_args.args[0].lower()
+
+    # 2. Text message 'cancel'
+    bot_handlers.admin_states[admin_id] = {
+        "state": "AWAITING_CMS_INPUT",
+        "key": "about_us_text"
+    }
+    mock_msg.reset_mock()
+    mock_msg.text = "cancel"
+
+    await bot_handlers.handle_text_message(mock_update, mock_context)
+    assert admin_id not in bot_handlers.admin_states
+    assert "cancelled" in mock_msg.reply_text.call_args.args[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_cms_edit_shows_current_text_and_cancels(db_session: AsyncSession, monkeypatch):
+    """Verifies that selecting Edit in CMS displays current content first and allows keeping existing."""
+    admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+
+    db_session.add(SystemSetting(key="about_us_text", value="Original Bio Text"))
+    await db_session.commit()
+
+    # Tap Edit 'About Us'
+    mock_query = AsyncMock()
+    mock_query.data = "admin_cms_edit:about_us_text"
+    mock_query.message = AsyncMock()
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = admin_id
+    mock_context = MagicMock()
+
+    await bot_handlers.handle_callback_query(mock_update, mock_context)
+    edit_kwargs = mock_query.message.edit_text.call_args.kwargs or {}
+    text_sent = mock_query.message.edit_text.call_args.args[0] if mock_query.message.edit_text.call_args.args else edit_kwargs.get("text", "")
+    assert "Original Bio Text" in text_sent
+    assert "Keep Existing" in str(edit_kwargs.get("reply_markup", ""))
+
+    # Tap Cancel
+    mock_query.data = "admin_cms_cancel"
+    await bot_handlers.handle_callback_query(mock_update, mock_context)
+    assert admin_id not in bot_handlers.admin_states
+    assert "preserved" in mock_query.message.edit_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_admin_analytics_close():
+    """Verifies that tapping close on analytics dismisses the dashboard."""
+    admin_id = 999000111
+    mock_query = AsyncMock()
+    mock_query.data = "admin_analytics_close"
+    mock_query.message = AsyncMock()
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = admin_id
+    mock_context = MagicMock()
+
+    await bot_handlers.handle_callback_query(mock_update, mock_context)
+    assert "closed" in mock_query.message.edit_text.call_args.args[0]
+
+
+def test_config_validators_sanitization():
+    """Verifies config validators handle empty strings, trailing slashes, and type casting safely."""
+    from app.config import Settings
+
+    s = Settings(
+        ADMIN_GROUP_ID="-1001234567890",
+        SUPER_ADMIN_ID="999888777",
+        MINI_APP_URL="https://t.me/MentorLinkBot/app/",
+        WEBAPP_URL="https://example.com/web/"
+    )
+    assert s.ADMIN_GROUP_ID == -1001234567890
+    assert s.SUPER_ADMIN_ID == 999888777
+    assert s.MINI_APP_URL == "https://t.me/MentorLinkBot/app"
+    assert s.WEBAPP_URL == "https://example.com/web"
+
+    # Empty string handling
+    s_empty = Settings(
+        ADMIN_GROUP_ID="",
+        SUPER_ADMIN_ID="",
+        MINI_APP_URL="",
+        WEBAPP_URL=""
+    )
+    assert s_empty.ADMIN_GROUP_ID is None
+    assert s_empty.SUPER_ADMIN_ID is None
+    assert s_empty.MINI_APP_URL is None
+    assert s_empty.WEBAPP_URL is None

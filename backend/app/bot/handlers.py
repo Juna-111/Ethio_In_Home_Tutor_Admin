@@ -134,9 +134,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     welcome_text = (
         "👋 <b>Welcome to MentorLink!</b>\n\n"
-        "Connecting parents with verified in-home tutors and mentors across Addis Ababa.\n\n"
-        "Tap <b>🚀 Open MentorLink</b> below to find a tutor or register as a mentor, "
-        "or use the buttons below to learn more about our services."
+        "Connecting families with verified in-home tutors and university mentors across Addis Ababa.\n\n"
+        "<blockquote><b>How It Works:</b>\n"
+        "1️⃣ <b>Find a Tutor:</b> Tap <b>🚀 Open MentorLink</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
+        "2️⃣ <b>Become a Tutor:</b> Scholars & teachers can submit credentials for fast verification.\n"
+        "3️⃣ <b>Direct Help:</b> Tap <b>ℹ️ About Us</b> or <b>📞 Contact</b> for coordinator support.</blockquote>\n\n"
+        "<i>Select an option below to get started:</i>"
     )
 
     # Construct public keyboard safely
@@ -199,6 +202,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_tutor_avail_no(update, context, data)
     elif data == "admin_analytics_refresh":
         await handle_admin_refresh_stats(update, context)
+    elif data == "admin_analytics_close":
+        await handle_admin_close_stats(update, context)
     elif data.startswith("admin_bcast_target:"):
         await handle_bcast_target_select(update, context, data)
     elif data == "admin_bcast_confirm":
@@ -851,23 +856,31 @@ async def render_analytics_card() -> str:
         top_subcities = subcity_res.all()
 
     subcities_str = ", ".join(f"{sc} ({cnt})" for sc, cnt in top_subcities) if top_subcities else "No data yet"
+    ver_pct = f"{(verified_tutors / total_tutors * 100):.0f}%" if total_tutors > 0 else "0%"
+    match_pct = f"{(matched_requests / total_requests * 100):.0f}%" if total_requests > 0 else "0%"
 
     return (
         "📊 <b>PLATFORM ANALYTICS & KPIS</b>\n\n"
-        "<blockquote>"
-        f"🧑‍🏫 <b>Tutors:</b> {total_tutors} Total "
-        f"(🟢 {verified_tutors} Verified │ ⏳ {pending_tutors} Pending │ 🔴 {rejected_tutors} Rejected)\n"
-        f"📋 <b>Requests:</b> {total_requests} Total "
-        f"(🟡 {open_requests} Open │ ✅ {matched_requests} Matched)\n"
-        f"💰 <b>Avg Verified Fee:</b> {avg_fee:,.0f} ETB/hr\n"
-        f"📍 <b>Top Sub-city Demand:</b> {subcities_str}"
-        "</blockquote>"
+        "<blockquote><b>🧑‍🏫 Tutor Community:</b> <code>" + str(total_tutors) + "</code> Total\n"
+        f"├ 🟢 Verified: <code>{verified_tutors}</code> ({ver_pct})\n"
+        f"├ ⏳ Pending: <code>{pending_tutors}</code>\n"
+        f"└ 🔴 Rejected: <code>{rejected_tutors}</code>\n\n"
+        f"<b>📋 Parent Tutoring Requests:</b> <code>{total_requests}</code> Total\n"
+        f"├ 🟡 Open / Pending: <code>{open_requests}</code>\n"
+        f"└ ✅ Matched / Fulfilled: <code>{matched_requests}</code> ({match_pct})\n\n"
+        f"<b>💰 Economic Metrics:</b>\n"
+        f"└ Avg Verified Fee: <code>{avg_fee:,.0f} ETB/hr</code>\n\n"
+        f"<b>📍 High-Demand Zones:</b>\n"
+        f"└ {subcities_str}</blockquote>"
     )
 
 
 def get_analytics_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin_analytics_refresh")]
+        [
+            InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin_analytics_refresh"),
+            InlineKeyboardButton("🔙 Close", callback_data="admin_analytics_close")
+        ]
     ])
 
 
@@ -900,10 +913,28 @@ async def handle_admin_refresh_stats(update: Update, context: ContextTypes.DEFAU
             parse_mode=ParseMode.HTML,
             reply_markup=get_analytics_keyboard()
         )
-        await query.answer("Stats updated!")
+        await query.answer("Stats updated! 🔄")
+    except TelegramError as exc:
+        if "Message is not modified" in str(exc):
+            await query.answer("Stats are already up to date! 🔄")
+        else:
+            logger.debug("Error refreshing stats: %s", exc)
+            await query.answer("Stats up to date.")
     except Exception as exc:
-        logger.debug("Failed to edit stats (probably unchanged): %s", exc)
+        logger.debug("Failed to edit stats: %s", exc)
         await query.answer("Stats up to date.")
+
+
+async def handle_admin_close_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+    try:
+        await query.message.edit_text("📊 <i>Analytics dashboard closed.</i>", parse_mode=ParseMode.HTML, reply_markup=None)
+    except Exception:
+        pass
+    await query.answer("Closed.")
 
 
 def get_broadcast_targets_keyboard() -> InlineKeyboardMarkup:
@@ -1128,12 +1159,20 @@ async def handle_cms_edit_select(update: Update, context: ContextTypes.DEFAULT_T
     }
 
     label = "About Us" if setting_key == "about_us_text" else "Contact"
+
+    async with AsyncSessionLocal() as session:
+        setting = await session.get(SystemSetting, setting_key)
+        current_val = setting.value if setting and setting.value else "(Default platform copy)"
+
     await query.message.edit_text(
-        f"✏️ Send the new text for <b>{label}</b> now:\n"
-        "<i>(HTML formatting is supported)</i>",
+        f"✏️ <b>Edit Content — {label}</b>\n\n"
+        f"<b>Current Content:</b>\n"
+        f"<blockquote>{current_val}</blockquote>\n"
+        f"✍️ Please send the new text for <b>{label}</b> now:\n"
+        "<i>(HTML formatting is supported: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, links)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ Cancel", callback_data="admin_cms_cancel")]
+            [InlineKeyboardButton("↩️ Keep Existing / Cancel", callback_data="admin_cms_cancel")]
         ])
     )
     await query.answer()
@@ -1143,8 +1182,21 @@ async def handle_cms_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     admin_id = update.effective_user.id
     admin_states.pop(admin_id, None)
-    await query.message.edit_text("❌ CMS editing closed.")
+    await query.message.edit_text("↩️ CMS editing cancelled. Existing content preserved.")
     await query.answer("Cancelled.")
+
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Allows Super Admin to cancel any active broadcast wizard or CMS edit session."""
+    msg = update.message or update.effective_message
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id and user_id in admin_states:
+        admin_states.pop(user_id, None)
+        if msg:
+            await msg.reply_text("❌ Action cancelled. Returned to main menu.")
+    else:
+        if msg:
+            await msg.reply_text("ℹ️ No active action to cancel.")
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1156,16 +1208,30 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = msg.text.strip()
     user_id = update.effective_user.id if update.effective_user else None
 
+    # Cancel escape
+    if text.lower() in ("/cancel", "cancel"):
+        if user_id and user_id in admin_states:
+            admin_states.pop(user_id, None)
+            await msg.reply_text("❌ Action cancelled. Returned to main menu.")
+            return
+
     # Public Reply Keyboard buttons
     if text == "ℹ️ About Us":
+        if user_id in admin_states:
+            admin_states.pop(user_id, None)
         await handle_about_us(update, context)
         return
     elif text == "📞 Contact":
+        if user_id in admin_states:
+            admin_states.pop(user_id, None)
         await handle_support_contact(update, context)
         return
 
     # Super Admin Reply Keyboard buttons
     if is_super_admin(update):
+        if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'"):
+            admin_states.pop(user_id, None)
+
         if text == "📊 Analytics":
             await handle_admin_analytics(update, context)
             return
@@ -1192,11 +1258,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"🎯 <b>Target:</b> <code>{target}</code> ({len(recipient_ids)} recipients)\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"{text}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "<i>Confirm below to dispatch immediately:</i>"
             )
             confirm_keyboard = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🚀 Send Broadcast", callback_data="admin_bcast_confirm"),
+                    InlineKeyboardButton("🚀 Send Now", callback_data="admin_bcast_confirm"),
                     InlineKeyboardButton("✏️ Re-type", callback_data="admin_bcast_retype")
                 ],
                 [InlineKeyboardButton("❌ Cancel", callback_data="admin_bcast_cancel")]
@@ -1229,5 +1296,6 @@ def register_handlers(application: Application):
     """Registers command, callback query, and message handlers on the Telegram application."""
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
