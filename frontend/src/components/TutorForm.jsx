@@ -204,14 +204,14 @@ export default function TutorForm({ user, lang, onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-12 space-y-5">
       {globalError && (
-        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 animate-in fade-in">
+        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
           <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <span className="leading-relaxed whitespace-pre-line font-medium">{globalError}</span>
         </div>
       )}
 
       {/* 1. Basic Personal Info */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionProfile}</h2>
 
         <div>
@@ -281,7 +281,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
       </div>
 
       {/* 2. Academic Background */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionAcademic}</h2>
 
         <div>
@@ -345,7 +345,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
       </div>
 
       {/* 3. Teaching Qualifications */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionQualifications}</h2>
 
         <div>
@@ -369,7 +369,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   onClick={() => toggleSubject(subject)}
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 cursor-pointer ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white shadow-sm'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -467,7 +467,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
       </div>
 
       {/* 4. Location & Coverage */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionLocation}</h2>
 
         <div>
@@ -512,7 +512,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   onClick={() => toggleCoverage(subcity)}
                   className={`py-1.5 px-2.5 rounded-xl text-[11px] font-medium transition cursor-pointer ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -548,7 +548,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
       </div>
 
       {/* 5. Dual Document Upload (File + Portfolio URL) */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionDocuments}</h2>
 
         {/* File Upload for ID / CV */}

@@ -150,14 +150,14 @@ export default function ParentForm({ user, lang, onSuccess }) {
   return (
     <form onSubmit={handleSubmit} noValidate className="px-4 pb-12 space-y-5">
       {globalError && (
-        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 animate-in fade-in">
+        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
           <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <span className="leading-relaxed whitespace-pre-line font-medium">{globalError}</span>
         </div>
       )}
 
       {/* Parent Contact Details */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionContact}</h2>
         
         <div>
@@ -204,7 +204,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       </div>
 
       {/* Student Academic Details */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionStudent}</h2>
         
         <div>
@@ -250,7 +250,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   onClick={() => toggleSubject(subject)}
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -265,7 +265,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       </div>
 
       {/* Location */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionLocation}</h2>
         
         <div>
@@ -305,7 +305,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       </div>
 
       {/* Schedule & Budget Calculation */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-4">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionSchedule}</h2>
 
         <div>
@@ -322,7 +322,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   onClick={() => toggleDay(day)}
                   className={`py-2 rounded-xl text-xs font-semibold transition ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white shadow-sm'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -422,7 +422,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       </div>
 
       {/* Tutor Preferences */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-gray-100 space-y-3.5">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionPreferences}</h2>
 
         <div>
