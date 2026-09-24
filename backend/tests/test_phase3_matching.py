@@ -785,6 +785,7 @@ async def test_ping_candidates_and_availability_confirmation(db_session: AsyncSe
     mock_context.bot.send_message.reset_mock()
     mock_tutor_msg = AsyncMock()
     mock_query.message = mock_tutor_msg
+    mock_update.effective_user.id = tutor.telegram_user_id
     await bot_handlers.handle_tutor_avail_yes(mock_update, mock_context, f"tutor_avail_yes:{parent.id}:{tutor.id}")
 
     assert mock_tutor_msg.edit_text.called

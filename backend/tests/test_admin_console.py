@@ -202,6 +202,7 @@ async def test_admin_analytics_dashboard_and_refresh(db_session: AsyncSession, m
         student_level="Grade 9-10",
         subjects=["Maths"],
         preferred_gender="No preference",
+        preferred_experience="University Student",
         location_subcity="Bole",
         schedule_days=["Mon"],
         time_slot="4 PM",

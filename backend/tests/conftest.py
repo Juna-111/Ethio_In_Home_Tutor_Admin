@@ -51,3 +51,12 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
         yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def patch_bot_async_session(monkeypatch):
+    """Automatically patch AsyncSessionLocal across bot handlers to use the isolated test database."""
+    import app.bot.handlers as bh
+    import app.database as db
+    monkeypatch.setattr(bh, "AsyncSessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(db, "AsyncSessionLocal", TestingSessionLocal)

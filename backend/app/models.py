@@ -16,7 +16,7 @@ class ParentRequest(Base):
     student_level: Mapped[str] = mapped_column(String(100), nullable=False)
     subjects: Mapped[List[str]] = mapped_column(JSON, nullable=False)
     preferred_gender: Mapped[str] = mapped_column(String(50), nullable=False, default="No preference", index=True)
-    preferred_experience: Mapped[str] = mapped_column(String(100), nullable=False)
+    preferred_experience: Mapped[str] = mapped_column(String(100), nullable=False, default="Any")
     location_subcity: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     location_landmark: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     schedule_days: Mapped[Any] = mapped_column(JSON, nullable=False)
