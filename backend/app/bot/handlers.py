@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import html
 import logging
 from typing import Dict, List, Optional
@@ -7,6 +8,7 @@ from sqlalchemy import func, select
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputFile,
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
@@ -28,6 +30,7 @@ from app.bot.topics import get_parent_topic_id
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models import ParentRequest, SystemSetting, Tutor
+from app.services.export_service import generate_parents_csv, generate_tutors_csv
 from app.services.matcher import find_top_matches, get_tiered_matches
 
 logger = logging.getLogger("mentorlink.bot.handlers")
@@ -75,7 +78,7 @@ def get_admin_reply_keyboard() -> ReplyKeyboardMarkup:
     """Builds persistent admin control keyboard."""
     keyboard = [
         [KeyboardButton("📊 Analytics"), KeyboardButton("📢 Broadcast")],
-        [KeyboardButton("📝 Manage \"About Us\"")]
+        [KeyboardButton("📝 Manage \"About Us\""), KeyboardButton("📥 Export CSV")]
     ]
     return ReplyKeyboardMarkup(
         keyboard,
@@ -218,6 +221,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_cms_view_current(update, context, data)
     elif data == "admin_cms_cancel":
         await handle_cms_cancel(update, context)
+    elif data.startswith("export:"):
+        await handle_export_callback(update, context, data)
     elif data in ("noop", "assigned"):
         await query.answer("This action has already been processed.")
     else:
@@ -1186,6 +1191,92 @@ async def handle_cms_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer("Cancelled.")
 
 
+def get_export_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧑‍🏫 Export Tutors", callback_data="export:tutors")],
+        [InlineKeyboardButton("👨‍👩‍👦 Export Parent Requests", callback_data="export:parents")],
+        [InlineKeyboardButton("📦 Export All (Both)", callback_data="export:both")],
+        [InlineKeyboardButton("❌ Close", callback_data="export:close")]
+    ])
+
+
+async def handle_export_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Renders the Super Admin CSV Data Export menu."""
+    msg = update.message or update.effective_message
+    if not msg:
+        return
+    if not is_super_admin(update):
+        await msg.reply_text("⛔ Restricted to Super Admin.")
+        return
+
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id:
+        admin_states.pop(user_id, None)
+
+    await msg.reply_text(
+        "📥 <b>EXPORT DATA CENTER</b>\n\n"
+        "Choose the records you want to download as CSV (Excel compatible):",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_export_keyboard()
+    )
+
+
+async def handle_export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    """Processes CSV data export requests from Super Admin."""
+    query = update.callback_query
+    if not query:
+        return
+
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied. Restricted to Super Admin.", show_alert=True)
+        return
+
+    action = data.split(":", 1)[1] if ":" in data else ""
+
+    if action == "close":
+        await query.answer("Closed.")
+        try:
+            await query.message.edit_text("📥 <i>Export Data Center closed.</i>", parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+        return
+
+    await query.answer("⏳ Generating CSV export...")
+    chat_id = update.effective_chat.id if update.effective_chat else update.effective_user.id
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    async with AsyncSessionLocal() as session:
+        if action in ("tutors", "both"):
+            buffer, count = await generate_tutors_csv(session)
+            filename = f"mentors_{date_str}.csv"
+            caption = f"✅ Export generated: {count} tutor records."
+            try:
+                doc = InputFile(buffer, filename=filename)
+            except Exception:
+                doc = buffer
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=doc,
+                filename=filename,
+                caption=caption
+            )
+
+        if action in ("parents", "both"):
+            buffer, count = await generate_parents_csv(session)
+            filename = f"parent_requests_{date_str}.csv"
+            caption = f"✅ Export generated: {count} parent request records."
+            try:
+                doc = InputFile(buffer, filename=filename)
+            except Exception:
+                doc = buffer
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=doc,
+                filename=filename,
+                caption=caption
+            )
+
+
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows Super Admin to cancel any active broadcast wizard or CMS edit session."""
     msg = update.message or update.effective_message
@@ -1229,7 +1320,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Super Admin Reply Keyboard buttons
     if is_super_admin(update):
-        if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'"):
+        if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'", "📥 Export CSV"):
             admin_states.pop(user_id, None)
 
         if text == "📊 Analytics":
@@ -1240,6 +1331,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         elif text in ("📝 Manage \"About Us\"", "📝 Manage 'About Us'"):
             await handle_cms_menu(update, context)
+            return
+        elif text == "📥 Export CSV":
+            await handle_export_menu(update, context)
             return
 
     # Super Admin Interactive Wizard States

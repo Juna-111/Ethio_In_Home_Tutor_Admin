@@ -390,3 +390,209 @@ def test_config_validators_sanitization():
     assert s_empty.SUPER_ADMIN_ID is None
     assert s_empty.MINI_APP_URL is None
     assert s_empty.WEBAPP_URL is None
+
+
+@pytest.mark.asyncio
+async def test_generate_tutors_csv_content_and_encoding(db_session: AsyncSession):
+    """Verifies that generate_tutors_csv produces UTF-8-SIG encoded CSV with correct headers and data."""
+    from app.services.export_service import generate_tutors_csv
+
+    tutor = Tutor(
+        full_name="Abebe Bikila",
+        gender="Male",
+        phone_number="+251911223344",
+        university="Addis Ababa University",
+        department="Mathematics",
+        education_year="Year 4",
+        subjects_qualified=["Math", "Physics"],
+        grades_qualified=["High School 9-10", "Prep 11-12"],
+        years_of_experience=3.5,
+        expected_fee_etb=350.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole", "Yeka"],
+        availability_schedule=["Monday Afternoon", "Wednesday Morning"],
+        status="verified"
+    )
+    db_session.add(tutor)
+    await db_session.commit()
+    await db_session.refresh(tutor)
+
+    buffer, count = await generate_tutors_csv(db_session)
+    assert count >= 1
+
+    content_bytes = buffer.getvalue()
+    # Check UTF-8-SIG BOM: \xef\xbb\xbf
+    assert content_bytes.startswith(b"\xef\xbb\xbf")
+
+    text = content_bytes.decode("utf-8-sig")
+    lines = [line.strip() for line in text.strip().split("\r\n") if line.strip()]
+    header = lines[0]
+    assert "ID,Full Name,Gender,Phone Number,Telegram User ID,University,Department,Education Level / Year,Subjects,Target Grades,Base Sub-city,Coverage Areas,Expected Fee (ETB/hr),Years Experience,Status,Registered At" == header
+    assert "Abebe Bikila" in text
+    assert "Addis Ababa University" in text
+    assert "Math, Physics" in text
+    assert "verified" in text
+
+
+@pytest.mark.asyncio
+async def test_generate_parents_csv_content_and_encoding(db_session: AsyncSession):
+    """Verifies that generate_parents_csv produces UTF-8-SIG encoded CSV with correct headers and data."""
+    from app.services.export_service import generate_parents_csv
+
+    req = ParentRequest(
+        parent_name="Almaz Ayana",
+        phone_number="+251922334455",
+        student_level="High School 9-10",
+        subjects=["Chemistry", "Biology"],
+        preferred_gender="Female",
+        preferred_experience="Senior Teacher",
+        location_subcity="Kirkos",
+        location_landmark="Near Mexico Square",
+        schedule_days=["Tuesday", "Thursday"],
+        time_slot="4:30 PM - 6:30 PM",
+        session_duration="2 hrs",
+        budget_etb=400.0,
+        status="pending"
+    )
+    db_session.add(req)
+    await db_session.commit()
+    await db_session.refresh(req)
+
+    buffer, count = await generate_parents_csv(db_session)
+    assert count >= 1
+
+    content_bytes = buffer.getvalue()
+    # Check UTF-8-SIG BOM: \xef\xbb\xbf
+    assert content_bytes.startswith(b"\xef\xbb\xbf")
+
+    text = content_bytes.decode("utf-8-sig")
+    lines = [line.strip() for line in text.strip().split("\r\n") if line.strip()]
+    header = lines[0]
+    assert "ID,Parent Name,Phone Number,Telegram User ID,Location Sub-city,Landmark,Student Level / Grade,Subjects,Schedule Days,Time Slot,Session Duration,Budget (ETB/hr),Preferred Tutor Gender,Status,Assigned Tutor ID,Created At" == header
+    assert "Almaz Ayana" in text
+    assert "Kirkos" in text
+    assert "Near Mexico Square" in text
+    assert "Chemistry, Biology" in text
+
+
+def test_admin_reply_keyboard_contains_export_button():
+    """Verifies that the Super Admin persistent keyboard includes the '📥 Export CSV' button."""
+    markup = bot_handlers.get_admin_reply_keyboard()
+    all_button_texts = [btn.text for row in markup.keyboard for btn in row]
+    assert "📥 Export CSV" in all_button_texts
+
+
+@pytest.mark.asyncio
+async def test_handle_export_menu_renders_options():
+    """Verifies that tapping '📥 Export CSV' presents the inline dataset selection menu."""
+    admin_id = 999000111
+    mock_message = AsyncMock()
+    mock_update = MagicMock()
+    mock_update.message = mock_message
+    mock_update.effective_message = mock_message
+    mock_update.effective_user.id = admin_id
+    mock_context = MagicMock()
+
+    await bot_handlers.handle_export_menu(mock_update, mock_context)
+
+    assert mock_message.reply_text.called
+    kwargs = mock_message.reply_text.call_args.kwargs
+    assert "EXPORT DATA CENTER" in kwargs["text"]
+
+    markup = kwargs["reply_markup"]
+    callbacks = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert "export:tutors" in callbacks
+    assert "export:parents" in callbacks
+    assert "export:both" in callbacks
+    assert "export:close" in callbacks
+
+
+@pytest.mark.asyncio
+async def test_handle_export_callback_dispatches_documents(monkeypatch):
+    """Verifies that Super Admin triggering export callbacks sends the expected CSV documents."""
+    admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+
+    # 1. Test export:tutors
+    mock_query = AsyncMock()
+    mock_query.data = "export:tutors"
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = admin_id
+    mock_update.effective_chat.id = admin_id
+
+    mock_bot = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.bot = mock_bot
+
+    await bot_handlers.handle_export_callback(mock_update, mock_context, "export:tutors")
+
+    assert mock_bot.send_document.called
+    tutor_call_kwargs = mock_bot.send_document.call_args.kwargs
+    assert tutor_call_kwargs["chat_id"] == admin_id
+    assert "mentors_" in tutor_call_kwargs["filename"]
+    assert "tutor records" in tutor_call_kwargs["caption"]
+
+    # 2. Test export:parents
+    mock_bot.reset_mock()
+    await bot_handlers.handle_export_callback(mock_update, mock_context, "export:parents")
+
+    assert mock_bot.send_document.called
+    parent_call_kwargs = mock_bot.send_document.call_args.kwargs
+    assert parent_call_kwargs["chat_id"] == admin_id
+    assert "parent_requests_" in parent_call_kwargs["filename"]
+    assert "parent request records" in parent_call_kwargs["caption"]
+
+    # 3. Test export:both (should send both documents)
+    mock_bot.reset_mock()
+    await bot_handlers.handle_export_callback(mock_update, mock_context, "export:both")
+    assert mock_bot.send_document.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_export_callback_security_guard(monkeypatch):
+    """Verifies that non-admin users cannot trigger export callbacks."""
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", 999000111)
+
+    mock_query = AsyncMock()
+    mock_query.data = "export:tutors"
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = 111222333  # Non-admin
+
+    mock_bot = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.bot = mock_bot
+
+    await bot_handlers.handle_export_callback(mock_update, mock_context, "export:tutors")
+
+    assert not mock_bot.send_document.called
+    assert mock_query.answer.called
+    args, kwargs = mock_query.answer.call_args
+    assert "Access denied" in args[0]
+    assert kwargs.get("show_alert") is True
+
+
+@pytest.mark.asyncio
+async def test_handle_export_close(monkeypatch):
+    """Verifies that export:close edits message to closed notice without sending documents."""
+    admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+
+    mock_query = AsyncMock()
+    mock_query.data = "export:close"
+    mock_query.message = AsyncMock()
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = admin_id
+
+    mock_bot = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.bot = mock_bot
+
+    await bot_handlers.handle_export_callback(mock_update, mock_context, "export:close")
+
+    assert not mock_bot.send_document.called
+    assert mock_query.message.edit_text.called
+    assert "closed" in mock_query.message.edit_text.call_args.args[0]
+
