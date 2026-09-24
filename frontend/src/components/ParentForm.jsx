@@ -10,6 +10,7 @@ import {
 } from '../constants/options';
 import { TRANSLATIONS } from '../constants/translations';
 import { submitParentRequest } from '../services/api';
+import { normalizeEthiopianPhone } from '../utils/phone';
 
 export default function ParentForm({ user, lang, onSuccess }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
@@ -74,9 +75,10 @@ export default function ParentForm({ user, lang, onSuccess }) {
     if (!formData.parent_name.trim()) {
       newErrors.parent_name = t.validation.required;
     }
+    const normalizedPhone = normalizeEthiopianPhone(formData.phone_number);
     if (!formData.phone_number.trim()) {
       newErrors.phone_number = t.validation.required;
-    } else if (formData.phone_number.replace(/\D/g, '').length < 9) {
+    } else if (!normalizedPhone) {
       newErrors.phone_number = t.validation.phoneInvalid;
     }
     if (!formData.student_level) {
@@ -125,7 +127,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       const payload = {
         telegram_user_id: user?.id || null,
         parent_name: formData.parent_name.trim(),
-        phone_number: formData.phone_number.trim(),
+        phone_number: normalizeEthiopianPhone(formData.phone_number) || formData.phone_number.trim(),
         student_level: formData.student_level,
         subjects: formData.subjects,
         preferred_gender: formData.preferred_gender,

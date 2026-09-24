@@ -8,6 +8,7 @@ import {
 } from '../constants/options';
 import { TRANSLATIONS } from '../constants/translations';
 import { submitTutorRegistration, uploadTutorDocument } from '../services/api';
+import { normalizeEthiopianPhone } from '../utils/phone';
 
 export default function TutorForm({ user, lang, onSuccess }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
@@ -109,9 +110,10 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
     if (!formData.full_name.trim()) newErrors.full_name = tVal.required;
     if (!formData.gender) newErrors.gender = tVal.required;
+    const normalizedPhone = normalizeEthiopianPhone(formData.phone_number);
     if (!formData.phone_number.trim()) {
       newErrors.phone_number = tVal.required;
-    } else if (formData.phone_number.trim().length < 9) {
+    } else if (!normalizedPhone) {
       newErrors.phone_number = tVal.phoneInvalid;
     }
 
@@ -133,6 +135,11 @@ export default function TutorForm({ user, lang, onSuccess }) {
     if (!formData.base_subcity) newErrors.base_subcity = tVal.required;
     if (formData.coverage_areas.length === 0) newErrors.coverage_areas = tVal.atLeastOneCoverage;
     if (!formData.availability_schedule.trim()) newErrors.availability_schedule = tVal.required;
+
+    // Document requirement check
+    if (!selectedFile && !uploadedFileUrl && !formData.id_document_url.trim()) {
+      newErrors.id_document = lang === 'am' ? 'የመታወቂያ ወይም የሰነድ ማስረጃ ማያያዝ ግዴታ ነው' : 'ID or credential document is required.';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -168,17 +175,33 @@ export default function TutorForm({ user, lang, onSuccess }) {
           }
         } catch (uploadErr) {
           setFileUploadStatus('error');
-          console.warn('Document upload error, proceeding with URL if available:', uploadErr);
+          setLoading(false);
+          setGlobalError(
+            lang === 'am'
+              ? 'የሰነድ ጭነት አልተሳካም። እባክዎ እንደገና ይሞክሩ።'
+              : `Document upload failed: ${uploadErr.message || 'Please check your file and retry.'}`
+          );
+          return;
         }
       } else if (uploadedFileUrl) {
         finalDocUrl = finalDocUrl ? `${uploadedFileUrl} | ${finalDocUrl}` : uploadedFileUrl;
+      }
+
+      if (!finalDocUrl) {
+        setLoading(false);
+        setGlobalError(
+          lang === 'am'
+            ? 'የመታወቂያ ወይም የሰነድ ማስረጃ ማያያዝ ግዴታ ነው'
+            : 'ID or credential document is required.'
+        );
+        return;
       }
 
       const payload = {
         telegram_user_id: user?.id || null,
         full_name: formData.full_name.trim(),
         gender: formData.gender,
-        phone_number: formData.phone_number.trim(),
+        phone_number: normalizeEthiopianPhone(formData.phone_number) || formData.phone_number.trim(),
         university: formData.university.trim(),
         department: formData.department.trim(),
         education_year: formData.education_year,
@@ -189,7 +212,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
         base_subcity: formData.base_subcity,
         coverage_areas: formData.coverage_areas,
         availability_schedule: formData.availability_schedule.trim(),
-        id_document_url: finalDocUrl || null
+        id_document_url: finalDocUrl
       };
 
       const result = await submitTutorRegistration(payload);
