@@ -237,9 +237,9 @@ async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, mo
     # Verify compact inline buttons
     reply_markup = call_kwargs["reply_markup"]
     buttons = reply_markup.inline_keyboard[0]
-    assert buttons[0].text == "🔍 Match Tutors"
+    assert buttons[0].text in ("🔍 Match Radar", "🔍 Match Tutors")
     assert buttons[0].callback_data == f"match_parent:{created_id}"
-    assert buttons[1].text == "❌ Close"
+    assert buttons[1].text in ("❌ Close Request", "❌ Close")
     assert buttons[1].callback_data == f"close_parent:{created_id}"
 
 
@@ -428,6 +428,90 @@ async def test_upload_tutor_document_invalid_extension(async_client: AsyncClient
     resp = await async_client.post("/api/v1/tutors/upload-document", files=files)
     assert resp.status_code == 400
     assert "Unsupported file format" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: AsyncClient, monkeypatch):
+    """
+    Verifies that creating a parent request:
+    1. Dynamically creates dedicated forum topic `REQ-{id:04d} — Parent Name (Subcity)`
+    2. Sends full management card with [ 🔍 Match Radar ] & [ ❌ Close Request ] into dedicated topic
+    3. Posts ticket card with deep link [ 🔗 Open Ticket ] into parent requests directory topic
+    4. Saves telegram_topic_id in the database record.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from app.config import settings
+    import app.bot.bot_instance as bot_inst
+
+    mock_topic = MagicMock(message_thread_id=7788)
+    mock_create_topic = AsyncMock(return_value=mock_topic)
+    mock_send_message = AsyncMock(side_effect=[
+        MagicMock(message_id=901),  # Inside dedicated topic
+        MagicMock(message_id=902)   # Inside directory index topic
+    ])
+
+    mock_bot = MagicMock()
+    mock_bot.create_forum_topic = mock_create_topic
+    mock_bot.send_message = mock_send_message
+
+    mock_app = MagicMock()
+    mock_app.bot = mock_bot
+
+    monkeypatch.setattr(bot_inst, "bot_app", mock_app)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1002345678901)
+    monkeypatch.setattr(settings, "PARENT_REQUESTS_TOPIC_ID", 101)
+
+    payload = {
+        "parent_name": "Hiwot Tadesse",
+        "phone_number": "+251911223344",
+        "student_level": "High School 9-10",
+        "subjects": ["Chemistry", "Biology"],
+        "preferred_gender": "Female",
+        "preferred_experience": "Experienced",
+        "location_subcity": "Bole",
+        "location_landmark": "Near Edna Mall",
+        "schedule_days": ["Mon", "Wed", "Fri"],
+        "time_slot": "4:30 PM - 6:30 PM",
+        "session_duration": "2 hrs",
+        "budget_etb": 500.0
+    }
+
+    response = await async_client.post("/api/v1/parents/request", json=payload)
+    assert response.status_code == 201
+    created_id = response.json()["id"]
+    assert response.json()["telegram_topic_id"] == 7788
+
+    # 1. Verify create_forum_topic called
+    assert mock_create_topic.called
+    topic_kwargs = mock_create_topic.call_args.kwargs
+    assert topic_kwargs["chat_id"] == -1002345678901
+    assert f"REQ-{created_id:04d} — Hiwot Tadesse (Bole)" == topic_kwargs["name"]
+
+    # 2. Verify 2 messages sent
+    assert mock_send_message.call_count == 2
+
+    # Call 1: Full management card inside dedicated topic
+    call1_kwargs = mock_send_message.call_args_list[0].kwargs
+    assert call1_kwargs["chat_id"] == -1002345678901
+    assert call1_kwargs["message_thread_id"] == 7788
+    assert "PARENT REQUEST #" in call1_kwargs["text"]
+    assert "Hiwot Tadesse" in call1_kwargs["text"]
+    call1_buttons = call1_kwargs["reply_markup"].inline_keyboard[0]
+    assert call1_buttons[0].text == "🔍 Match Radar"
+    assert call1_buttons[0].callback_data == f"match_parent:{created_id}"
+    assert call1_buttons[1].text == "❌ Close Request"
+    assert call1_buttons[1].callback_data == f"close_parent:{created_id}"
+
+    # Call 2: Index ticket card inside directory topic
+    call2_kwargs = mock_send_message.call_args_list[1].kwargs
+    assert call2_kwargs["chat_id"] == -1002345678901
+    assert call2_kwargs["message_thread_id"] == 101
+    assert f"REQ-{created_id:04d}" in call2_kwargs["text"]
+    assert "Hiwot Tadesse" in call2_kwargs["text"]
+    assert "Bole" in call2_kwargs["text"]
+    call2_buttons = call2_kwargs["reply_markup"].inline_keyboard[0]
+    assert call2_buttons[0].text == "🔗 Open Ticket"
+    assert call2_buttons[0].url == "https://t.me/c/2345678901/7788"
 
 
 

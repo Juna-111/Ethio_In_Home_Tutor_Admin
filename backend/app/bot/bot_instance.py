@@ -144,39 +144,104 @@ def format_tutor_card(tutor, status_override: Optional[str] = None) -> str:
     )
 
 
-async def send_parent_request_card(parent_req) -> Optional[int]:
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import AsyncSessionLocal
+from app.models import ParentRequest
+
+
+async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession] = None) -> Optional[int]:
     """
-    Sends a compact formatted intake card to ADMIN_GROUP_ID with action buttons:
-    - [🔍 Match Tutors] (callback_data: match_parent:<id>)
-    - [❌ Close] (callback_data: close_parent:<id>)
-    Routes to get_parent_topic_id() if configured (Telegram Forum Supergroup).
+    Sends parent request notification cards to ADMIN_GROUP_ID:
+    1. Dynamically creates a dedicated forum topic: `REQ-{id:04d} — {parent_name} ({location_subcity})`
+    2. Sends the full management card with [ 🔍 Match Radar ] and [ ❌ Close Request ] inside the dedicated topic.
+    3. Posts an index ticket link with [ 🔗 Open Ticket ] into the Parent Requests Directory Topic.
+    Fallback: If forum topics are not supported or creation fails, posts directly to the parent index topic.
     """
     if not bot_app or not settings.ADMIN_GROUP_ID:
         logger.debug("Bot or ADMIN_GROUP_ID not configured; skipping parent notification.")
         return None
 
     try:
-        card_text = format_parent_card(parent_req)
+        topic = None
+        if hasattr(bot_app.bot, "create_forum_topic"):
+            try:
+                topic_name = f"REQ-{parent_req.id:04d} — {parent_req.parent_name} ({parent_req.location_subcity})"
+                topic = await bot_app.bot.create_forum_topic(
+                    chat_id=settings.ADMIN_GROUP_ID,
+                    name=topic_name
+                )
+                parent_req.telegram_topic_id = topic.message_thread_id
+                if db_session:
+                    await db_session.commit()
+                else:
+                    async with AsyncSessionLocal() as session:
+                        p = await session.get(ParentRequest, parent_req.id)
+                        if p:
+                            p.telegram_topic_id = topic.message_thread_id
+                            await session.commit()
+            except Exception as exc:
+                logger.warning("Could not create dedicated forum topic for REQ-%04d: %s", parent_req.id, exc)
+                topic = None
 
+        card_text = format_parent_card(parent_req)
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🔍 Match Tutors", callback_data=f"match_parent:{parent_req.id}"),
-                InlineKeyboardButton("❌ Close", callback_data=f"close_parent:{parent_req.id}")
+                InlineKeyboardButton("🔍 Match Radar", callback_data=f"match_parent:{parent_req.id}"),
+                InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{parent_req.id}")
             ]
         ])
 
-        send_kwargs = {
-            "chat_id": settings.ADMIN_GROUP_ID,
-            "text": card_text,
-            "parse_mode": ParseMode.HTML,
-            "reply_markup": keyboard
-        }
-        topic_id = get_parent_topic_id()
-        if topic_id is not None:
-            send_kwargs["message_thread_id"] = topic_id
+        parent_index_topic_id = get_parent_topic_id()
 
-        msg = await bot_app.bot.send_message(**send_kwargs)
-        return msg.message_id
+        if topic and topic.message_thread_id:
+            # 1. Post full management card inside dedicated ticket topic
+            card_msg = await bot_app.bot.send_message(
+                chat_id=settings.ADMIN_GROUP_ID,
+                text=card_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+                message_thread_id=topic.message_thread_id
+            )
+
+            # 2. Post Ticket Notification to the Index Topic ("📥 Parent Requests")
+            raw_id = str(settings.ADMIN_GROUP_ID)
+            clean_id = raw_id.replace("-100", "").lstrip("-")
+            topic_url = f"https://t.me/c/{clean_id}/{topic.message_thread_id}"
+
+            subjects_str = format_subjects(parent_req.subjects)
+            index_text = (
+                f"🆕 <b>REQ-{parent_req.id:04d}</b> — {html.escape(parent_req.student_level)} • {html.escape(parent_req.parent_name)}\n"
+                f"📍 {html.escape(parent_req.location_subcity)} | 📚 {subjects_str}"
+            )
+            index_keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Open Ticket", url=topic_url)]
+            ])
+
+            index_kwargs = {
+                "chat_id": settings.ADMIN_GROUP_ID,
+                "text": index_text,
+                "parse_mode": ParseMode.HTML,
+                "reply_markup": index_keyboard
+            }
+            if parent_index_topic_id is not None:
+                index_kwargs["message_thread_id"] = parent_index_topic_id
+
+            await bot_app.bot.send_message(**index_kwargs)
+            return card_msg.message_id
+        else:
+            # Fallback for non-forum groups or if topic creation failed
+            send_kwargs = {
+                "chat_id": settings.ADMIN_GROUP_ID,
+                "text": card_text,
+                "parse_mode": ParseMode.HTML,
+                "reply_markup": keyboard
+            }
+            if parent_index_topic_id is not None:
+                send_kwargs["message_thread_id"] = parent_index_topic_id
+
+            msg = await bot_app.bot.send_message(**send_kwargs)
+            return msg.message_id
+
     except Exception as exc:
         logger.error("Failed to forward parent request #%s to Admin Group: %s", parent_req.id, exc)
         return None

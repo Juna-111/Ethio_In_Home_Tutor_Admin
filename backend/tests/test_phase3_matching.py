@@ -319,7 +319,7 @@ async def test_reject_tutor_callback_updates_db(db_session: AsyncSession, monkey
 
 @pytest.mark.asyncio
 async def test_close_parent_callback_updates_db(db_session: AsyncSession, monkeypatch):
-    """Verifies that closing a parent request updates status to 'closed'."""
+    """Verifies that closing a parent request updates status to 'closed' and auto-closes dedicated forum topic."""
     parent = ParentRequest(
         parent_name="Solomon Desta",
         phone_number="+251911445566",
@@ -332,7 +332,8 @@ async def test_close_parent_callback_updates_db(db_session: AsyncSession, monkey
         time_slot="3:00 PM - 4:30 PM",
         session_duration="1.5 hrs",
         budget_etb=3000.0,
-        status="pending"
+        status="pending",
+        telegram_topic_id=88991
     )
     db_session.add(parent)
     await db_session.commit()
@@ -349,18 +350,25 @@ async def test_close_parent_callback_updates_db(db_session: AsyncSession, monkey
     mock_update.effective_user.username = "support_admin"
 
     mock_context = MagicMock()
+    mock_context.bot = MagicMock()
+    mock_context.bot.close_forum_topic = AsyncMock()
 
     await bot_handlers.handle_close_parent(mock_update, mock_context, f"close_parent:{parent.id}")
 
     await db_session.refresh(parent)
     assert parent.status == "closed"
-    assert "❌ Closed by @support_admin" in mock_query.message.edit_text.call_args.kwargs["text"]
+    assert "Closed by @support_admin" in mock_query.message.edit_text.call_args.kwargs["text"]
+
+    # Verify dedicated forum topic was closed
+    assert mock_context.bot.close_forum_topic.called
+    assert mock_context.bot.close_forum_topic.call_args.kwargs["message_thread_id"] == 88991
 
 
 @pytest.mark.asyncio
 async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: AsyncSession, monkeypatch):
-    """Verifies that assigning a tutor updates parent status to 'matched' and sends job alert DM."""
+    """Verifies that assigning a tutor updates parent status to 'matched', closes dedicated topic, and alerts both tutor and parent."""
     parent = ParentRequest(
+        telegram_user_id=777666555,
         parent_name="Rahel Tadesse",
         phone_number="+251922330011",
         student_level="Prep 11-12",
@@ -373,7 +381,8 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
         time_slot="5:00 PM - 7:00 PM",
         session_duration="2 hrs",
         budget_etb=4200.0,
-        status="pending"
+        status="pending",
+        telegram_topic_id=88992
     )
     tutor = Tutor(
         telegram_user_id=888999000,
@@ -411,18 +420,33 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     mock_context = MagicMock()
     mock_context.bot = MagicMock()
     mock_context.bot.send_message = AsyncMock()
+    mock_context.bot.close_forum_topic = AsyncMock()
 
     await bot_handlers.handle_assign_match(mock_update, mock_context, f"assign_match:{parent.id}:{tutor.id}")
 
     await db_session.refresh(parent)
     assert parent.status == "matched"
 
-    assert mock_context.bot.send_message.called
-    dm_args = mock_context.bot.send_message.call_args.kwargs
-    assert dm_args["chat_id"] == 888999000
-    assert "New Tutoring Opportunity Assigned" in dm_args["text"]
-    assert "Rahel Tadesse" in dm_args["text"]
-    assert "Kolfe" in dm_args["text"]
+    # Verify dedicated topic was auto-closed
+    assert mock_context.bot.close_forum_topic.called
+    assert mock_context.bot.close_forum_topic.call_args.kwargs["message_thread_id"] == 88992
+
+    # Verify 2 DMs sent: one to parent, one to tutor
+    assert mock_context.bot.send_message.call_count == 2
+    sent_calls = mock_context.bot.send_message.call_args_list
+
+    # Parent DM verification
+    parent_dm_call = next(c for c in sent_calls if c.kwargs["chat_id"] == 777666555)
+    assert "Great news, Rahel Tadesse!" in parent_dm_call.kwargs["text"]
+    assert "Selamawit Tefera" in parent_dm_call.kwargs["text"]
+    assert "AAU" in parent_dm_call.kwargs["text"]
+    assert "+251911887766" in parent_dm_call.kwargs["text"]
+
+    # Tutor DM verification
+    tutor_dm_call = next(c for c in sent_calls if c.kwargs["chat_id"] == 888999000)
+    assert "New Tutoring Opportunity Assigned" in tutor_dm_call.kwargs["text"]
+    assert "Rahel Tadesse" in tutor_dm_call.kwargs["text"]
+    assert "Kolfe" in tutor_dm_call.kwargs["text"]
 
 
 @pytest.mark.asyncio

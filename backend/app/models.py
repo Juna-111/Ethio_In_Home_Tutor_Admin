@@ -24,6 +24,7 @@ class ParentRequest(Base):
     session_duration: Mapped[str] = mapped_column(String(50), nullable=False)
     budget_etb: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
+    telegram_topic_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

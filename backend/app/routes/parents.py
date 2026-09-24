@@ -45,7 +45,7 @@ async def create_parent_request(
     await db.commit()
     await db.refresh(parent_req)
 
-    # Broadcast intake card to Telegram Admin Group
-    await send_parent_request_card(parent_req)
+    # Broadcast intake card to Telegram Admin Group (creates dedicated ticket topic and index directory card)
+    await send_parent_request_card(parent_req, db_session=db)
 
     return parent_req

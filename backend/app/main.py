@@ -19,6 +19,14 @@ async def lifespan(app: FastAPI):
     # Auto-provision database schema on startup (works seamlessly on Render, Neon, etc.)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE parent_requests ADD COLUMN IF NOT EXISTS telegram_topic_id BIGINT;"))
+        except Exception:
+            try:
+                await conn.execute(text("ALTER TABLE parent_requests ADD COLUMN telegram_topic_id BIGINT;"))
+            except Exception:
+                pass
     
     # Initialize Telegram Bot Application & background listeners
     await init_bot_app()

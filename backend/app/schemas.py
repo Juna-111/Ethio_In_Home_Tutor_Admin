@@ -64,6 +64,7 @@ class ParentRequestCreate(BaseModel):
 class ParentRequestResponse(ParentRequestCreate):
     id: int
     status: str
+    telegram_topic_id: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

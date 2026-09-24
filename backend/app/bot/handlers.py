@@ -207,6 +207,16 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
         parent_req.status = "closed"
         await session.commit()
 
+    # Dedicated topic auto-closing on completion
+    if parent_req.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
+        try:
+            await context.bot.close_forum_topic(
+                chat_id=settings.ADMIN_GROUP_ID,
+                message_thread_id=parent_req.telegram_topic_id
+            )
+        except Exception as exc:
+            logger.warning("Could not close forum topic %s for Request #%s: %s", parent_req.telegram_topic_id, parent_id, exc)
+
     await query.answer(f"Request #{parent_id} closed.")
 
     # In-place full card update preserving complete HTML formatting
@@ -480,7 +490,7 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
                 "parse_mode": ParseMode.HTML,
                 "reply_markup": confirm_btn
             }
-            topic_id = get_parent_topic_id()
+            topic_id = parent.telegram_topic_id or get_parent_topic_id()
             if topic_id is not None:
                 send_kwargs["message_thread_id"] = topic_id
 
@@ -533,6 +543,16 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         await session.commit()
         await session.refresh(parent)
 
+    # Dedicated topic auto-closing on completion
+    if parent.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
+        try:
+            await context.bot.close_forum_topic(
+                chat_id=settings.ADMIN_GROUP_ID,
+                message_thread_id=parent.telegram_topic_id
+            )
+        except Exception as exc:
+            logger.warning("Could not close forum topic %s for Request #%s: %s", parent.telegram_topic_id, parent.id, exc)
+
     await query.answer(f"Assigned {tutor.full_name} to Request #{parent_id}!")
 
     # Lock button on match card and post thread confirmation
@@ -549,13 +569,33 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
                 "parse_mode": ParseMode.HTML,
                 "reply_to_message_id": query.message.message_id
             }
-            thread_id = getattr(query.message, "message_thread_id", None)
+            thread_id = getattr(query.message, "message_thread_id", None) or parent.telegram_topic_id
             if thread_id:
                 assign_reply_kwargs["message_thread_id"] = thread_id
 
             await query.message.reply_text(**assign_reply_kwargs)
         except Exception as exc:
             logger.error("Error updating match assignment message: %s", exc)
+
+    # Direct Notification to Parent upon Assignment
+    if parent.telegram_user_id:
+        try:
+            parent_dm = (
+                f"🎉 <b>Great news, {html.escape(parent.parent_name)}!</b>\n\n"
+                f"A verified mentor has been assigned to your tutoring request:\n"
+                f"🧑‍🏫 <b>Mentor:</b> {html.escape(tutor.full_name)} ({html.escape(tutor.gender)})\n"
+                f"🏛 <b>Background:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)}\n"
+                f"⭐ <b>Experience:</b> {tutor.years_of_experience:g} years\n"
+                f"📞 <b>Phone:</b> {html.escape(tutor.phone_number)}\n\n"
+                f"Our team or your mentor will contact you shortly to confirm your first trial session. Thank you for choosing MentorLink! 🌟"
+            )
+            await context.bot.send_message(
+                chat_id=parent.telegram_user_id,
+                text=parent_dm,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as exc:
+            logger.warning("Could not send assignment DM to parent %s (tg_id: %s): %s", parent.parent_name, parent.telegram_user_id, exc)
 
     # DM tutor with job details
     if tutor.telegram_user_id:
