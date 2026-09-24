@@ -20,43 +20,108 @@ def _normalize_list(items: Any) -> List[str]:
     return []
 
 
+GRADE_STAGE_MAP = {
+    # Primary Lower (Grades 1-4)
+    "grade 1": {"primary_lower"},
+    "grade 2": {"primary_lower"},
+    "grade 3": {"primary_lower"},
+    "grade 4": {"primary_lower"},
+    "primary 1-4": {"primary_lower"},
+    "primary (1-4)": {"primary_lower"},
+    "1-4": {"primary_lower"},
+    "primary 1": {"primary_lower"},
+    "primary 2": {"primary_lower"},
+    "primary 3": {"primary_lower"},
+    "primary 4": {"primary_lower"},
+
+    # Primary Upper (Grades 5-8)
+    "grade 5": {"primary_upper"},
+    "grade 6": {"primary_upper"},
+    "grade 7": {"primary_upper"},
+    "grade 8": {"primary_upper"},
+    "primary 5-8": {"primary_upper"},
+    "primary (5-8)": {"primary_upper"},
+    "5-8": {"primary_upper"},
+    "middle school": {"primary_upper"},
+    "primary 5": {"primary_upper"},
+    "primary 6": {"primary_upper"},
+    "primary 7": {"primary_upper"},
+    "primary 8": {"primary_upper"},
+
+    # High School (Grades 9-10)
+    "grade 9": {"high_school"},
+    "grade 10": {"high_school"},
+    "high school 9-10": {"high_school"},
+    "high school (9-10)": {"high_school"},
+    "9-10": {"high_school"},
+    "high school": {"high_school"},
+    "secondary school": {"high_school"},
+
+    # Preparatory (Grades 11-12)
+    "grade 11": {"prep"},
+    "grade 12": {"prep"},
+    "prep 11-12": {"prep"},
+    "prep (11-12)": {"prep"},
+    "11-12": {"prep"},
+    "prep": {"prep"},
+    "preparatory": {"prep"},
+    "preparatory (11-12)": {"prep"},
+
+    # Higher Education
+    "freshman": {"higher_ed"},
+    "remediation": {"higher_ed"},
+    "college": {"higher_ed"},
+    "university": {"higher_ed"},
+    "higher education": {"higher_ed"},
+}
+
+
+def _get_canonical_stages(val: str) -> set:
+    import re
+    if not val:
+        return set()
+    v = val.strip().lower()
+
+    if v in GRADE_STAGE_MAP:
+        return set(GRADE_STAGE_MAP[v])
+
+    stages = set()
+    if any(k in v for k in ["freshman", "remediation", "university", "college"]):
+        stages.add("higher_ed")
+    if re.search(r"\b(11|12|prep|preparatory)\b", v):
+        stages.add("prep")
+    if re.search(r"\b(9|10|high\s*school)\b", v):
+        stages.add("high_school")
+    if re.search(r"\b(5|6|7|8)\b", v) or "primary 5-8" in v or "primary (5-8)" in v or "5-8" in v:
+        stages.add("primary_upper")
+    if re.search(r"\b(1|2|3|4)\b", v) or "primary 1-4" in v or "primary (1-4)" in v or "1-4" in v:
+        stages.add("primary_lower")
+
+    return stages
+
+
 def _are_grades_compatible(parent_level_norm: str, tutor_grades_norm: List[str]) -> bool:
     """
     Checks if a tutor is qualified for a parent's student level,
-    either through direct string match, substring match, or shared educational tier.
+    either through exact match or shared educational stage.
+    Never uses raw substring matching to avoid Grade 1 matching Grade 10-12.
     """
     if not parent_level_norm:
         return True
 
-    # 1. Direct exact or substring match
+    # 1. Direct exact match
     if parent_level_norm in tutor_grades_norm:
         return True
-    for tg in tutor_grades_norm:
-        if tg in parent_level_norm or parent_level_norm in tg:
-            return True
 
-    # 2. Educational tier categorization
-    def get_stages(val: str) -> set:
-        s = set()
-        if any(k in val for k in ["1-4", "grade 1", "grade 2", "grade 3", "grade 4", "primary 1"]):
-            s.add("primary_lower")
-        if any(k in val for k in ["5-8", "grade 5", "grade 6", "grade 7", "grade 8", "primary 5"]):
-            s.add("primary_upper")
-        if any(k in val for k in ["9-10", "grade 9", "grade 10", "high school"]):
-            s.add("high_school")
-        if any(k in val for k in ["11-12", "grade 11", "grade 12", "prep", "preparatory"]):
-            s.add("prep")
-        if any(k in val for k in ["freshman", "remediation", "university", "college"]):
-            s.add("higher_ed")
-        return s
-
-    parent_stages = get_stages(parent_level_norm)
+    parent_stages = _get_canonical_stages(parent_level_norm)
     if not parent_stages:
         return False
 
     tutor_stages = set()
     for tg in tutor_grades_norm:
-        tutor_stages.update(get_stages(tg))
+        if tg == parent_level_norm:
+            return True
+        tutor_stages.update(_get_canonical_stages(tg))
 
     return bool(parent_stages & tutor_stages)
 
@@ -154,9 +219,9 @@ async def get_tiered_matches(
             continue
 
         # Check Tier 3: Flexible Alternatives
-        # Subject matches, but differs on gender OR exceeds budget up to +35%
+        # Must have location overlap (base or coverage), but differs on gender OR exceeds budget up to +35%
         max_budget_tier3 = budget * 1.35 if budget > 0.0 else fee
-        if (is_base_subcity or is_in_coverage or len(tutor_coverage) > 0) and (fee <= max_budget_tier3):
+        if (is_base_subcity or is_in_coverage) and (fee <= max_budget_tier3):
             notes = []
             if not gender_matches:
                 notes.append("Gender flex")
@@ -192,13 +257,19 @@ async def find_top_matches(
 ) -> Tuple[Optional[ParentRequest], List[Dict[str, Any]]]:
     """
     Backward-compatible wrapper: returns a flattened list of the top 3 matches
-    derived from tiered matching.
+    derived from tiered matching. Strictly respects preferred_gender when specified.
     """
     parent, tiered = await get_tiered_matches(parent_request_id, session)
     if not parent:
         return None, []
 
     combined = tiered["tier1"] + tiered["tier2"] + tiered["tier3"]
+
+    # In strict mode (find_top_matches), enforce gender preference if parent requested one
+    parent_pref_gender = _normalize_str(parent.preferred_gender)
+    if parent_pref_gender and parent_pref_gender not in ("no preference", "none"):
+        combined = [c for c in combined if _normalize_str(c["tutor"].gender) == parent_pref_gender]
+
     # Re-sort combined by match_score DESC, exp DESC, fee ASC for backward compatibility
     combined.sort(key=lambda c: (-c.get("match_score", 0), -c["years_of_experience"], c["expected_fee_etb"]))
     return parent, combined[:3]
