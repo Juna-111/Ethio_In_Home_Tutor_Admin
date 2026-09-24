@@ -2,9 +2,11 @@ import asyncio
 from datetime import datetime
 import html
 import logging
-from typing import Dict, List, Optional
+import time
+from typing import Dict, List, Optional, Tuple
+import xml.etree.ElementTree as ET
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update as sql_update
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -15,7 +17,7 @@ from telegram import (
     WebAppInfo,
 )
 from telegram.constants import ParseMode
-from telegram.error import TelegramError
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -29,14 +31,15 @@ from app.bot.bot_instance import format_parent_card, format_tutor_card
 from app.bot.topics import get_parent_topic_id
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.models import ParentRequest, SystemSetting, Tutor
+from app.models import AdminWizardState, MatchInvite, ParentRequest, SystemSetting, Tutor
 from app.services.export_service import generate_parents_csv, generate_tutors_csv
 from app.services.matcher import find_top_matches, get_tiered_matches
 
 logger = logging.getLogger("mentorlink.bot.handlers")
 
-# In-memory admin session state (e.g. broadcast wizard, CMS edit)
+# In-memory session cache & TTL cache for admin status
 admin_states: Dict[int, dict] = {}
+_admin_cache: Dict[int, Tuple[bool, float]] = {}
 
 
 def is_super_admin(update: Update) -> bool:
@@ -46,6 +49,105 @@ def is_super_admin(update: Update) -> bool:
     return update.effective_user.id == settings.SUPER_ADMIN_ID
 
 
+async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Checks if user has admin privileges:
+    1. Super Admin (SUPER_ADMIN_ID)
+    2. Configured ADMIN_IDS
+    3. Telegram group chat admin in ADMIN_GROUP_ID (cached for 300s)
+    """
+    if is_super_admin(update):
+        return True
+
+    user = update.effective_user
+    if not user:
+        return False
+
+    if settings.ADMIN_IDS and user.id in settings.ADMIN_IDS:
+        return True
+
+    if not settings.ADMIN_GROUP_ID or not context or not context.bot:
+        return False
+
+    now = time.time()
+    if user.id in _admin_cache:
+        cached_result, expiry = _admin_cache[user.id]
+        if now < expiry:
+            return cached_result
+
+    try:
+        member = await context.bot.get_chat_member(
+            chat_id=settings.ADMIN_GROUP_ID,
+            user_id=user.id
+        )
+        has_perm = member.status in ("creator", "administrator")
+        _admin_cache[user.id] = (has_perm, now + 300.0)
+        return has_perm
+    except Exception as exc:
+        logger.debug("get_chat_member admin check failed for user %s: %s", user.id, exc)
+        return False
+
+
+def is_valid_telegram_html(text: str) -> bool:
+    """Validates that text contains well-formed HTML tags that Telegram can safely parse."""
+    try:
+        ET.fromstring(f"<root>{text}</root>")
+        return True
+    except ET.ParseError:
+        return False
+
+
+async def get_admin_state(user_id: int) -> Optional[dict]:
+    """Retrieves admin wizard state from in-memory cache or DB."""
+    if user_id in admin_states:
+        return admin_states[user_id]
+
+    try:
+        async with AsyncSessionLocal() as session:
+            record = await session.get(AdminWizardState, user_id)
+            if record:
+                state_dict = {"state": record.state, **(record.payload or {})}
+                admin_states[user_id] = state_dict
+                return state_dict
+    except Exception as exc:
+        logger.debug("Could not read admin state from DB: %s", exc)
+
+    return None
+
+
+async def set_admin_state(user_id: int, state: str, payload: Optional[dict] = None) -> None:
+    """Persists admin wizard state in both memory and database."""
+    state_dict = {"state": state, **(payload or {})}
+    admin_states[user_id] = state_dict
+
+    try:
+        async with AsyncSessionLocal() as session:
+            record = await session.get(AdminWizardState, user_id)
+            if not record:
+                record = AdminWizardState(admin_id=user_id, state=state, payload=payload or {})
+                session.add(record)
+            else:
+                record.state = state
+                record.payload = payload or {}
+            await session.commit()
+    except Exception as exc:
+        logger.debug("Could not persist admin state to DB: %s", exc)
+
+
+async def clear_admin_state(user_id: int) -> None:
+    """Clears admin wizard state from both memory and database."""
+    admin_states.pop(user_id, None)
+
+    try:
+        async with AsyncSessionLocal() as session:
+            record = await session.get(AdminWizardState, user_id)
+            if record:
+                await session.delete(record)
+                await session.commit()
+    except Exception as exc:
+        logger.debug("Could not delete admin state from DB: %s", exc)
+
+
 def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
     """Constructs public reply keyboard safely with WebApp button and customer options."""
     keyboard = []
@@ -53,11 +155,11 @@ def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
     # Row 1: Only attach WebApp button if MINI_APP_URL is valid HTTPS
     if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://"):
         keyboard.append([
-            KeyboardButton("Register", web_app=WebAppInfo(url=settings.MINI_APP_URL))
+            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.MINI_APP_URL))
         ])
     elif settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
         keyboard.append([
-            KeyboardButton("Register", web_app=WebAppInfo(url=settings.WEBAPP_URL))
+            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.WEBAPP_URL))
         ])
 
     # Row 2: Customer buttons (ALWAYS present)
@@ -139,37 +241,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 <b>Welcome to MentorLink!</b>\n\n"
         "Connecting families with verified in-home tutors and university mentors across Addis Ababa.\n\n"
         "<blockquote><b>How It Works:</b>\n"
-        "1️⃣ <b>Find a Tutor:</b> Tap <b>Register</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
+        "1️⃣ <b>Find a Tutor:</b> Tap <b>🚀 Open MentorLink</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
         "2️⃣ <b>Become a Tutor:</b> Scholars & teachers can submit credentials for fast verification.\n"
         "3️⃣ <b>Direct Help:</b> Tap <b>ℹ️ About Us</b> or <b>📞 Contact</b> for coordinator support.</blockquote>\n\n"
         "<i>Select an option below to get started:</i>"
     )
 
-    # Construct public keyboard safely
-    keyboard = []
-
-    # Row 1: Only attach WebApp button if MINI_APP_URL is valid HTTPS
-    if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://"):
-        keyboard.append([
-            KeyboardButton("Register", web_app=WebAppInfo(url=settings.MINI_APP_URL))
-        ])
-    elif settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
-        keyboard.append([
-            KeyboardButton("Register", web_app=WebAppInfo(url=settings.WEBAPP_URL))
-        ])
-
-    # Row 2: Customer buttons (ALWAYS present)
-    keyboard.append([
-        KeyboardButton("ℹ️ About Us"),
-        KeyboardButton("📞 Contact")
-    ])
-
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True,
-        is_persistent=True,
-        one_time_keyboard=False
-    )
+    reply_markup = get_public_reply_keyboard()
 
     await message.reply_text(
         text=welcome_text,
@@ -186,6 +264,20 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     data = query.data
     logger.info("Received callback: %s from user %s", data, update.effective_user.id if update.effective_user else "unknown")
+
+    # Admin actions authorization guard (S-01)
+    admin_action_prefixes = (
+        "approve_tutor:",
+        "reject_tutor:",
+        "match_parent:",
+        "close_parent:",
+        "assign_match:",
+        "ping_candidates:",
+    )
+    if data.startswith(admin_action_prefixes):
+        if not await is_admin(update, context):
+            await query.answer("⛔ Access denied. Admin privileges required.", show_alert=True)
+            return
 
     if data.startswith("approve_tutor:"):
         await handle_approve_tutor(update, context, data)
@@ -230,7 +322,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Approves tutor, updates DB, edits top line in-place, and DMs tutor."""
+    """Approves tutor with atomic status update, edits card in-place, and DMs tutor."""
     query = update.callback_query
     tutor_id_str = data.split(":", 1)[1]
     admin_name = _get_admin_name(update)
@@ -247,7 +339,19 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.answer(f"Tutor #{tutor_id} not found.", show_alert=True)
             return
 
-        tutor.status = "verified"
+        if tutor.status != "pending":
+            await query.answer(f"⚠️ Tutor #{tutor_id} is already {tutor.status}.", show_alert=True)
+            return
+
+        stmt = (
+            sql_update(Tutor)
+            .where(Tutor.id == tutor_id, Tutor.status == "pending")
+            .values(status="verified")
+        )
+        res = await session.execute(stmt)
+        if res.rowcount == 0:
+            await query.answer("⚠️ This tutor has already been processed.", show_alert=True)
+            return
         await session.commit()
         await session.refresh(tutor)
 
@@ -270,17 +374,17 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
     if tutor.telegram_user_id:
         try:
             dm_text = (
-                f"🎉 Congratulations, {tutor.full_name}!\n\n"
+                f"🎉 Congratulations, {html.escape(tutor.full_name)}!\n\n"
                 "Your MentorLink tutor profile has been approved. "
                 "You will now receive student match alerts."
             )
-            await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text)
+            await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text, parse_mode=ParseMode.HTML)
         except Exception as exc:
             logger.warning("Could not send approval DM to tutor %s (tg_id: %s): %s", tutor.full_name, tutor.telegram_user_id, exc)
 
 
 async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Rejects tutor, updates DB, edits top line in-place, and DMs tutor."""
+    """Rejects tutor with atomic status update, edits card in-place, and DMs tutor."""
     query = update.callback_query
     tutor_id_str = data.split(":", 1)[1]
     admin_name = _get_admin_name(update)
@@ -297,7 +401,19 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer(f"Tutor #{tutor_id} not found.", show_alert=True)
             return
 
-        tutor.status = "rejected"
+        if tutor.status != "pending":
+            await query.answer(f"⚠️ Tutor #{tutor_id} is already {tutor.status}.", show_alert=True)
+            return
+
+        stmt = (
+            sql_update(Tutor)
+            .where(Tutor.id == tutor_id, Tutor.status == "pending")
+            .values(status="rejected")
+        )
+        res = await session.execute(stmt)
+        if res.rowcount == 0:
+            await query.answer("⚠️ This tutor has already been processed.", show_alert=True)
+            return
         await session.commit()
         await session.refresh(tutor)
 
@@ -320,17 +436,17 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
     if tutor.telegram_user_id:
         try:
             dm_text = (
-                f"Hello {tutor.full_name},\n\n"
+                f"Hello {html.escape(tutor.full_name)},\n\n"
                 "Thank you for your interest in MentorLink. After review, we are unable to approve "
                 "your tutor profile at this time. If you have any questions, please contact our support team."
             )
-            await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text)
+            await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text, parse_mode=ParseMode.HTML)
         except Exception as exc:
             logger.warning("Could not send rejection DM to tutor %s: %s", tutor.full_name, exc)
 
 
 async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Closes parent request, updates DB, and edits top line in-place."""
+    """Closes parent request with atomic status update, edits card in-place, and then closes forum topic."""
     query = update.callback_query
     parent_id_str = data.split(":", 1)[1]
     admin_name = _get_admin_name(update)
@@ -347,18 +463,21 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer(f"Request #{parent_id} not found.", show_alert=True)
             return
 
-        parent_req.status = "closed"
-        await session.commit()
+        if parent_req.status != "pending":
+            await query.answer(f"⚠️ Request #{parent_id} is already {parent_req.status}.", show_alert=True)
+            return
 
-    # Dedicated topic auto-closing on completion
-    if parent_req.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
-        try:
-            await context.bot.close_forum_topic(
-                chat_id=settings.ADMIN_GROUP_ID,
-                message_thread_id=parent_req.telegram_topic_id
-            )
-        except Exception as exc:
-            logger.warning("Could not close forum topic %s for Request #%s: %s", parent_req.telegram_topic_id, parent_id, exc)
+        stmt = (
+            sql_update(ParentRequest)
+            .where(ParentRequest.id == parent_id, ParentRequest.status == "pending")
+            .values(status="closed")
+        )
+        res = await session.execute(stmt)
+        if res.rowcount == 0:
+            await query.answer("⚠️ This request has already been closed or matched.", show_alert=True)
+            return
+        await session.commit()
+        await session.refresh(parent_req)
 
     await query.answer(f"Request #{parent_id} closed.")
 
@@ -373,6 +492,16 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         except Exception as exc:
             logger.error("Failed to edit parent card for #%s: %s", parent_id, exc)
+
+    # Dedicated topic auto-closing ONLY AFTER card update is committed and posted
+    if parent_req.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
+        try:
+            await context.bot.close_forum_topic(
+                chat_id=settings.ADMIN_GROUP_ID,
+                message_thread_id=parent_req.telegram_topic_id
+            )
+        except Exception as exc:
+            logger.warning("Could not close forum topic %s for Request #%s: %s", parent_req.telegram_topic_id, parent_id, exc)
 
 
 async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -397,6 +526,10 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer(f"Parent Request #{parent_id} not found.", show_alert=True)
         return
 
+    if parent.status != "pending":
+        await query.answer(f"⚠️ Request #{parent_id} is already {parent.status}.", show_alert=True)
+        return
+
     total_matches = len(tiered["tier1"]) + len(tiered["tier2"]) + len(tiered["tier3"])
 
     # Zero-regression anti-spam: Popup alert for 0 matches
@@ -409,7 +542,7 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer("🎯 Match Radar populated!")
 
-    # Format Tiered Match Radar
+    # Format Tiered Match Radar (capped at 5 per tier to stay within Telegram message limits)
     subjects_str = _format_subjects(parent.subjects)
     lines = [
         f"🎯 <b>MATCH RADAR FOR REQUEST #{parent_id}</b>",
@@ -419,10 +552,11 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     all_matched_tutors = []
 
-    # Tier 1: Perfect Fit
-    if tiered["tier1"]:
+    # Tier 1: Perfect Fit (cap 5)
+    t1_matches = tiered["tier1"][:5]
+    if t1_matches:
         lines.append("\n🟢 <b>PERFECT FIT</b>")
-        for match in tiered["tier1"]:
+        for match in t1_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             matched_subs = ", ".join(match.get("matched_subjects", []))
@@ -431,10 +565,11 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"  📍 Base: {html.escape(t.base_subcity)} | 📚 {html.escape(matched_subs)}"
             )
 
-    # Tier 2: Commute / Proximity
-    if tiered["tier2"]:
+    # Tier 2: Commute / Proximity (cap 5)
+    t2_matches = tiered["tier2"][:5]
+    if t2_matches:
         lines.append("\n🟡 <b>COMMUTE / PROXIMITY</b>")
-        for match in tiered["tier2"]:
+        for match in t2_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             cov_str = _format_subjects(t.coverage_areas)
@@ -443,15 +578,16 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"  📍 Covers: {cov_str}"
             )
 
-    # Tier 3: Flexible Alternatives
-    if tiered["tier3"]:
+    # Tier 3: Flexible Alternatives (cap 5)
+    t3_matches = tiered["tier3"][:5]
+    if t3_matches:
         lines.append("\n⚪ <b>FLEX ALTERNATIVES</b>")
-        for match in tiered["tier3"]:
+        for match in t3_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             note = match.get("flex_note", "Flex match")
             lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> — {t.expected_fee_etb:,.0f} ETB/hr ({note})"
+                f"• <b>{html.escape(t.full_name)}</b> — {t.expected_fee_etb:,.0f} ETB/hr ({html.escape(note)})"
             )
 
     # Build Action Controls (Inline Keyboard)
@@ -478,9 +614,13 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     keyboard = InlineKeyboardMarkup(keyboard_rows)
 
+    full_text = "\n".join(lines).strip()
+    if len(full_text) > 4000:
+        full_text = full_text[:3950] + "\n\n<i>... [radar truncated for length]</i>"
+
     if query.message:
         reply_kwargs = {
-            "text": "\n".join(lines).strip(),
+            "text": full_text,
             "parse_mode": ParseMode.HTML,
             "reply_markup": keyboard,
             "reply_to_message_id": query.message.message_id
@@ -495,7 +635,7 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
     """
     Broadcasts availability check DM to top matched verified tutors with interactive buttons.
-    Deduplicates the button in-place to avoid race conditions and double sends.
+    Persists MatchInvite records and avoids locking buttons eagerly if 0 tutors are sent.
     """
     query = update.callback_query
     parent_id_str = data.split(":", 1)[1]
@@ -506,34 +646,33 @@ async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Invalid Request ID.")
         return
 
-    # In-place button deduplication
-    if query.message and query.message.reply_markup:
-        new_keyboard = []
-        for row in query.message.reply_markup.inline_keyboard:
-            new_row = []
-            for btn in row:
-                if btn.callback_data and btn.callback_data.startswith("ping_candidates:"):
-                    new_row.append(InlineKeyboardButton("⏳ Ping Sent to Top Candidates", callback_data="noop"))
-                else:
-                    new_row.append(btn)
-            new_keyboard.append(new_row)
-        try:
-            await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
-        except Exception as exc:
-            logger.debug("Failed to update ping button in-place: %s", exc)
-
     async with AsyncSessionLocal() as session:
         parent, tiered = await get_tiered_matches(parent_id, session)
+        if not parent:
+            await query.answer(f"Parent request #{parent_id} not found.", show_alert=True)
+            return
 
-    if not parent:
-        await query.answer(f"Parent request #{parent_id} not found.", show_alert=True)
-        return
+        if parent.status != "pending":
+            await query.answer(f"⚠️ Request #{parent_id} is already {parent.status}.", show_alert=True)
+            return
+
+        # Query existing invites for this request
+        inv_stmt = select(MatchInvite.tutor_id).where(MatchInvite.request_id == parent_id)
+        inv_res = await session.execute(inv_stmt)
+        already_invited = set(inv_res.scalars().all())
 
     all_matched = tiered["tier1"] + tiered["tier2"] + tiered["tier3"]
-    tutors_with_tg = [c["tutor"] for c in all_matched if c["tutor"].telegram_user_id][:5]
+    # Filter candidates with TG IDs who haven't already received an invite
+    tutors_to_ping = [
+        c["tutor"] for c in all_matched
+        if c["tutor"].telegram_user_id and c["tutor"].id not in already_invited
+    ][:5]
 
-    if not tutors_with_tg:
-        await query.answer("None of the matched tutors have registered Telegram user IDs.", show_alert=True)
+    if not tutors_to_ping:
+        if already_invited:
+            await query.answer("⚠️ All top candidates have already been pinged for this request.", show_alert=True)
+        else:
+            await query.answer("⚠️ None of the matched tutors have registered Telegram user IDs.", show_alert=True)
         return
 
     landmark = f" ({html.escape(parent.location_landmark)})" if parent.location_landmark else ""
@@ -550,7 +689,8 @@ async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     sent_count = 0
-    for tutor in tutors_with_tg:
+    newly_invited_ids = []
+    for tutor in tutors_to_ping:
         try:
             tutor_keyboard = InlineKeyboardMarkup([
                 [
@@ -565,14 +705,40 @@ async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_T
                 reply_markup=tutor_keyboard
             )
             sent_count += 1
+            newly_invited_ids.append(tutor.id)
         except Exception as exc:
             logger.warning("Failed to send ping DM to tutor %s (tg_id: %s): %s", tutor.full_name, tutor.telegram_user_id, exc)
 
-    await query.answer(f"📡 Availability ping dispatched to {sent_count} candidate(s)!")
+    if sent_count > 0:
+        # Record invites in DB
+        async with AsyncSessionLocal() as session:
+            for tid in newly_invited_ids:
+                session.add(MatchInvite(request_id=parent_id, tutor_id=tid, status="sent"))
+            await session.commit()
+
+        # Update button in-place now that invites were genuinely sent
+        if query.message and query.message.reply_markup:
+            new_keyboard = []
+            for row in query.message.reply_markup.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data and btn.callback_data.startswith("ping_candidates:"):
+                        new_row.append(InlineKeyboardButton(f"⏳ Ping Sent ({sent_count})", callback_data="noop"))
+                    else:
+                        new_row.append(btn)
+                new_keyboard.append(new_row)
+            try:
+                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
+            except Exception as exc:
+                logger.debug("Failed to update ping button in-place: %s", exc)
+
+        await query.answer(f"📡 Availability ping dispatched to {sent_count} candidate(s)!")
+    else:
+        await query.answer("⚠️ Could not deliver pings to candidates (they may have blocked the bot).", show_alert=True)
 
 
 async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Handles tutor confirming availability, updates tutor DM, and alerts Admin Group."""
+    """Handles tutor confirming availability, enforces user verification and single response, and alerts Admin Group."""
     query = update.callback_query
     parts = data.split(":")
     if len(parts) != 3:
@@ -587,13 +753,55 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Invalid IDs.")
         return
 
+    user = update.effective_user
+    if not user:
+        return
+
     async with AsyncSessionLocal() as session:
         parent = await session.get(ParentRequest, parent_id)
         tutor = await session.get(Tutor, tutor_id)
 
-    if not parent or not tutor:
-        await query.answer("Record not found.", show_alert=True)
-        return
+        if not parent or not tutor:
+            await query.answer("Record not found.", show_alert=True)
+            return
+
+        # Impersonation guard (S-02)
+        if tutor.telegram_user_id != user.id:
+            await query.answer("⛔ Unauthorized: This opportunity was sent to another tutor.", show_alert=True)
+            return
+
+        # Check if parent request is still open
+        if parent.status != "pending":
+            await query.answer("⚠️ This tutoring opportunity has already been filled or closed.", show_alert=True)
+            if query.message:
+                try:
+                    await query.message.edit_text(
+                        text=f"ℹ️ <b>Request #{parent_id} has already been filled or closed.</b>\n\nThank you for checking in!",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=None
+                    )
+                except Exception:
+                    pass
+            return
+
+        # Check & record MatchInvite response (B-09)
+        invite_stmt = select(MatchInvite).where(
+            MatchInvite.request_id == parent_id,
+            MatchInvite.tutor_id == tutor_id
+        )
+        invite = (await session.execute(invite_stmt)).scalar_one_or_none()
+        if invite and invite.status in ("yes", "no"):
+            await query.answer("You have already responded to this opportunity.", show_alert=True)
+            return
+
+        if not invite:
+            invite = MatchInvite(request_id=parent_id, tutor_id=tutor_id, status="yes", responded_at=datetime.utcnow())
+            session.add(invite)
+        else:
+            invite.status = "yes"
+            invite.responded_at = datetime.utcnow()
+
+        await session.commit()
 
     # In tutor DM: edit message to show confirmation
     if query.message:
@@ -643,8 +851,48 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Handles tutor declining availability gracefully."""
+    """Handles tutor declining availability gracefully with single response guard."""
     query = update.callback_query
+    parts = data.split(":")
+    if len(parts) != 3:
+        await query.answer("Invalid data.")
+        return
+
+    _, parent_id_str, tutor_id_str = parts
+    try:
+        parent_id = int(parent_id_str)
+        tutor_id = int(tutor_id_str)
+    except ValueError:
+        await query.answer("Invalid IDs.")
+        return
+
+    user = update.effective_user
+    if not user:
+        return
+
+    async with AsyncSessionLocal() as session:
+        tutor = await session.get(Tutor, tutor_id)
+        if not tutor or tutor.telegram_user_id != user.id:
+            await query.answer("⛔ Unauthorized.", show_alert=True)
+            return
+
+        invite_stmt = select(MatchInvite).where(
+            MatchInvite.request_id == parent_id,
+            MatchInvite.tutor_id == tutor_id
+        )
+        invite = (await session.execute(invite_stmt)).scalar_one_or_none()
+        if invite and invite.status in ("yes", "no"):
+            await query.answer("You have already responded to this opportunity.", show_alert=True)
+            return
+
+        if not invite:
+            invite = MatchInvite(request_id=parent_id, tutor_id=tutor_id, status="no", responded_at=datetime.utcnow())
+            session.add(invite)
+        else:
+            invite.status = "no"
+            invite.responded_at = datetime.utcnow()
+        await session.commit()
+
     if query.message:
         try:
             await query.message.edit_text(
@@ -657,7 +905,7 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Assigns a tutor to a parent request, marks request matched, and notifies tutor."""
+    """Assigns a tutor to a parent request, marks request matched, posts thread confirmation, and then closes forum topic."""
     query = update.callback_query
     parts = data.split(":")
     if len(parts) != 3:
@@ -682,23 +930,26 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("Parent request or Tutor not found.", show_alert=True)
             return
 
-        parent.status = "matched"
+        if parent.status != "pending":
+            await query.answer(f"⚠️ Request #{parent_id} is already {parent.status}.", show_alert=True)
+            return
+
+        stmt = (
+            sql_update(ParentRequest)
+            .where(ParentRequest.id == parent_id, ParentRequest.status == "pending")
+            .values(status="matched", assigned_tutor_id=tutor_id)
+        )
+        res = await session.execute(stmt)
+        if res.rowcount == 0:
+            await query.answer("⚠️ This request has already been assigned or closed.", show_alert=True)
+            return
+
         await session.commit()
         await session.refresh(parent)
 
-    # Dedicated topic auto-closing on completion
-    if parent.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
-        try:
-            await context.bot.close_forum_topic(
-                chat_id=settings.ADMIN_GROUP_ID,
-                message_thread_id=parent.telegram_topic_id
-            )
-        except Exception as exc:
-            logger.warning("Could not close forum topic %s for Request #%s: %s", parent.telegram_topic_id, parent.id, exc)
-
     await query.answer(f"Assigned {tutor.full_name} to Request #{parent_id}!")
 
-    # Lock button on match card and post thread confirmation
+    # Lock button on match card and post thread confirmation FIRST (before topic closure!)
     first_name = tutor.full_name.split()[0] if tutor.full_name else "Tutor"
     if query.message:
         try:
@@ -720,7 +971,7 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as exc:
             logger.error("Error updating match assignment message: %s", exc)
 
-    # Direct Notification to Parent upon Assignment
+    # Direct Notification to Parent upon Assignment (with html.escape)
     if parent.telegram_user_id:
         try:
             parent_dm = (
@@ -740,22 +991,22 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as exc:
             logger.warning("Could not send assignment DM to parent %s (tg_id: %s): %s", parent.parent_name, parent.telegram_user_id, exc)
 
-    # DM tutor with job details
+    # DM tutor with job details (with html.escape)
     if tutor.telegram_user_id:
         try:
-            landmark = f" ({parent.location_landmark})" if parent.location_landmark else ""
+            landmark = f" ({html.escape(parent.location_landmark)})" if parent.location_landmark else ""
             subjects_str = _format_subjects(parent.subjects)
             days_str = _format_schedule(parent.schedule_days)
 
             job_alert = (
                 f"📢 <b>New Tutoring Opportunity Assigned!</b>\n\n"
-                f"Hello {tutor.full_name}, you have been assigned to Parent Request #{parent_id}:\n\n"
-                f"👤 <b>Parent:</b> {parent.parent_name}\n"
-                f"📞 <b>Contact:</b> {parent.phone_number}\n"
-                f"🎓 <b>Student Level:</b> {parent.student_level}\n"
+                f"Hello {html.escape(tutor.full_name)}, you have been assigned to Parent Request #{parent_id}:\n\n"
+                f"👤 <b>Parent:</b> {html.escape(parent.parent_name)}\n"
+                f"📞 <b>Contact:</b> {html.escape(parent.phone_number)}\n"
+                f"🎓 <b>Student Level:</b> {html.escape(parent.student_level)}\n"
                 f"📚 <b>Subjects:</b> {subjects_str}\n"
-                f"📍 <b>Location:</b> {parent.location_subcity}{landmark}\n"
-                f"📅 <b>Schedule:</b> {days_str} | {parent.time_slot} ({parent.session_duration})\n"
+                f"📍 <b>Location:</b> {html.escape(parent.location_subcity)}{landmark}\n"
+                f"📅 <b>Schedule:</b> {days_str} | {html.escape(parent.time_slot)} ({html.escape(parent.session_duration)})\n"
                 f"💰 <b>Budget:</b> {parent.budget_etb:,.2f} ETB\n\n"
                 "Please reach out to the parent or contact admin to confirm your first session."
             )
@@ -766,6 +1017,16 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         except Exception as exc:
             logger.warning("Could not send assignment DM to tutor %s: %s", tutor.full_name, exc)
+
+    # Dedicated topic auto-closing ONLY AFTER thread messages and DMs complete
+    if parent.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
+        try:
+            await context.bot.close_forum_topic(
+                chat_id=settings.ADMIN_GROUP_ID,
+                message_thread_id=parent.telegram_topic_id
+            )
+        except Exception as exc:
+            logger.warning("Could not close forum topic %s for Request #%s: %s", parent.telegram_topic_id, parent.id, exc)
 
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1000,10 +1261,7 @@ async def handle_bcast_target_select(update: Update, context: ContextTypes.DEFAU
 
     target = data.split(":", 1)[1]
     admin_id = update.effective_user.id
-    admin_states[admin_id] = {
-        "state": "AWAITING_BROADCAST_TEXT",
-        "target": target
-    }
+    await set_admin_state(admin_id, "AWAITING_BROADCAST_TEXT", {"target": target})
 
     target_labels = {
         "all": "👥 All Users",
@@ -1024,6 +1282,58 @@ async def handle_bcast_target_select(update: Update, context: ContextTypes.DEFAU
     await query.answer()
 
 
+async def _run_broadcast_task(bot, recipient_ids: List[int], message_text: str, chat_id: int):
+    """Executes broadcast asynchronously without blocking bot event loop."""
+    success_count = 0
+    fail_count = 0
+
+    for uid in recipient_ids:
+        try:
+            await bot.send_message(
+                chat_id=uid,
+                text=message_text,
+                parse_mode=ParseMode.HTML
+            )
+            success_count += 1
+        except RetryAfter as exc:
+            logger.info("Broadcast hit rate limit, waiting %s seconds", exc.retry_after)
+            await asyncio.sleep(exc.retry_after + 0.1)
+            try:
+                await bot.send_message(
+                    chat_id=uid,
+                    text=message_text,
+                    parse_mode=ParseMode.HTML
+                )
+                success_count += 1
+            except Exception as e2:
+                logger.warning("Broadcast retry failed for user %s: %s", uid, e2)
+                fail_count += 1
+        except Exception:
+            # Fallback to plain text on formatting error
+            try:
+                await bot.send_message(
+                    chat_id=uid,
+                    text=message_text
+                )
+                success_count += 1
+            except Exception as exc:
+                logger.warning("Failed to send broadcast to user %s: %s", uid, exc)
+                fail_count += 1
+        await asyncio.sleep(0.05)
+
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ <b>Broadcast Completed!</b>\n\n"
+                 f"• Sent: {success_count}\n"
+                 f"• Failed/Blocked: {fail_count}\n"
+                 f"• Total Audience: {len(recipient_ids)}",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as exc:
+        logger.error("Failed to send broadcast completion report: %s", exc)
+
+
 async def handle_bcast_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     admin_id = update.effective_user.id
@@ -1031,7 +1341,9 @@ async def handle_bcast_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer("⛔ Access denied.", show_alert=True)
         return
 
-    state_data = admin_states.pop(admin_id, None)
+    state_data = await get_admin_state(admin_id)
+    await clear_admin_state(admin_id)
+
     if not state_data or state_data.get("state") != "AWAITING_BROADCAST_CONFIRM":
         await query.answer("No broadcast awaiting confirmation.", show_alert=True)
         return
@@ -1041,48 +1353,26 @@ async def handle_bcast_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
     recipient_ids = await get_broadcast_recipient_ids(target)
 
     await query.message.edit_text(
-        f"⏳ Dispatching broadcast to {len(recipient_ids)} recipients at rate ~25 msg/s...",
+        f"⏳ Broadcast dispatched in background to {len(recipient_ids)} recipients at rate ~20 msg/s...",
         reply_markup=None
     )
+    await query.answer("Broadcast started!")
 
-    success_count = 0
-    fail_count = 0
-
-    for uid in recipient_ids:
-        try:
-            await context.bot.send_message(
-                chat_id=uid,
-                text=message_text,
-                parse_mode=ParseMode.HTML
-            )
-            success_count += 1
-        except Exception:
-            # Fallback to plain text on formatting error
-            try:
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text=message_text
-                )
-                success_count += 1
-            except Exception as exc:
-                logger.warning("Failed to send broadcast to user %s: %s", uid, exc)
-                fail_count += 1
-        await asyncio.sleep(0.04)
-
-    await query.message.reply_text(
-        f"✅ <b>Broadcast Completed!</b>\n\n"
-        f"• Sent: {success_count}\n"
-        f"• Failed/Blocked: {fail_count}\n"
-        f"• Total Audience: {len(recipient_ids)}",
-        parse_mode=ParseMode.HTML
+    # Non-blocking async background task execution (B-07)
+    asyncio.create_task(
+        _run_broadcast_task(
+            bot=context.bot,
+            recipient_ids=recipient_ids,
+            message_text=message_text,
+            chat_id=query.message.chat_id
+        )
     )
-    await query.answer()
 
 
 async def handle_bcast_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     admin_id = update.effective_user.id
-    admin_states.pop(admin_id, None)
+    await clear_admin_state(admin_id)
     await query.message.edit_text("❌ Broadcast cancelled.")
     await query.answer("Cancelled.")
 
@@ -1090,9 +1380,10 @@ async def handle_bcast_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_bcast_retype(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     admin_id = update.effective_user.id
-    state_data = admin_states.get(admin_id)
+    state_data = await get_admin_state(admin_id)
     if state_data:
-        state_data["state"] = "AWAITING_BROADCAST_TEXT"
+        target = state_data.get("target", "all")
+        await set_admin_state(admin_id, "AWAITING_BROADCAST_TEXT", {"target": target})
         await query.message.edit_text(
             "✍️ Send the revised broadcast message text now:",
             reply_markup=InlineKeyboardMarkup([
@@ -1158,10 +1449,7 @@ async def handle_cms_edit_select(update: Update, context: ContextTypes.DEFAULT_T
 
     setting_key = data.split(":", 1)[1]
     admin_id = update.effective_user.id
-    admin_states[admin_id] = {
-        "state": "AWAITING_CMS_INPUT",
-        "key": setting_key
-    }
+    await set_admin_state(admin_id, "AWAITING_CMS_INPUT", {"key": setting_key})
 
     label = "About Us" if setting_key == "about_us_text" else "Contact"
 
@@ -1186,7 +1474,7 @@ async def handle_cms_edit_select(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_cms_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     admin_id = update.effective_user.id
-    admin_states.pop(admin_id, None)
+    await clear_admin_state(admin_id)
     await query.message.edit_text("↩️ CMS editing cancelled. Existing content preserved.")
     await query.answer("Cancelled.")
 
@@ -1211,7 +1499,7 @@ async def handle_export_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     user_id = update.effective_user.id if update.effective_user else None
     if user_id:
-        admin_states.pop(user_id, None)
+        await clear_admin_state(user_id)
 
     await msg.reply_text(
         "📥 <b>EXPORT DATA CENTER</b>\n\n"
@@ -1281,8 +1569,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows Super Admin to cancel any active broadcast wizard or CMS edit session."""
     msg = update.message or update.effective_message
     user_id = update.effective_user.id if update.effective_user else None
-    if user_id and user_id in admin_states:
-        admin_states.pop(user_id, None)
+    if user_id:
+        await clear_admin_state(user_id)
         if msg:
             await msg.reply_text("❌ Action cancelled. Returned to main menu.")
     else:
@@ -1301,27 +1589,28 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Cancel escape
     if text.lower() in ("/cancel", "cancel"):
-        if user_id and user_id in admin_states:
-            admin_states.pop(user_id, None)
+        if user_id:
+            await clear_admin_state(user_id)
             await msg.reply_text("❌ Action cancelled. Returned to main menu.")
             return
 
     # Public Reply Keyboard buttons
     if text == "ℹ️ About Us":
-        if user_id in admin_states:
-            admin_states.pop(user_id, None)
+        if user_id:
+            await clear_admin_state(user_id)
         await handle_about_us(update, context)
         return
     elif text == "📞 Contact":
-        if user_id in admin_states:
-            admin_states.pop(user_id, None)
+        if user_id:
+            await clear_admin_state(user_id)
         await handle_support_contact(update, context)
         return
 
     # Super Admin Reply Keyboard buttons
     if is_super_admin(update):
         if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'", "📥 Export CSV"):
-            admin_states.pop(user_id, None)
+            if user_id:
+                await clear_admin_state(user_id)
 
         if text == "📊 Analytics":
             await handle_admin_analytics(update, context)
@@ -1337,59 +1626,79 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
     # Super Admin Interactive Wizard States
-    if user_id and user_id in admin_states and is_super_admin(update):
-        state_data = admin_states[user_id]
-        current_state = state_data.get("state")
+    if user_id and is_super_admin(update):
+        state_data = await get_admin_state(user_id)
+        if state_data:
+            current_state = state_data.get("state")
 
-        if current_state == "AWAITING_BROADCAST_TEXT":
-            state_data["text"] = text
-            state_data["state"] = "AWAITING_BROADCAST_CONFIRM"
-            target = state_data.get("target", "all")
-            recipient_ids = await get_broadcast_recipient_ids(target)
+            if current_state == "AWAITING_BROADCAST_TEXT":
+                if not is_valid_telegram_html(text):
+                    await msg.reply_text(
+                        "⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed (e.g. <code>&lt;b&gt;...&lt;/b&gt;</code>) or send plain text.",
+                        parse_mode=ParseMode.HTML
+                    )
+                    return
 
-            preview_card = (
-                "📢 <b>BROADCAST PREVIEW</b>\n\n"
-                f"🎯 <b>Target:</b> <code>{target}</code> ({len(recipient_ids)} recipients)\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{text}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "<i>Confirm below to dispatch immediately:</i>"
-            )
-            confirm_keyboard = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("🚀 Send Now", callback_data="admin_bcast_confirm"),
-                    InlineKeyboardButton("✏️ Re-type", callback_data="admin_bcast_retype")
-                ],
-                [InlineKeyboardButton("❌ Cancel", callback_data="admin_bcast_cancel")]
-            ])
-            await msg.reply_text(preview_card, parse_mode=ParseMode.HTML, reply_markup=confirm_keyboard)
-            return
+                target = state_data.get("target", "all")
+                await set_admin_state(user_id, "AWAITING_BROADCAST_CONFIRM", {"target": target, "text": text})
+                recipient_ids = await get_broadcast_recipient_ids(target)
 
-        elif current_state == "AWAITING_CMS_INPUT":
-            setting_key = state_data.get("key")
-            admin_states.pop(user_id, None)
+                preview_card = (
+                    "📢 <b>BROADCAST PREVIEW</b>\n\n"
+                    f"🎯 <b>Target:</b> <code>{target}</code> ({len(recipient_ids)} recipients)\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{text}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "<i>Confirm below to dispatch immediately:</i>"
+                )
+                confirm_keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("🚀 Send Now", callback_data="admin_bcast_confirm"),
+                        InlineKeyboardButton("✏️ Re-type", callback_data="admin_bcast_retype")
+                    ],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="admin_bcast_cancel")]
+                ])
+                await msg.reply_text(preview_card, parse_mode=ParseMode.HTML, reply_markup=confirm_keyboard)
+                return
 
-            async with AsyncSessionLocal() as session:
-                setting = await session.get(SystemSetting, setting_key)
-                if not setting:
-                    setting = SystemSetting(key=setting_key, value=text)
-                    session.add(setting)
-                else:
-                    setting.value = text
-                await session.commit()
+            elif current_state == "AWAITING_CMS_INPUT":
+                if not is_valid_telegram_html(text):
+                    await msg.reply_text(
+                        "⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed or send plain text.",
+                        parse_mode=ParseMode.HTML
+                    )
+                    return
 
-            label = "About Us" if setting_key == "about_us_text" else "Contact"
-            await msg.reply_text(
-                f"✅ <b>{label}</b> content updated successfully! Public users will now see this update immediately.",
-                parse_mode=ParseMode.HTML
-            )
-            return
+                setting_key = state_data.get("key")
+                await clear_admin_state(user_id)
+
+                async with AsyncSessionLocal() as session:
+                    setting = await session.get(SystemSetting, setting_key)
+                    if not setting:
+                        setting = SystemSetting(key=setting_key, value=text)
+                        session.add(setting)
+                    else:
+                        setting.value = text
+                    await session.commit()
+
+                label = "About Us" if setting_key == "about_us_text" else "Contact"
+                await msg.reply_text(
+                    f"✅ <b>{label}</b> content updated successfully! Public users will now see this update immediately.",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log errors caused by Updates."""
+    logger.error("Exception while handling an update: %s", context.error, exc_info=context.error)
 
 
 def register_handlers(application: Application):
-    """Registers command, callback query, and message handlers on the Telegram application."""
+    """Registers command, callback query, message handlers, and global error handler."""
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    application.add_error_handler(error_handler)
