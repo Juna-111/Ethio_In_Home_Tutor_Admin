@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, List, Optional
-from sqlalchemy import BigInteger, DateTime, Float, Integer, Numeric, String, JSON, func
+from sqlalchemy import BigInteger, DateTime, Float, Integer, Numeric, String, Text, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -49,7 +49,7 @@ class Tutor(Base):
     base_subcity: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     coverage_areas: Mapped[List[str]] = mapped_column(JSON, nullable=False)
     availability_schedule: Mapped[Any] = mapped_column(JSON, nullable=False)
-    id_document_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    id_document_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

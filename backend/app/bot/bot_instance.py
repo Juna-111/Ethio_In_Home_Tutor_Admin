@@ -79,6 +79,71 @@ def format_schedule(schedule) -> str:
     return html.escape(str(schedule))
 
 
+def format_parent_card(parent_req, status_override: Optional[str] = None) -> str:
+    """Renders the HTML intake card for a parent tutoring request with optional status override."""
+    landmark_part = f" ({html.escape(parent_req.location_landmark)})" if parent_req.location_landmark else ""
+
+    # Calculate dynamic monthly cost estimate: Hourly Rate × Duration × Sessions/Week × 4
+    dur_match = re.search(r"([\d.]+)", str(parent_req.session_duration or ""))
+    duration_hrs = float(dur_match.group(1)) if dur_match else 1.0
+    if isinstance(parent_req.schedule_days, list):
+        sessions_count = len(parent_req.schedule_days)
+    elif isinstance(parent_req.schedule_days, str):
+        sessions_count = len([d for d in parent_req.schedule_days.split(",") if d.strip()]) or 1
+    else:
+        sessions_count = 1
+
+    monthly_est = parent_req.budget_etb * duration_hrs * (sessions_count or 1) * 4
+    monthly_part = f" (≈ {monthly_est:,.0f} ETB / mo)" if monthly_est > 0 else ""
+    header_status = status_override or "🟡 <b>Pending</b>"
+
+    return (
+        f"📋 <b>PARENT REQUEST #{parent_req.id}</b> • {header_status}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>{html.escape(parent_req.parent_name)}</b> | 📞 <code>{html.escape(parent_req.phone_number)}</code>\n"
+        f"📍 <b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_part}\n"
+        f"🎓 <b>Student:</b> {html.escape(parent_req.student_level)} | 📚 <b>Subjects:</b> {format_subjects(parent_req.subjects)}\n"
+        f"⏰ <b>Schedule:</b> {format_schedule(parent_req.schedule_days)} ({html.escape(parent_req.time_slot)}, {html.escape(parent_req.session_duration)})\n"
+        f"💰 <b>Budget:</b> {parent_req.budget_etb:,.2f} ETB / hr{monthly_part} | ⚧ <b>Pref:</b> {html.escape(parent_req.preferred_gender)} ({html.escape(parent_req.preferred_experience)})"
+    )
+
+
+def format_tutor_card(tutor, status_override: Optional[str] = None) -> str:
+    """Renders the HTML verification card for a tutor profile with optional status override."""
+    if tutor.id_document_url:
+        parts = [p.strip() for p in tutor.id_document_url.split(" | ") if p.strip()]
+        links = []
+        for idx, part in enumerate(parts):
+            if part.startswith("/uploads/"):
+                base = settings.WEBAPP_URL.rstrip("/") if settings.WEBAPP_URL else ""
+                href = f"{base}{part}"
+                links.append(f'<a href="{html.escape(href)}">📎 Uploaded Doc</a>')
+            elif part.startswith("http"):
+                label = "🌐 Portfolio/URL" if len(parts) > 1 and idx > 0 else "📄 View Document"
+                links.append(f'<a href="{html.escape(part)}">{label}</a>')
+            else:
+                links.append(f'<a href="{html.escape(part)}">📄 Doc</a>')
+        doc_display = " | ".join(links)
+    else:
+        doc_display = "Not provided"
+
+    tg_id_str = str(tutor.telegram_user_id) if tutor.telegram_user_id else "N/A"
+    header_status = status_override or "🟡 <b>Pending Verification</b>"
+
+    return (
+        f"🧑‍🏫 <b>TUTOR PROFILE #{tutor.id}</b> • {header_status}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>{html.escape(tutor.full_name)}</b> ({html.escape(tutor.gender)}) | 📞 <code>{html.escape(tutor.phone_number)}</code> | 💬 ID: <code>{tg_id_str}</code>\n"
+        f"🎓 <b>Education:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)} ({html.escape(tutor.education_year)})\n"
+        f"⭐ <b>Exp:</b> {tutor.years_of_experience:g} yrs | 💰 <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB / hr\n"
+        f"📚 <b>Subjects:</b> {format_subjects(tutor.subjects_qualified)}\n"
+        f"🎯 <b>Grades:</b> {format_subjects(tutor.grades_qualified)}\n"
+        f"📍 <b>Base:</b> {html.escape(tutor.base_subcity)} | 🗺 <b>Covers:</b> {format_subjects(tutor.coverage_areas)}\n"
+        f"⏰ <b>Availability:</b> {format_schedule(tutor.availability_schedule)}\n"
+        f"📄 <b>ID Document:</b> {doc_display}"
+    )
+
+
 async def send_parent_request_card(parent_req) -> Optional[int]:
     """
     Sends a compact formatted intake card to ADMIN_GROUP_ID with action buttons:
@@ -91,30 +156,7 @@ async def send_parent_request_card(parent_req) -> Optional[int]:
         return None
 
     try:
-        landmark_part = f" ({html.escape(parent_req.location_landmark)})" if parent_req.location_landmark else ""
-        
-        # Calculate dynamic monthly cost estimate: Hourly Rate × Duration × Sessions/Week × 4
-        dur_match = re.search(r"([\d.]+)", str(parent_req.session_duration or ""))
-        duration_hrs = float(dur_match.group(1)) if dur_match else 1.0
-        if isinstance(parent_req.schedule_days, list):
-            sessions_count = len(parent_req.schedule_days)
-        elif isinstance(parent_req.schedule_days, str):
-            sessions_count = len([d for d in parent_req.schedule_days.split(",") if d.strip()]) or 1
-        else:
-            sessions_count = 1
-
-        monthly_est = parent_req.budget_etb * duration_hrs * (sessions_count or 1) * 4
-        monthly_part = f" (≈ {monthly_est:,.0f} ETB / mo)" if monthly_est > 0 else ""
-
-        card_text = (
-            f"📋 <b>PARENT REQUEST #{parent_req.id}</b> • 🟡 <b>Pending</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 <b>{html.escape(parent_req.parent_name)}</b> | 📞 <code>{html.escape(parent_req.phone_number)}</code>\n"
-            f"📍 <b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_part}\n"
-            f"🎓 <b>Student:</b> {html.escape(parent_req.student_level)} | 📚 <b>Subjects:</b> {format_subjects(parent_req.subjects)}\n"
-            f"⏰ <b>Schedule:</b> {format_schedule(parent_req.schedule_days)} ({html.escape(parent_req.time_slot)}, {html.escape(parent_req.session_duration)})\n"
-            f"💰 <b>Budget:</b> {parent_req.budget_etb:,.2f} ETB / hr{monthly_part} | ⚧ <b>Pref:</b> {html.escape(parent_req.preferred_gender)} ({html.escape(parent_req.preferred_experience)})"
-        )
+        card_text = format_parent_card(parent_req)
 
         keyboard = InlineKeyboardMarkup([
             [
@@ -152,37 +194,7 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
         return None
 
     try:
-        if tutor.id_document_url:
-            parts = [p.strip() for p in tutor.id_document_url.split(" | ") if p.strip()]
-            links = []
-            for idx, part in enumerate(parts):
-                if part.startswith("/uploads/"):
-                    base = settings.WEBAPP_URL.rstrip("/") if settings.WEBAPP_URL else ""
-                    href = f"{base}{part}"
-                    links.append(f'<a href="{html.escape(href)}">📎 Uploaded Doc</a>')
-                elif part.startswith("http"):
-                    label = "🌐 Portfolio/URL" if len(parts) > 1 and idx > 0 else "📄 View Document"
-                    links.append(f'<a href="{html.escape(part)}">{label}</a>')
-                else:
-                    links.append(f'<a href="{html.escape(part)}">📄 Doc</a>')
-            doc_display = " | ".join(links)
-        else:
-            doc_display = "Not provided"
-
-        tg_id_str = str(tutor.telegram_user_id) if tutor.telegram_user_id else "N/A"
-
-        card_text = (
-            f"🧑‍🏫 <b>TUTOR PROFILE #{tutor.id}</b> • 🟡 <b>Pending Verification</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 <b>{html.escape(tutor.full_name)}</b> ({html.escape(tutor.gender)}) | 📞 <code>{html.escape(tutor.phone_number)}</code> | 💬 ID: <code>{tg_id_str}</code>\n"
-            f"🎓 <b>Education:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)} ({html.escape(tutor.education_year)})\n"
-            f"⭐ <b>Exp:</b> {tutor.years_of_experience:g} yrs | 💰 <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB / hr\n"
-            f"📚 <b>Subjects:</b> {format_subjects(tutor.subjects_qualified)}\n"
-            f"🎯 <b>Grades:</b> {format_subjects(tutor.grades_qualified)}\n"
-            f"📍 <b>Base:</b> {html.escape(tutor.base_subcity)} | 🗺 <b>Covers:</b> {format_subjects(tutor.coverage_areas)}\n"
-            f"⏰ <b>Availability:</b> {format_schedule(tutor.availability_schedule)}\n"
-            f"📄 <b>ID Document:</b> {doc_display}"
-        )
+        card_text = format_tutor_card(tutor)
 
         keyboard = InlineKeyboardMarkup([
             [

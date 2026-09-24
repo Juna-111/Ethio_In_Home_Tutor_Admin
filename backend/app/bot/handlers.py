@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from app.bot.bot_instance import format_parent_card, format_tutor_card
 from app.bot.topics import get_parent_topic_id
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -109,16 +110,15 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await query.answer(f"Tutor #{tutor_id} approved!")
 
-    # In-place top line update
+    # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            curr_text = query.message.text or ""
-            new_header = f"🧑‍🏫 <b>TUTOR PROFILE #{tutor_id}</b> • 🟢 <b>Approved by {admin_name}</b>"
-            updated_text = _replace_card_header(curr_text, new_header)
+            updated_text = format_tutor_card(tutor, status_override=f"🟢 <b>Approved by {admin_name}</b>")
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
-                reply_markup=None
+                reply_markup=None,
+                disable_web_page_preview=False
             )
         except Exception as exc:
             logger.error("Failed to edit tutor card for #%s: %s", tutor_id, exc)
@@ -160,16 +160,15 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer(f"Tutor #{tutor_id} rejected.")
 
-    # In-place top line update
+    # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            curr_text = query.message.text or ""
-            new_header = f"🧑‍🏫 <b>TUTOR PROFILE #{tutor_id}</b> • 🔴 <b>Rejected by {admin_name}</b>"
-            updated_text = _replace_card_header(curr_text, new_header)
+            updated_text = format_tutor_card(tutor, status_override=f"🔴 <b>Rejected by {admin_name}</b>")
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
-                reply_markup=None
+                reply_markup=None,
+                disable_web_page_preview=False
             )
         except Exception as exc:
             logger.error("Failed to edit tutor card for #%s: %s", tutor_id, exc)
@@ -210,12 +209,10 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.answer(f"Request #{parent_id} closed.")
 
-    # In-place top line update
+    # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            curr_text = query.message.text or ""
-            new_header = f"📋 <b>PARENT REQUEST #{parent_id}</b> • ⚪ <b>Closed by {admin_name}</b>"
-            updated_text = _replace_card_header(curr_text, new_header)
+            updated_text = format_parent_card(parent_req, status_override=f"⚪ <b>Closed by {admin_name}</b>")
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,

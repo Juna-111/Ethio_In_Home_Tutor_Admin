@@ -6,14 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.bot_instance import send_tutor_registration_card
+from app.config import UPLOAD_DIR
 from app.database import get_db
 from app.models import Tutor
 from app.schemas import TutorCreate, TutorResponse
 
 router = APIRouter(prefix="/tutors", tags=["Tutors"])
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".png", ".jpg", ".jpeg"}
 

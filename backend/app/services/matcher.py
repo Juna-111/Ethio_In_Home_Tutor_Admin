@@ -20,6 +20,47 @@ def _normalize_list(items: Any) -> List[str]:
     return []
 
 
+def _are_grades_compatible(parent_level_norm: str, tutor_grades_norm: List[str]) -> bool:
+    """
+    Checks if a tutor is qualified for a parent's student level,
+    either through direct string match, substring match, or shared educational tier.
+    """
+    if not parent_level_norm:
+        return True
+
+    # 1. Direct exact or substring match
+    if parent_level_norm in tutor_grades_norm:
+        return True
+    for tg in tutor_grades_norm:
+        if tg in parent_level_norm or parent_level_norm in tg:
+            return True
+
+    # 2. Educational tier categorization
+    def get_stages(val: str) -> set:
+        s = set()
+        if any(k in val for k in ["1-4", "grade 1", "grade 2", "grade 3", "grade 4", "primary 1"]):
+            s.add("primary_lower")
+        if any(k in val for k in ["5-8", "grade 5", "grade 6", "grade 7", "grade 8", "primary 5"]):
+            s.add("primary_upper")
+        if any(k in val for k in ["9-10", "grade 9", "grade 10", "high school"]):
+            s.add("high_school")
+        if any(k in val for k in ["11-12", "grade 11", "grade 12", "prep", "preparatory"]):
+            s.add("prep")
+        if any(k in val for k in ["freshman", "remediation", "university", "college"]):
+            s.add("higher_ed")
+        return s
+
+    parent_stages = get_stages(parent_level_norm)
+    if not parent_stages:
+        return False
+
+    tutor_stages = set()
+    for tg in tutor_grades_norm:
+        tutor_stages.update(get_stages(tg))
+
+    return bool(parent_stages & tutor_stages)
+
+
 async def get_tiered_matches(
     parent_request_id: int,
     session: AsyncSession
@@ -28,7 +69,7 @@ async def get_tiered_matches(
     Categorizes verified tutors for a parent request into three intuitive radar tiers:
     - Tier 1 (Perfect Fit): Direct base sub-city, gender preference match, fee <= budget.
     - Tier 2 (Commute / Proximity Match): Sub-city in coverage areas, subject match, fee <= budget * 1.20.
-    - Tier 3 (Flexible Alternatives): Subject match, differs on gender or fee exceeds up to budget * 1.35.
+    - Tier 3 (Flexible Alternatives): Subject match, grade compatible, differs on gender or fee exceeds up to budget * 1.35.
 
     Candidates within each tier are sorted by:
     years_of_experience DESC, expected_fee_etb ASC.
@@ -55,6 +96,7 @@ async def get_tiered_matches(
     parent_pref_gender = _normalize_str(parent.preferred_gender)
     gender_strict = parent_pref_gender and parent_pref_gender not in ("no preference", "none")
     parent_subcity = _normalize_str(parent.location_subcity)
+    parent_level = _normalize_str(parent.student_level)
     parent_subjects_norm = _normalize_list(parent.subjects)
     budget = float(parent.budget_etb or 0.0)
 
@@ -63,6 +105,11 @@ async def get_tiered_matches(
     tier3_candidates: List[Dict[str, Any]] = []
 
     for tutor in verified_tutors:
+        # Mandatory Baseline: Grade level compatibility check
+        tutor_grades_norm = _normalize_list(tutor.grades_qualified)
+        if not _are_grades_compatible(parent_level, tutor_grades_norm):
+            continue
+
         # Mandatory Baseline: At least one subject overlap
         tutor_subjects_norm = _normalize_list(tutor.subjects_qualified)
         matched_subjects_norm = set(parent_subjects_norm).intersection(set(tutor_subjects_norm))

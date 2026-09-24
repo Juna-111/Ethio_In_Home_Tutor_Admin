@@ -630,7 +630,25 @@ async def test_get_tiered_matches_categorization(db_session: AsyncSession):
         status="verified"
     )
 
-    db_session.add_all([t1, t2, t3, t4, t5, t6])
+    # Tutor 7: Incompatible grade stage (Primary 1-4 vs High School 9-10) -> Excluded from all tiers
+    t7 = Tutor(
+        full_name="Primary Only Tutor",
+        gender="Male",
+        phone_number="+251911111007",
+        university="AAU",
+        department="Maths",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["Primary 1-4"],
+        years_of_experience=5.0,
+        expected_fee_etb=350.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        status="verified"
+    )
+
+    db_session.add_all([t1, t2, t3, t4, t5, t6, t7])
     await db_session.commit()
 
     found_parent, tiered = await get_tiered_matches(parent.id, db_session)
@@ -648,6 +666,10 @@ async def test_get_tiered_matches_categorization(db_session: AsyncSession):
     assert len(tiered["tier3"]) == 1
     assert tiered["tier3"][0]["tutor"].full_name == "Martha Flex"
     assert "Gender flex" in tiered["tier3"][0]["flex_note"]
+
+    # Verify t7 is not present in any tier
+    all_matched_tutors = [item["tutor"].full_name for tier_list in tiered.values() for item in tier_list]
+    assert "Primary Only Tutor" not in all_matched_tutors
 
 
 @pytest.mark.asyncio

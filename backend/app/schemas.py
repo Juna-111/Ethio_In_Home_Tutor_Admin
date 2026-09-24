@@ -88,7 +88,7 @@ class TutorCreate(BaseModel):
     base_subcity: str = Field(..., min_length=2, max_length=100, description="Subcity where tutor resides")
     coverage_areas: List[str] = Field(..., min_length=1, description="Subcities tutor is willing to travel to")
     availability_schedule: Union[dict, List[str], str] = Field(..., description="Available days and time slots")
-    id_document_url: Optional[str] = Field(None, max_length=500, description="URL or Telegram file ID of student/national ID")
+    id_document_url: Optional[str] = Field(None, max_length=2048, description="URL or Telegram file ID of student/national ID")
 
 
 class TutorResponse(TutorCreate):
