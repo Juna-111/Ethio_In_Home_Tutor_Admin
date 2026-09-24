@@ -1,10 +1,12 @@
 import os
+from typing import Optional
 import uuid
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_telegram_user
 from app.bot.bot_instance import send_tutor_registration_card
 from app.config import UPLOAD_DIR
 from app.database import get_db
@@ -13,7 +15,19 @@ from app.schemas import TutorCreate, TutorResponse
 
 router = APIRouter(prefix="/tutors", tags=["Tutors"])
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".png", ".jpg", ".jpeg"}
+ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def _validate_magic_bytes(header: bytes) -> bool:
+    """Validates initial byte header against known magic numbers for PDF, PNG, and JPEG."""
+    if header.startswith(b"%PDF"):
+        return True
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if header.startswith(b"\xff\xd8\xff"):
+        return True
+    return False
 
 
 @router.post(
@@ -21,10 +35,13 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".png", ".jpg", ".jpeg"}
     status_code=status.HTTP_201_CREATED,
     summary="Upload Tutor Verification Document / CV"
 )
-async def upload_tutor_document(file: UploadFile = File(...)):
+async def upload_tutor_document(
+    file: UploadFile = File(...),
+    verified_user_id: Optional[int] = Depends(get_current_telegram_user)
+):
     """
     Accepts file upload (ID, Certificate, CV) and saves it to the local uploads directory.
-    Returns the file URL to be stored in the tutor profile.
+    Validates magic bytes, streams with strict 10 MB ceiling, and generates secure UUID filename.
     """
     _, ext = os.path.splitext(file.filename or "")
     ext_lower = ext.lower()
@@ -32,18 +49,41 @@ async def upload_tutor_document(file: UploadFile = File(...)):
     if ext_lower not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file format '{ext}'. Allowed types: PDF, DOCX, PNG, JPG."
+            detail=f"Unsupported file format '{ext}'. Allowed types: PDF, PNG, JPG."
         )
 
-    # Generate unique filename to prevent collisions and sanitize
-    safe_filename = f"{uuid.uuid4().hex[:12]}_{file.filename}"
+    # Generate pure random UUID filename to prevent path traversal and sanitize
+    safe_filename = f"{uuid.uuid4().hex}{ext_lower}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
+    bytes_written = 0
+    first_chunk = True
+
     try:
-        content = await file.read()
         async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
+            while chunk := await file.read(64 * 1024):  # 64 KB chunks
+                if first_chunk:
+                    if not _validate_magic_bytes(chunk[:32]):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid file signature. File contents do not match allowed formats (PDF, PNG, JPG)."
+                        )
+                    first_chunk = False
+
+                bytes_written += len(chunk)
+                if bytes_written > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="File size exceeds the 10 MB maximum limit."
+                    )
+                await f.write(chunk)
+    except HTTPException:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
     except Exception as exc:
+        if os.path.exists(file_path):
+            os.remove(file_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save uploaded file: {str(exc)}"
@@ -51,7 +91,7 @@ async def upload_tutor_document(file: UploadFile = File(...)):
 
     file_url = f"/uploads/{safe_filename}"
     return {
-        "filename": file.filename,
+        "filename": safe_filename,
         "file_url": file_url
     }
 
@@ -64,7 +104,8 @@ async def upload_tutor_document(file: UploadFile = File(...)):
 )
 async def register_tutor(
     payload: TutorCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_current_telegram_user),
 ):
     """
     Validates and stores a tutor registration in PostgreSQL.
@@ -72,18 +113,20 @@ async def register_tutor(
     Checks for duplicate telegram_user_id if provided.
     Forwards a verification card to the Telegram Admin Group.
     """
-    if payload.telegram_user_id is not None:
-        query = select(Tutor).where(Tutor.telegram_user_id == payload.telegram_user_id)
+    effective_tg_id = verified_user_id if verified_user_id is not None else payload.telegram_user_id
+
+    if effective_tg_id is not None:
+        query = select(Tutor).where(Tutor.telegram_user_id == effective_tg_id)
         result = await db.execute(query)
         existing = result.scalar_one_or_none()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"A tutor with Telegram user ID {payload.telegram_user_id} is already registered."
+                detail=f"A tutor with Telegram user ID {effective_tg_id} is already registered."
             )
 
     tutor = Tutor(
-        telegram_user_id=payload.telegram_user_id,
+        telegram_user_id=effective_tg_id,
         full_name=payload.full_name,
         gender=payload.gender,
         phone_number=payload.phone_number,

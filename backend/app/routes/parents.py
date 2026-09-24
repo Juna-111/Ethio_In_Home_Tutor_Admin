@@ -1,6 +1,8 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_telegram_user
 from app.bot.bot_instance import send_parent_request_card
 from app.database import get_db
 from app.models import ParentRequest
@@ -17,15 +19,18 @@ router = APIRouter(prefix="/parents", tags=["Parents"])
 )
 async def create_parent_request(
     payload: ParentRequestCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_current_telegram_user),
 ):
     """
     Validates and stores a parent intake request in PostgreSQL.
     Status is initialized to 'pending'.
     Forwards a notification card to the Telegram Admin Group.
     """
+    effective_tg_id = verified_user_id if verified_user_id is not None else payload.telegram_user_id
+
     parent_req = ParentRequest(
-        telegram_user_id=payload.telegram_user_id,
+        telegram_user_id=effective_tg_id,
         parent_name=payload.parent_name,
         phone_number=payload.phone_number,
         student_level=payload.student_level,

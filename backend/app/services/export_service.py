@@ -7,15 +7,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import ParentRequest, Tutor
 
 
+def _sanitize_cell(val: Any) -> Any:
+    """Neutralizes formula injection in CSV cells for Excel compatibility."""
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        return val
+    s = str(val)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{s}"
+    return s
+
+
 def _format_list_or_str(val: Any) -> str:
     """Formats a list or object into a clean comma-separated string for CSV cells."""
     if isinstance(val, list):
-        return ", ".join(str(item).strip() for item in val if item)
-    if isinstance(val, dict):
-        return ", ".join(f"{k}: {v}" for k, v in val.items())
-    if val is None:
-        return ""
-    return str(val).strip()
+        formatted = ", ".join(str(item).strip() for item in val if item)
+    elif isinstance(val, dict):
+        formatted = ", ".join(f"{k}: {v}" for k, v in val.items())
+    elif val is None:
+        formatted = ""
+    else:
+        formatted = str(val).strip()
+    return _sanitize_cell(formatted)
 
 
 async def generate_tutors_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, int]:
@@ -54,20 +68,20 @@ async def generate_tutors_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, int
         reg_at = t.created_at.strftime("%Y-%m-%d %H:%M:%S") if t.created_at else ""
         writer.writerow([
             t.id,
-            t.full_name,
-            t.gender,
-            t.phone_number,
+            _sanitize_cell(t.full_name),
+            _sanitize_cell(t.gender),
+            _sanitize_cell(t.phone_number),
             t.telegram_user_id if t.telegram_user_id is not None else "",
-            t.university,
-            t.department,
-            t.education_year,
+            _sanitize_cell(t.university),
+            _sanitize_cell(t.department),
+            _sanitize_cell(t.education_year),
             _format_list_or_str(t.subjects_qualified),
             _format_list_or_str(t.grades_qualified),
-            t.base_subcity,
+            _sanitize_cell(t.base_subcity),
             _format_list_or_str(t.coverage_areas),
             t.expected_fee_etb,
             t.years_of_experience,
-            t.status,
+            _sanitize_cell(t.status),
             reg_at
         ])
 
@@ -114,20 +128,20 @@ async def generate_parents_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, in
         assigned_tutor = getattr(req, "assigned_tutor_id", "N/A")
         writer.writerow([
             req.id,
-            req.parent_name,
-            req.phone_number,
+            _sanitize_cell(req.parent_name),
+            _sanitize_cell(req.phone_number),
             req.telegram_user_id if req.telegram_user_id is not None else "",
-            req.location_subcity,
-            req.location_landmark or "",
-            req.student_level,
+            _sanitize_cell(req.location_subcity),
+            _sanitize_cell(req.location_landmark or ""),
+            _sanitize_cell(req.student_level),
             _format_list_or_str(req.subjects),
             _format_list_or_str(req.schedule_days),
-            req.time_slot,
-            req.session_duration,
+            _sanitize_cell(req.time_slot),
+            _sanitize_cell(req.session_duration),
             req.budget_etb,
-            req.preferred_gender,
-            req.status,
-            assigned_tutor,
+            _sanitize_cell(req.preferred_gender),
+            _sanitize_cell(req.status),
+            _sanitize_cell(assigned_tutor),
             created_at
         ])
 

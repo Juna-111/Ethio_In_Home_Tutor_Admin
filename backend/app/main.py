@@ -2,11 +2,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi.staticfiles import StaticFiles
-
 from app.bot.bot_instance import init_bot_app, shutdown_bot_app, bot_app
 from app.bot.topics import ensure_forum_topics
-from app.config import UPLOAD_DIR
+from app.config import settings, UPLOAD_DIR
 from app.database import engine, Base, AsyncSessionLocal
 import app.models  # noqa: F401
 from app.routes.health import router as health_router
@@ -57,12 +55,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Enable CORS for Telegram WebApp frontend and local dev
+# Restrict CORS to Telegram WebApp domains, configured frontend URL, and local dev
+cors_origins = [
+    "https://web.telegram.org",
+    "https://telegram.org",
+]
+if settings.WEBAPP_URL:
+    clean_webapp_url = settings.WEBAPP_URL.rstrip("/")
+    if clean_webapp_url not in cors_origins:
+        cors_origins.append(clean_webapp_url)
+
+if settings.ENVIRONMENT == "development":
+    cors_origins.extend([
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -70,9 +85,6 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(parents_router, prefix="/api/v1")
 app.include_router(tutors_router, prefix="/api/v1")
-
-# Mount Static Files for Uploaded Documents
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/", tags=["Root"])

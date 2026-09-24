@@ -13,11 +13,24 @@ class Settings(BaseSettings):
     BOT_TOKEN: Optional[str] = None
     ADMIN_GROUP_ID: Optional[Union[int, str]] = None
     SUPER_ADMIN_ID: Optional[int] = None
+    ADMIN_IDS: list[int] = []
     PARENT_REQUESTS_TOPIC_ID: Optional[int] = None
     TUTOR_REGISTRATION_TOPIC_ID: Optional[int] = None
     WEBAPP_URL: Optional[str] = None
     MINI_APP_URL: Optional[str] = None
     ENVIRONMENT: str = "development"
+    ALLOW_UNVERIFIED_WEB_PREVIEW: bool = True
+
+    @field_validator("ADMIN_IDS", mode="before")
+    @classmethod
+    def parse_admin_ids(cls, v):
+        if not v:
+            return []
+        if isinstance(v, list):
+            return [int(x) for x in v if str(x).strip()]
+        if isinstance(v, str):
+            return [int(x.strip()) for x in v.split(",") if x.strip().isdigit()]
+        return []
 
     @field_validator(
         "PARENT_REQUESTS_TOPIC_ID",

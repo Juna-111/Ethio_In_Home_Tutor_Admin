@@ -1,9 +1,12 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import HealthResponse
+
+logger = logging.getLogger("mentorlink.health")
 
 router = APIRouter(prefix="/health", tags=["Health"])
 
@@ -17,11 +20,14 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         if scalar != 1:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database returned unexpected response"
+                detail="Database service unavailable"
             )
         return HealthResponse(status="healthy", database="connected")
+    except HTTPException:
+        raise
     except Exception as exc:
+        logger.error("Database connection failed during healthcheck: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database connection failed: {str(exc)}"
+            detail="Database service unavailable"
         )
