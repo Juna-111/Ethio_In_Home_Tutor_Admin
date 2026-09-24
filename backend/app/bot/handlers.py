@@ -50,11 +50,11 @@ def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
     # Row 1: Only attach WebApp button if MINI_APP_URL is valid HTTPS
     if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://"):
         keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.MINI_APP_URL))
+            KeyboardButton("Register", web_app=WebAppInfo(url=settings.MINI_APP_URL))
         ])
     elif settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
         keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.WEBAPP_URL))
+            KeyboardButton("Register", web_app=WebAppInfo(url=settings.WEBAPP_URL))
         ])
 
     # Row 2: Customer buttons (ALWAYS present)
@@ -136,7 +136,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 <b>Welcome to MentorLink!</b>\n\n"
         "Connecting families with verified in-home tutors and university mentors across Addis Ababa.\n\n"
         "<blockquote><b>How It Works:</b>\n"
-        "1️⃣ <b>Find a Tutor:</b> Tap <b>🚀 Open MentorLink</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
+        "1️⃣ <b>Find a Tutor:</b> Tap <b>Register</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
         "2️⃣ <b>Become a Tutor:</b> Scholars & teachers can submit credentials for fast verification.\n"
         "3️⃣ <b>Direct Help:</b> Tap <b>ℹ️ About Us</b> or <b>📞 Contact</b> for coordinator support.</blockquote>\n\n"
         "<i>Select an option below to get started:</i>"
@@ -148,11 +148,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Row 1: Only attach WebApp button if MINI_APP_URL is valid HTTPS
     if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://"):
         keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.MINI_APP_URL))
+            KeyboardButton("Register", web_app=WebAppInfo(url=settings.MINI_APP_URL))
         ])
     elif settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
         keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.WEBAPP_URL))
+            KeyboardButton("Register", web_app=WebAppInfo(url=settings.WEBAPP_URL))
         ])
 
     # Row 2: Customer buttons (ALWAYS present)

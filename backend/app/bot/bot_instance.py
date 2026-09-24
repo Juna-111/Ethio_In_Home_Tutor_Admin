@@ -36,6 +36,13 @@ async def init_bot_app() -> Optional[Application]:
         await application.initialize()
         await application.start()
 
+        # Purge stale webhooks and update locks before attaching updater
+        try:
+            await application.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Cleared stale webhooks and pending updates successfully.")
+        except Exception as e:
+            logger.warning("Could not delete webhook on startup: %s", e)
+
         if application.updater:
             await application.updater.start_polling(drop_pending_updates=True)
 
@@ -46,7 +53,6 @@ async def init_bot_app() -> Optional[Application]:
         logger.error("Failed to initialize Telegram Bot: %s", exc, exc_info=True)
         bot_app = None
         return None
-
 
 async def shutdown_bot_app() -> None:
     """Shuts down the Telegram bot polling and application cleanly."""

@@ -27,6 +27,11 @@ async def lifespan(app: FastAPI):
                 await conn.execute(text("ALTER TABLE parent_requests ADD COLUMN telegram_topic_id BIGINT;"))
             except Exception:
                 pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE system_settings ALTER COLUMN value TYPE TEXT;"))
+        except Exception:
+            pass
     
     # Initialize Telegram Bot Application & background listeners
     await init_bot_app()
