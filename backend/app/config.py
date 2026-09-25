@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     WEBAPP_URL: Optional[str] = None
     MINI_APP_URL: Optional[str] = None
     ENVIRONMENT: str = "development"
-    ALLOW_UNVERIFIED_WEB_PREVIEW: bool = True
+    ALLOW_UNVERIFIED_WEB_PREVIEW: bool = False
 
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod

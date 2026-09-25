@@ -392,3 +392,33 @@ Each finding below is validated against live source code with exact file and lin
 | F-04 | Data Validation | P1 | CONFIRMED | `ParentForm.jsx:19`, `schemas.py:51` | Phase 1 |
 | F-05 | Accessibility | P2 | CONFIRMED | `index.html:5, 13` | Phase 1 |
 | F-06 | Frontend API | P1 | CONFIRMED | `api.js:1` | Phase 1 |
+
+---
+
+## 9. Phase 1 Follow-Up: Regressions & Gaps Remediated (September 25, 2026)
+
+Following external code review of pushed commits on `hardening/phase-1`, 6 specific gaps and regressions were addressed:
+
+1. **FIX 1 (P0 — Assignment Model & Persistence)**:
+   - **Root Cause**: `handle_assign_match` in `handlers.py` attempted to update `ParentRequest.assigned_tutor_id` which did not exist on the database model, crashing with `CompileError`.
+   - **Resolution**: Added `Assignment` table to `backend/app/models.py` (`id`, `request_id` [unique, indexed], `tutor_id`, `assigned_by`, `assigned_at`, `status`). Updated `handle_assign_match` to create `Assignment` records and updated `export_service.py` to join against `Assignment` for accurate CSV exports.
+2. **FIX 2 (P1 — Admin Uploaded Document Viewing & Secure Delivery)**:
+   - **Root Cause**: Tutor cards emitted a dead hyperlink (`<a href="{base}/uploads/...">`) pointing to a non-existent public static mount.
+   - **Resolution**: Removed dead URL from `format_tutor_card`, replaced with `📄 ID/Credential attached`. Added `[ 📎 View Document ]` button (`view_doc:{tutor.id}`) to `send_tutor_registration_card`. Implemented `handle_view_document` in `handlers.py` with strict path traversal checks against `UPLOAD_DIR`, admin verification, and direct document delivery to the calling admin's private Telegram chat with fallback guidance if DMs are not initiated.
+3. **FIX 3 (Defense in Depth — Production Auth Default)**:
+   - **Root Cause**: `ALLOW_UNVERIFIED_WEB_PREVIEW` defaulted to `True`, which left API intake open to unauthenticated submissions if not explicitly overridden.
+   - **Resolution**: Changed default to `False` in `backend/app/config.py`. Documented usage in `backend/.env.example`. Added test verifying 401 Unauthorized in production without valid `Authorization` header.
+4. **FIX 4 (Consistency — File Upload Extension Alignment)**:
+   - **Root Cause**: Frontend `TutorForm.jsx` accepted `.doc,.docx` and translations mentioned `DOCX`, but backend rejected `.docx` with 400.
+   - **Resolution**: Aligned `TutorForm.jsx` file picker to `accept=".pdf,.png,.jpg,.jpeg"`. Updated English and Amharic translation strings to remove DOCX references.
+5. **FIX 5 (Defense in Depth — Group Callback Origin Chat Spoof Guard)**:
+   - **Root Cause**: Admin callbacks checked `is_admin()`, but didn't verify that the callback originated from `ADMIN_GROUP_ID`.
+   - **Resolution**: Added verification `if settings.ADMIN_GROUP_ID and query.message and str(query.message.chat_id) != str(settings.ADMIN_GROUP_ID)` to reject spoofed/forwarded callbacks. Added unit test.
+6. **FIX 6 (Test Suite Realignment & Zero Regression Guarantee)**:
+   - Standardized keyword argument `text=` in `reply_text` calls in `handlers.py`.
+   - Aligned analytics card assertions in `test_admin_console.py` to match formatted `<code>` tags.
+   - Handled background async broadcast task in `test_admin_broadcast_flow` with event loop yield.
+   - Added `monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)` in `test_admin_analytics_close`.
+   - Updated document upload test to match random UUID filename regex pattern.
+   - Enforced database isolation across matching tests by resetting tables at test starts.
+   - Added unit tests for unauthorized chat rejection (FIX 5) and admin document delivery (FIX 2).

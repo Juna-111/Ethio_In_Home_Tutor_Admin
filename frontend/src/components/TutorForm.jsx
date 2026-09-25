@@ -585,7 +585,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             type="file"
             ref={fileInputRef}
             onChange={handleFileSelect}
-            accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+            accept=".pdf,.png,.jpg,.jpeg"
             className="hidden"
             id="tutor-doc-file"
           />

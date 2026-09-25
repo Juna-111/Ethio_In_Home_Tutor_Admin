@@ -27,11 +27,13 @@ from telegram.ext import (
     filters,
 )
 
+from pathlib import Path
+
 from app.bot.bot_instance import format_parent_card, format_tutor_card
 from app.bot.topics import get_parent_topic_id
-from app.config import settings
+from app.config import settings, UPLOAD_DIR
 from app.database import AsyncSessionLocal
-from app.models import AdminWizardState, MatchInvite, ParentRequest, SystemSetting, Tutor
+from app.models import AdminWizardState, Assignment, MatchInvite, ParentRequest, SystemSetting, Tutor
 from app.services.export_service import generate_parents_csv, generate_tutors_csv
 from app.services.matcher import find_top_matches, get_tiered_matches
 
@@ -273,16 +275,24 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         "close_parent:",
         "assign_match:",
         "ping_candidates:",
+        "view_doc:",
     )
     if data.startswith(admin_action_prefixes):
         if not await is_admin(update, context):
             await query.answer("⛔ Access denied. Admin privileges required.", show_alert=True)
             return
 
+        if settings.ADMIN_GROUP_ID and query.message and getattr(query.message, "chat_id", None) is not None:
+            if str(query.message.chat_id) != str(settings.ADMIN_GROUP_ID):
+                await query.answer("⛔ This action can only be performed in the Admin Group.", show_alert=True)
+                return
+
     if data.startswith("approve_tutor:"):
         await handle_approve_tutor(update, context, data)
     elif data.startswith("reject_tutor:"):
         await handle_reject_tutor(update, context, data)
+    elif data.startswith("view_doc:"):
+        await handle_view_document(update, context, data)
     elif data.startswith("match_parent:"):
         await handle_match_parent(update, context, data)
     elif data.startswith("close_parent:"):
@@ -443,6 +453,71 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
             await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text, parse_mode=ParseMode.HTML)
         except Exception as exc:
             logger.warning("Could not send rejection DM to tutor %s: %s", tutor.full_name, exc)
+
+
+async def handle_view_document(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    """Securely delivers uploaded tutor credential document to the admin's DM."""
+    query = update.callback_query
+    parts = data.split(":", 1)
+    if len(parts) != 2:
+        await query.answer("Invalid request.")
+        return
+
+    try:
+        tutor_id = int(parts[1])
+    except ValueError:
+        await query.answer("Invalid Tutor ID.")
+        return
+
+    async with AsyncSessionLocal() as session:
+        tutor = await session.get(Tutor, tutor_id)
+        if not tutor:
+            await query.answer(f"Tutor #{tutor_id} not found.", show_alert=True)
+            return
+
+    if not tutor.id_document_url:
+        await query.answer("No document attached for this tutor.", show_alert=True)
+        return
+
+    doc_parts = [p.strip() for p in tutor.id_document_url.split(" | ") if p.strip()]
+    upload_parts = [p for p in doc_parts if "/uploads/" in p]
+    if not upload_parts:
+        await query.answer("No uploaded document file found.", show_alert=True)
+        return
+
+    target_part = upload_parts[0]
+    filename = target_part.split("/uploads/")[-1].lstrip("/\\")
+    upload_dir_path = Path(UPLOAD_DIR).resolve()
+    doc_path = (upload_dir_path / filename).resolve()
+
+    # Path traversal and existence check
+    if not str(doc_path).startswith(str(upload_dir_path)) or not doc_path.exists():
+        await query.answer("❌ Document file not found on server.", show_alert=True)
+        return
+
+    user = update.effective_user
+    if not user:
+        return
+
+    try:
+        with open(doc_path, "rb") as doc_file:
+            await context.bot.send_document(
+                chat_id=user.id,
+                document=doc_file,
+                filename=filename,
+                caption=f"📄 Credentials for Tutor #{tutor.id} ({tutor.full_name})"
+            )
+        await query.answer("Sent to your DMs! Check private chat with bot.")
+    except TelegramError as exc:
+        err_msg = str(exc)
+        if "bot can't initiate conversation" in err_msg.lower() or "forbidden" in err_msg.lower():
+            await query.answer("⚠️ Please /start the bot in private chat first so it can DM you the file.", show_alert=True)
+        else:
+            logger.error("Failed to send document DM to admin %s: %s", user.id, exc)
+            await query.answer("⚠️ Could not deliver document. Please ensure you have started the bot in DMs.", show_alert=True)
+    except Exception as exc:
+        logger.error("Error sending document for tutor #%s: %s", tutor.id, exc)
+        await query.answer("❌ An error occurred while retrieving the document.", show_alert=True)
 
 
 async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -937,13 +1012,19 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         stmt = (
             sql_update(ParentRequest)
             .where(ParentRequest.id == parent_id, ParentRequest.status == "pending")
-            .values(status="matched", assigned_tutor_id=tutor_id)
+            .values(status="matched")
         )
         res = await session.execute(stmt)
         if res.rowcount == 0:
             await query.answer("⚠️ This request has already been assigned or closed.", show_alert=True)
             return
 
+        assignment = Assignment(
+            request_id=parent_id,
+            tutor_id=tutor_id,
+            assigned_by=admin_name
+        )
+        session.add(assignment)
         await session.commit()
         await session.refresh(parent)
 
@@ -1069,7 +1150,7 @@ async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Tailored matching based on proximity, curriculum & student learning goals"
         )
 
-    await msg.reply_text(bio_text, parse_mode=ParseMode.HTML)
+    await msg.reply_text(text=bio_text, parse_mode=ParseMode.HTML)
 
 
 async def handle_support_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1092,7 +1173,7 @@ async def handle_support_contact(update: Update, context: ContextTypes.DEFAULT_T
             "📍 Addis Ababa, Ethiopia"
         )
 
-    await msg.reply_text(contact_text, parse_mode=ParseMode.HTML)
+    await msg.reply_text(text=contact_text, parse_mode=ParseMode.HTML)
 
 
 async def render_analytics_card() -> str:

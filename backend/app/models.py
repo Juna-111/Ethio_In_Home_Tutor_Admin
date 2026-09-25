@@ -94,3 +94,16 @@ class MatchInvite(Base):
     )
     responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+
+class Assignment(Base):
+    __tablename__ = "assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    request_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, unique=True)
+    tutor_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    assigned_by: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", index=True)
+

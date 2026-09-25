@@ -4,7 +4,7 @@ from typing import Any, List, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ParentRequest, Tutor
+from app.models import Assignment, ParentRequest, Tutor
 
 
 def _sanitize_cell(val: Any) -> Any:
@@ -100,6 +100,12 @@ async def generate_parents_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, in
     result = await db_session.execute(select(ParentRequest).order_by(ParentRequest.id.asc()))
     requests = result.scalars().all()
 
+    # Query all assignments and tutors to display real assigned mentor info
+    assignments_res = await db_session.execute(select(Assignment))
+    assignments_map = {a.request_id: a for a in assignments_res.scalars().all()}
+    tutors_res = await db_session.execute(select(Tutor))
+    tutors_map = {t.id: t for t in tutors_res.scalars().all()}
+
     output = io.StringIO()
     writer = csv.writer(output, dialect="excel")
 
@@ -125,7 +131,12 @@ async def generate_parents_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, in
 
     for req in requests:
         created_at = req.created_at.strftime("%Y-%m-%d %H:%M:%S") if req.created_at else ""
-        assigned_tutor = getattr(req, "assigned_tutor_id", "N/A")
+        assignment = assignments_map.get(req.id)
+        if assignment:
+            t = tutors_map.get(assignment.tutor_id)
+            assigned_tutor = f"{assignment.tutor_id} ({t.full_name})" if t else str(assignment.tutor_id)
+        else:
+            assigned_tutor = "N/A"
         writer.writerow([
             req.id,
             _sanitize_cell(req.parent_name),

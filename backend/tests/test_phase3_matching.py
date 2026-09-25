@@ -1,9 +1,9 @@
 from unittest.mock import AsyncMock, MagicMock
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ParentRequest, Tutor
+from app.models import Assignment, MatchInvite, ParentRequest, Tutor
 from app.services.matcher import find_top_matches
 from tests.conftest import TestingSessionLocal
 import app.bot.handlers as bot_handlers
@@ -20,6 +20,10 @@ async def test_matching_engine_filters_and_ranking(db_session: AsyncSession):
     - Subject intersection
     - Correct score ranking (base location bonus + subject count)
     """
+    await db_session.execute(delete(Tutor))
+    await db_session.execute(delete(ParentRequest))
+    await db_session.commit()
+
     # 1. Create a Parent Request
     parent = ParentRequest(
         parent_name="Almaz Ayana",
@@ -172,6 +176,10 @@ async def test_matching_engine_filters_and_ranking(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_matching_no_gender_preference(db_session: AsyncSession):
     """Verifies that 'No preference' allows both male and female verified tutors to match."""
+    await db_session.execute(delete(Tutor))
+    await db_session.execute(delete(ParentRequest))
+    await db_session.commit()
+
     parent = ParentRequest(
         parent_name="Genzebe Dibaba",
         phone_number="+251911990099",
@@ -432,6 +440,14 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await db_session.refresh(parent)
     assert parent.status == "matched"
 
+    # Verify Assignment record created
+    from app.models import Assignment
+    assignment_res = await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))
+    assignment = assignment_res.scalar_one_or_none()
+    assert assignment is not None
+    assert assignment.tutor_id == tutor.id
+    assert assignment.status == "active"
+
     # Verify dedicated topic was auto-closed
     assert mock_context.bot.close_forum_topic.called
     assert mock_context.bot.close_forum_topic.call_args.kwargs["message_thread_id"] == 88992
@@ -533,6 +549,10 @@ async def test_get_tiered_matches_categorization(db_session: AsyncSession):
     And strictly excludes pending status, no subject overlap, or fee > 35%.
     """
     from app.services.matcher import get_tiered_matches
+
+    await db_session.execute(delete(Tutor))
+    await db_session.execute(delete(ParentRequest))
+    await db_session.commit()
 
     parent = ParentRequest(
         parent_name="Radar Parent",
@@ -712,6 +732,11 @@ async def test_ping_candidates_and_availability_confirmation(db_session: AsyncSe
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+    await db_session.execute(delete(MatchInvite))
+    await db_session.execute(delete(Tutor))
+    await db_session.execute(delete(ParentRequest))
+    await db_session.commit()
+
     parent = ParentRequest(
         parent_name="Ping Parent",
         phone_number="+251911333444",
@@ -810,6 +835,10 @@ async def test_match_parent_zero_matches_shows_alert(db_session: AsyncSession, m
     Verifies that when zero matches exist across all tiers, handle_match_parent
     triggers a non-disruptive Telegram popup alert (show_alert=True) with zero chat spam.
     """
+    await db_session.execute(delete(Tutor))
+    await db_session.execute(delete(ParentRequest))
+    await db_session.commit()
+
     parent = ParentRequest(
         parent_name="Lonely Parent",
         phone_number="+251911999888",
@@ -842,4 +871,87 @@ async def test_match_parent_zero_matches_shows_alert(db_session: AsyncSession, m
     assert mock_query.answer.called
     assert mock_query.answer.call_args.kwargs.get("show_alert") is True
     assert not mock_message.reply_text.called
+
+
+@pytest.mark.asyncio
+async def test_admin_callback_from_unauthorized_chat_rejected(monkeypatch):
+    """Verifies that an admin action originating from outside ADMIN_GROUP_ID is blocked (FIX 5)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001234567890)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", 999000111)
+
+    mock_query = AsyncMock()
+    mock_query.data = "approve_tutor:42"
+    mock_message = AsyncMock()
+    mock_message.chat_id = -1009999999999  # Spoofed / wrong chat ID
+    mock_query.message = mock_message
+
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = 999000111  # Is admin
+
+    mock_context = MagicMock()
+
+    await bot_handlers.handle_callback_query(mock_update, mock_context)
+    mock_query.answer.assert_called_with("⛔ This action can only be performed in the Admin Group.", show_alert=True)
+
+
+@pytest.mark.asyncio
+async def test_view_document_callback_dispatches_document_to_admin_dm(db_session: AsyncSession, monkeypatch, tmp_path):
+    """Verifies that view_doc:<tutor_id> sends the uploaded document to the admin's DM (FIX 2)."""
+    from app.config import settings
+    import app.bot.handlers as bh
+    admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001234567890)
+
+    # Create a mock file in UPLOAD_DIR
+    fake_upload_dir = tmp_path / "uploads"
+    fake_upload_dir.mkdir()
+    doc_file = fake_upload_dir / "tutor_cert.pdf"
+    doc_file.write_bytes(b"%PDF-1.4 test certificate")
+    monkeypatch.setattr(bh, "UPLOAD_DIR", str(fake_upload_dir))
+
+    tutor = Tutor(
+        full_name="Certified Tutor",
+        gender="Male",
+        phone_number="+251911998877",
+        university="AAU",
+        department="Maths",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["High School 9-10"],
+        years_of_experience=3.0,
+        expected_fee_etb=350.0,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule="Daily",
+        id_document_url="/uploads/tutor_cert.pdf",
+        status="pending"
+    )
+    db_session.add(tutor)
+    await db_session.commit()
+    await db_session.refresh(tutor)
+
+    mock_query = AsyncMock()
+    mock_query.data = f"view_doc:{tutor.id}"
+    mock_message = AsyncMock()
+    mock_message.chat_id = -1001234567890
+    mock_query.message = mock_message
+
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = admin_id
+
+    mock_context = MagicMock()
+    mock_context.bot = MagicMock()
+    mock_context.bot.send_document = AsyncMock()
+
+    await bh.handle_callback_query(mock_update, mock_context)
+    assert mock_context.bot.send_document.called
+    send_kwargs = mock_context.bot.send_document.call_args.kwargs
+    assert send_kwargs["chat_id"] == admin_id
+    assert send_kwargs["filename"] == "tutor_cert.pdf"
+    assert "Certified Tutor" in send_kwargs["caption"]
+    assert "Sent to your DMs" in mock_query.answer.call_args.args[0]
 

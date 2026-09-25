@@ -122,9 +122,7 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
         links = []
         for idx, part in enumerate(parts):
             if part.startswith("/uploads/"):
-                base = settings.WEBAPP_URL.rstrip("/") if settings.WEBAPP_URL else ""
-                href = f"{base}{part}"
-                links.append(f'<a href="{html.escape(href)}">📎 Uploaded Doc</a>')
+                links.append("📄 ID/Credential attached")
             elif part.startswith("http"):
                 label = "🌐 Portfolio/URL" if len(parts) > 1 and idx > 0 else "📄 View Document"
                 links.append(f'<a href="{html.escape(part)}">{label}</a>')
@@ -303,12 +301,14 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
     try:
         card_text = format_tutor_card(tutor)
 
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Approve", callback_data=f"approve_tutor:{tutor.id}"),
-                InlineKeyboardButton("❌ Reject", callback_data=f"reject_tutor:{tutor.id}")
-            ]
+        buttons = []
+        if tutor.id_document_url and "/uploads/" in tutor.id_document_url:
+            buttons.append([InlineKeyboardButton("📎 View Document", callback_data=f"view_doc:{tutor.id}")])
+        buttons.append([
+            InlineKeyboardButton("✅ Approve", callback_data=f"approve_tutor:{tutor.id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"reject_tutor:{tutor.id}")
         ])
+        keyboard = InlineKeyboardMarkup(buttons)
 
         send_kwargs = {
             "chat_id": settings.ADMIN_GROUP_ID,

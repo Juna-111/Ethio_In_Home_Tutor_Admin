@@ -216,8 +216,8 @@ async def test_admin_analytics_dashboard_and_refresh(db_session: AsyncSession, m
 
     card_text = await bot_handlers.render_analytics_card()
     assert "PLATFORM ANALYTICS" in card_text
-    assert "1 Verified" in card_text
-    assert "1 Open" in card_text
+    assert "Verified: <code>1</code>" in card_text
+    assert "Open / Pending: <code>1</code>" in card_text
     assert "400 ETB/hr" in card_text
     assert "Bole (1)" in card_text
 
@@ -278,6 +278,7 @@ async def test_admin_broadcast_flow(db_session: AsyncSession, monkeypatch):
     mock_query.data = "admin_bcast_confirm"
 
     await bot_handlers.handle_callback_query(mock_update, mock_context)
+    await asyncio.sleep(0.1)
     assert mock_context.bot.send_message.called
     assert mock_context.bot.send_message.call_args.kwargs["chat_id"] == 111222
     assert admin_id not in bot_handlers.admin_states
@@ -350,9 +351,10 @@ async def test_admin_cms_edit_shows_current_text_and_cancels(db_session: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_admin_analytics_close():
+async def test_admin_analytics_close(monkeypatch):
     """Verifies that tapping close on analytics dismisses the dashboard."""
     admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
     mock_query = AsyncMock()
     mock_query.data = "admin_analytics_close"
     mock_query.message = AsyncMock()

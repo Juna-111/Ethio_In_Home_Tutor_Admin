@@ -1,3 +1,4 @@
+import re
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -416,7 +417,7 @@ async def test_upload_tutor_document_success(async_client: AsyncClient):
     resp = await async_client.post("/api/v1/tutors/upload-document", files=files)
     assert resp.status_code == 201
     data = resp.json()
-    assert data["filename"] == "student_id.pdf"
+    assert re.match(r"^[0-9a-f]{32}\.pdf$", data["filename"])
     assert data["file_url"].startswith("/uploads/")
     assert data["file_url"].endswith(".pdf")
 
@@ -514,6 +515,34 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     call2_buttons = call2_kwargs["reply_markup"].inline_keyboard[0]
     assert call2_buttons[0].text == "🔗 Open Workspace / Ticket ↗️"
     assert call2_buttons[0].url == "https://t.me/c/2345678901/7788"
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_request_rejected_in_production_when_preview_disabled(async_client: AsyncClient, monkeypatch):
+    """
+    Verifies that when ENVIRONMENT="production" and ALLOW_UNVERIFIED_WEB_PREVIEW=False,
+    unauthenticated requests without Telegram initData Authorization header return 401 Unauthorized.
+    """
+    from app.config import settings
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+
+    payload = {
+        "parent_name": "Unauth Parent",
+        "phone_number": "+251911223344",
+        "student_level": "Primary 1-4",
+        "subjects": ["English"],
+        "preferred_gender": "No preference",
+        "preferred_experience": "Fresh Graduate",
+        "location_subcity": "Bole",
+        "schedule_days": ["Mon"],
+        "time_slot": "4:00 PM",
+        "session_duration": "2 hrs",
+        "budget_etb": 350.0
+    }
+    resp = await async_client.post("/api/v1/parents/request", json=payload)
+    assert resp.status_code == 401
+    assert "Telegram WebApp authentication credentials" in resp.json()["detail"]
 
 
 
