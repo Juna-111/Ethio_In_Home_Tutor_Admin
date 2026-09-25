@@ -118,6 +118,17 @@ async def test_public_user_about_us_and_contact(db_session: AsyncSession, monkey
     await bot_handlers.handle_text_message(mock_update, mock_context)
     assert "Direct Line: +251900112233" in mock_message.reply_text.call_args.kwargs["text"]
 
+    # Admin-managed content is native Telegram text, so markup is displayed literally.
+    about_setting = await db_session.get(SystemSetting, "about_us_text")
+    about_setting.value = "<b>Literal & safe</b>"
+    await db_session.commit()
+    mock_message.reset_mock()
+    mock_message.text = "ℹ️ About Us"
+    await bot_handlers.handle_text_message(mock_update, mock_context)
+    about_kwargs = mock_message.reply_text.call_args.kwargs
+    assert about_kwargs["text"] == "<b>Literal & safe</b>"
+    assert "parse_mode" not in about_kwargs
+
 
 @pytest.mark.asyncio
 async def test_super_admin_start_renders_admin_keyboard(monkeypatch):
@@ -283,6 +294,7 @@ async def test_admin_broadcast_flow(db_session: AsyncSession, monkeypatch):
     await asyncio.sleep(0.1)
     assert mock_context.bot.send_message.called
     assert mock_context.bot.send_message.call_args_list[0].kwargs["chat_id"] == 111222
+    assert "parse_mode" not in mock_context.bot.send_message.call_args_list[0].kwargs
     assert admin_id not in bot_handlers.admin_states
 
 

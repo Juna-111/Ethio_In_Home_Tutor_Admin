@@ -5,6 +5,14 @@
 **Scope:** Full-stack inspection across `backend/` (FastAPI, Python-Telegram-Bot, SQLAlchemy) and `frontend/` (React, Vite, Tailwind CSS).  
 **Repository:** `Ethio_In_Home_Tutor`
 
+## Current Implementation Status
+
+This document contains historical findings from earlier review passes. The current tree has since implemented several of them, including callback authorization for core group actions, signed Mini App authentication, streaming/magic-byte upload checks, private document delivery, atomic status transitions, persisted match responses, CSV formula neutralization, and frontend request authentication.
+
+The following items remain active after the latest Phase 1 hardening pass: durable provider-backed storage for uploaded documents, applying the new Alembic migration against production data, and a complete backend test run in the correct installed environment. Upload rate limiting, strict server-side phone normalization, and stale wizard-state cleanup are now implemented. Admin-managed About Us, Contact, and broadcast content is plain Telegram text: it is stored and delivered without `parse_mode`, and legacy markup is displayed literally.
+
+Treat the severity/status tables below as historical unless they agree with the current source and this section.
+
 ---
 
 ## 1. Executive Summary & Diagnostic Findings

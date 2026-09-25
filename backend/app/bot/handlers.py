@@ -1,10 +1,9 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import html
 import logging
 import time
 from typing import Dict, List, Optional, Tuple
-import xml.etree.ElementTree as ET
 
 from sqlalchemy import func, select, update as sql_update
 from telegram import (
@@ -42,6 +41,8 @@ logger = logging.getLogger("mentorlink.bot.handlers")
 # In-memory session cache & TTL cache for admin status
 admin_states: Dict[int, dict] = {}
 _admin_cache: Dict[int, Tuple[bool, float]] = {}
+_admin_state_cache_times: Dict[int, float] = {}
+ADMIN_STATE_TTL_SECONDS = 30 * 60
 
 
 def is_super_admin(update: Update) -> bool:
@@ -90,26 +91,28 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         return False
 
 
-def is_valid_telegram_html(text: str) -> bool:
-    """Validates that text contains well-formed HTML tags that Telegram can safely parse."""
-    try:
-        ET.fromstring(f"<root>{text}</root>")
-        return True
-    except ET.ParseError:
-        return False
-
-
 async def get_admin_state(user_id: int) -> Optional[dict]:
     """Retrieves admin wizard state from in-memory cache or DB."""
     if user_id in admin_states:
+        if time.time() - _admin_state_cache_times.get(user_id, time.time()) > ADMIN_STATE_TTL_SECONDS:
+            await clear_admin_state(user_id)
+            return None
         return admin_states[user_id]
 
     try:
         async with AsyncSessionLocal() as session:
             record = await session.get(AdminWizardState, user_id)
             if record:
+                updated_at = record.updated_at
+                if updated_at.tzinfo is None:
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - updated_at).total_seconds() > ADMIN_STATE_TTL_SECONDS:
+                    await session.delete(record)
+                    await session.commit()
+                    return None
                 state_dict = {"state": record.state, **(record.payload or {})}
                 admin_states[user_id] = state_dict
+                _admin_state_cache_times[user_id] = time.time()
                 return state_dict
     except Exception as exc:
         logger.debug("Could not read admin state from DB: %s", exc)
@@ -121,6 +124,7 @@ async def set_admin_state(user_id: int, state: str, payload: Optional[dict] = No
     """Persists admin wizard state in both memory and database."""
     state_dict = {"state": state, **(payload or {})}
     admin_states[user_id] = state_dict
+    _admin_state_cache_times[user_id] = time.time()
 
     try:
         async with AsyncSessionLocal() as session:
@@ -139,6 +143,7 @@ async def set_admin_state(user_id: int, state: str, payload: Optional[dict] = No
 async def clear_admin_state(user_id: int) -> None:
     """Clears admin wizard state from both memory and database."""
     admin_states.pop(user_id, None)
+    _admin_state_cache_times.pop(user_id, None)
 
     try:
         async with AsyncSessionLocal() as session:
@@ -296,13 +301,26 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         "assign_match:",
         "ping_candidates:",
         "view_doc:",
+        "admin_analytics_",
+        "admin_bcast_",
+        "admin_cms_",
+        "export:",
+    )
+    admin_group_action_prefixes = (
+        "approve_tutor:",
+        "reject_tutor:",
+        "match_parent:",
+        "close_parent:",
+        "assign_match:",
+        "ping_candidates:",
+        "view_doc:",
     )
     if data.startswith(admin_action_prefixes):
         if not await is_admin(update, context):
             await query.answer("⛔ Access denied. Admin privileges required.", show_alert=True)
             return
 
-        if settings.ADMIN_GROUP_ID and query.message and getattr(query.message, "chat_id", None) is not None:
+        if data.startswith(admin_group_action_prefixes) and settings.ADMIN_GROUP_ID and query.message and getattr(query.message, "chat_id", None) is not None:
             if str(query.message.chat_id) != str(settings.ADMIN_GROUP_ID):
                 await query.answer("⛔ This action can only be performed in the Admin Group.", show_alert=True)
                 return
@@ -511,7 +529,12 @@ async def handle_view_document(update: Update, context: ContextTypes.DEFAULT_TYP
     doc_path = (upload_dir_path / filename).resolve()
 
     # Path traversal and existence check
-    if not str(doc_path).startswith(str(upload_dir_path)) or not doc_path.exists():
+    try:
+        doc_path.relative_to(upload_dir_path)
+    except ValueError:
+        await query.answer("❌ Document file not found on server.", show_alert=True)
+        return
+    if not doc_path.is_file():
         await query.answer("❌ Document file not found on server.", show_alert=True)
         return
 
@@ -885,16 +908,15 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
             MatchInvite.tutor_id == tutor_id
         )
         invite = (await session.execute(invite_stmt)).scalar_one_or_none()
+        if not invite or invite.status != "sent":
+            await query.answer("⚠️ This opportunity is no longer available.", show_alert=True)
+            return
         if invite and invite.status in ("yes", "no"):
             await query.answer("You have already responded to this opportunity.", show_alert=True)
             return
 
-        if not invite:
-            invite = MatchInvite(request_id=parent_id, tutor_id=tutor_id, status="yes", responded_at=datetime.utcnow())
-            session.add(invite)
-        else:
-            invite.status = "yes"
-            invite.responded_at = datetime.utcnow()
+        invite.status = "yes"
+        invite.responded_at = datetime.utcnow()
 
         await session.commit()
 
@@ -979,16 +1001,15 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
             MatchInvite.tutor_id == tutor_id
         )
         invite = (await session.execute(invite_stmt)).scalar_one_or_none()
+        if not invite or invite.status != "sent":
+            await query.answer("⚠️ This opportunity is no longer available.", show_alert=True)
+            return
         if invite and invite.status in ("yes", "no"):
             await query.answer("You have already responded to this opportunity.", show_alert=True)
             return
 
-        if not invite:
-            invite = MatchInvite(request_id=parent_id, tutor_id=tutor_id, status="no", responded_at=datetime.utcnow())
-            session.add(invite)
-        else:
-            invite.status = "no"
-            invite.responded_at = datetime.utcnow()
+        invite.status = "no"
+        invite.responded_at = datetime.utcnow()
         await session.commit()
 
     if query.message:
@@ -1049,6 +1070,20 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if not parent or not tutor:
             await query.answer("Parent request or Tutor not found.", show_alert=True)
+            return
+
+        if tutor.status != "verified":
+            await query.answer("⚠️ Only verified tutors can be assigned.", show_alert=True)
+            return
+
+        invite_stmt = select(MatchInvite).where(
+            MatchInvite.request_id == parent_id,
+            MatchInvite.tutor_id == tutor_id,
+            MatchInvite.status == "yes",
+        )
+        invite = (await session.execute(invite_stmt)).scalar_one_or_none()
+        if not invite:
+            await query.answer("⚠️ This tutor has not confirmed availability.", show_alert=True)
             return
 
         if parent.status != "pending":
@@ -1177,7 +1212,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Renders the About Us bio from SystemSetting or default fallback."""
+    """Renders plain-text About Us content from SystemSetting or a fallback."""
     msg = update.message or update.effective_message
     if not msg:
         return
@@ -1188,20 +1223,20 @@ async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not bio_text:
         bio_text = (
-            "🌟 <b>About MentorLink</b>\n\n"
+            "🌟 About MentorLink\n\n"
             "MentorLink is Addis Ababa's premier home tutoring network connecting university "
             "scholars and verified educators with students across all grade levels.\n\n"
-            "✨ <b>Our Standards:</b>\n"
+            "✨ Our Standards:\n"
             "• Rigorous credential & ID verification\n"
             "• University-vetted mentors from top institutions\n"
             "• Tailored matching based on proximity, curriculum & student learning goals"
         )
 
-    await msg.reply_text(text=bio_text, parse_mode=ParseMode.HTML)
+    await msg.reply_text(text=bio_text)
 
 
 async def handle_support_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Renders customer support & coordination contact info from SystemSetting or fallback."""
+    """Renders plain-text support contact content from SystemSetting or a fallback."""
     msg = update.message or update.effective_message
     if not msg:
         return
@@ -1212,15 +1247,15 @@ async def handle_support_contact(update: Update, context: ContextTypes.DEFAULT_T
 
     if not contact_text:
         contact_text = (
-            "📞 <b>Support & Coordination</b>\n\n"
+            "📞 Support & Coordination\n\n"
             "Need help finding a mentor or have questions about our tutoring programs?\n\n"
-            "💬 <b>Telegram:</b> @MentorLinkSupport\n"
-            "📱 <b>Phone:</b> +251 91 100 2233\n"
-            "🕒 <b>Hours:</b> Mon – Sat, 8:30 AM – 6:30 PM (EAT)\n"
+            "💬 Telegram: @MentorLinkSupport\n"
+            "📱 Phone: +251 91 100 2233\n"
+            "🕒 Hours: Mon – Sat, 8:30 AM – 6:30 PM (EAT)\n"
             "📍 Addis Ababa, Ethiopia"
         )
 
-    await msg.reply_text(text=contact_text, parse_mode=ParseMode.HTML)
+    await msg.reply_text(text=contact_text)
 
 
 async def render_analytics_card() -> str:
@@ -1401,7 +1436,7 @@ async def handle_bcast_target_select(update: Update, context: ContextTypes.DEFAU
     await query.message.edit_text(
         f"Target selected: <b>{target_labels.get(target, target)}</b>\n\n"
         "✍️ Please send the broadcast announcement message now.\n"
-        "<i>(HTML formatting is supported: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, links)</i>",
+        "(Plain text is used; Telegram formatting is not interpreted.)",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("❌ Cancel", callback_data="admin_bcast_cancel")]
@@ -1419,8 +1454,7 @@ async def _run_broadcast_task(bot, recipient_ids: List[int], message_text: str, 
         try:
             await bot.send_message(
                 chat_id=uid,
-                text=message_text,
-                parse_mode=ParseMode.HTML
+                text=message_text
             )
             success_count += 1
         except RetryAfter as exc:
@@ -1429,8 +1463,7 @@ async def _run_broadcast_task(bot, recipient_ids: List[int], message_text: str, 
             try:
                 await bot.send_message(
                     chat_id=uid,
-                    text=message_text,
-                    parse_mode=ParseMode.HTML
+                    text=message_text
                 )
                 success_count += 1
             except Exception as e2:
@@ -1452,11 +1485,10 @@ async def _run_broadcast_task(bot, recipient_ids: List[int], message_text: str, 
     try:
         await bot.send_message(
             chat_id=chat_id,
-            text=f"✅ <b>Broadcast Completed!</b>\n\n"
+              text=f"✅ Broadcast Completed!\n\n"
                  f"• Sent: {success_count}\n"
                  f"• Failed/Blocked: {fail_count}\n"
-                 f"• Total Audience: {len(recipient_ids)}",
-            parse_mode=ParseMode.HTML
+                  f"• Total Audience: {len(recipient_ids)}"
         )
     except Exception as exc:
         logger.error("Failed to send broadcast completion report: %s", exc)
@@ -1563,7 +1595,8 @@ async def handle_cms_view_current(update: Update, context: ContextTypes.DEFAULT_
         current_val = setting.value if setting else "(Not set — using platform default)"
 
     await query.message.reply_text(
-        text=f"📄 <b>Current content for <code>{setting_key}</code>:</b>\n\n{current_val}",
+        text=f"📄 <b>Current content for <code>{html.escape(setting_key)}</code>:</b>\n\n"
+             f"<pre>{html.escape(current_val)}</pre>",
         parse_mode=ParseMode.HTML
     )
     await query.answer()
@@ -1588,9 +1621,9 @@ async def handle_cms_edit_select(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.edit_text(
         f"✏️ <b>Edit Content — {label}</b>\n\n"
         f"<b>Current Content:</b>\n"
-        f"<blockquote>{current_val}</blockquote>\n"
+        f"<pre>{html.escape(current_val)}</pre>\n"
         f"✍️ Please send the new text for <b>{label}</b> now:\n"
-        "<i>(HTML formatting is supported: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, links)</i>",
+        "<i>(Plain text is used; Telegram formatting is not interpreted.)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("↩️ Keep Existing / Cancel", callback_data="admin_cms_cancel")]
@@ -1760,13 +1793,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             current_state = state_data.get("state")
 
             if current_state == "AWAITING_BROADCAST_TEXT":
-                if not is_valid_telegram_html(text):
-                    await msg.reply_text(
-                        text="⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed (e.g. <code>&lt;b&gt;...&lt;/b&gt;</code>) or send plain text.",
-                        parse_mode=ParseMode.HTML
-                    )
-                    return
-
                 target = state_data.get("target", "all")
                 await set_admin_state(user_id, "AWAITING_BROADCAST_CONFIRM", {"target": target, "text": text})
                 recipient_ids = await get_broadcast_recipient_ids(target)
@@ -1775,7 +1801,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "📢 <b>BROADCAST PREVIEW</b>\n\n"
                     f"🎯 <b>Target:</b> <code>{target}</code> ({len(recipient_ids)} recipients)\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"{text}\n"
+                    f"{html.escape(text)}\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     "<i>Confirm below to dispatch immediately:</i>"
                 )
@@ -1790,13 +1816,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 return
 
             elif current_state == "AWAITING_CMS_INPUT":
-                if not is_valid_telegram_html(text):
-                    await msg.reply_text(
-                        text="⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed or send plain text.",
-                        parse_mode=ParseMode.HTML
-                    )
-                    return
-
                 setting_key = state_data.get("key")
                 await clear_admin_state(user_id)
 
@@ -1811,7 +1830,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                 label = "About Us" if setting_key == "about_us_text" else "Contact"
                 await msg.reply_text(
-                    text=f"✅ <b>{label}</b> content updated successfully! Public users will now see this update immediately.",
+                    text=f"✅ {html.escape(label)} content updated successfully! Public users will now see this update immediately.",
                     parse_mode=ParseMode.HTML
                 )
                 return

@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import Enum
+import re
 from typing import Any, List, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StudentLevel(str, Enum):
@@ -41,6 +42,25 @@ class TutorStatus(str, Enum):
     REJECTED = "rejected"
 
 
+def normalize_ethiopian_phone(value: str) -> str:
+    """Normalize Ethiopian mobile numbers to +2519... or +2517... E.164 form."""
+    digits = re.sub(r"\D", "", value or "")
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if digits.startswith("251"):
+        local = digits[3:]
+    elif digits.startswith(("09", "07")):
+        local = digits[1:]
+    elif digits.startswith(("9", "7")):
+        local = digits
+    else:
+        raise ValueError("Enter a valid Ethiopian mobile number starting with 09, 07, +2519, or +2517.")
+
+    if len(local) != 9 or local[0] not in "97":
+        raise ValueError("Enter a valid 9-digit Ethiopian mobile number.")
+    return f"+251{local}"
+
+
 # ==========================================
 # Parent Request Schemas
 # ==========================================
@@ -59,6 +79,11 @@ class ParentRequestCreate(BaseModel):
     time_slot: str = Field(..., description="Preferred time of day (e.g., 4:30 PM - 6:30 PM)")
     session_duration: str = Field(..., description="Duration per session (e.g. 1 hr, 1.5 hrs, 2 hrs)")
     budget_etb: float = Field(..., gt=0, description="Budget in Ethiopian Birr")
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        return normalize_ethiopian_phone(value)
 
 
 class ParentRequestResponse(ParentRequestCreate):
@@ -90,6 +115,11 @@ class TutorCreate(BaseModel):
     coverage_areas: List[str] = Field(..., min_length=1, description="Subcities tutor is willing to travel to")
     availability_schedule: Union[dict, List[str], str] = Field(..., description="Available days and time slots")
     id_document_url: Optional[str] = Field(None, max_length=2048, description="URL or Telegram file ID of student/national ID")
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        return normalize_ethiopian_phone(value)
 
 
 class TutorResponse(TutorCreate):

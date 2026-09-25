@@ -120,10 +120,10 @@ async def test_register_tutor_success(async_client: AsyncClient, db_session: Asy
 
 
 @pytest.mark.asyncio
-async def test_register_tutor_duplicate_telegram_id(async_client: AsyncClient):
-    """Verifies duplicate prevention when a tutor with existing telegram_user_id registers."""
+async def test_register_tutor_ignores_client_telegram_id(async_client: AsyncClient):
+    """Unauthenticated preview submissions cannot assign themselves a Telegram identity."""
     payload = {
-        "telegram_user_id": 987654321,  # Already created in previous test
+        "telegram_user_id": 987654321,
         "full_name": "Sara Duplicate",
         "gender": "Female",
         "phone_number": "+251922334499",
@@ -140,8 +140,8 @@ async def test_register_tutor_duplicate_telegram_id(async_client: AsyncClient):
     }
 
     response = await async_client.post("/api/v1/tutors/register", json=payload)
-    assert response.status_code == 400
-    assert "already registered" in response.json()["detail"]
+    assert response.status_code == 201
+    assert response.json()["telegram_user_id"] is None
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,10 @@
 import os
+import time
+from collections import defaultdict, deque
 from typing import Optional
 import uuid
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,9 @@ router = APIRouter(prefix="/tutors", tags=["Tutors"])
 
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+UPLOAD_RATE_LIMIT = 5
+UPLOAD_RATE_WINDOW_SECONDS = 60
+_upload_attempts: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _validate_magic_bytes(header: bytes) -> bool:
@@ -36,6 +41,7 @@ def _validate_magic_bytes(header: bytes) -> bool:
     summary="Upload Tutor Verification Document / CV"
 )
 async def upload_tutor_document(
+    request: Request,
     file: UploadFile = File(...),
     verified_user_id: Optional[int] = Depends(get_current_telegram_user)
 ):
@@ -43,6 +49,18 @@ async def upload_tutor_document(
     Accepts file upload (ID, Certificate, CV) and saves it to the local uploads directory.
     Validates magic bytes, streams with strict 10 MB ceiling, and generates secure UUID filename.
     """
+    rate_key = f"user:{verified_user_id}" if verified_user_id is not None else f"ip:{request.client.host if request.client else 'unknown'}"
+    now = time.monotonic()
+    attempts = _upload_attempts[rate_key]
+    while attempts and now - attempts[0] >= UPLOAD_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    if len(attempts) >= UPLOAD_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many document uploads. Please try again later."
+        )
+    attempts.append(now)
+
     _, ext = os.path.splitext(file.filename or "")
     ext_lower = ext.lower()
 
@@ -113,7 +131,8 @@ async def register_tutor(
     Checks for duplicate telegram_user_id if provided.
     Forwards a verification card to the Telegram Admin Group.
     """
-    effective_tg_id = verified_user_id if verified_user_id is not None else payload.telegram_user_id
+    # Never trust telegram_user_id from the JSON body; it is client-controlled.
+    effective_tg_id = verified_user_id
 
     if effective_tg_id is not None:
         query = select(Tutor).where(Tutor.telegram_user_id == effective_tg_id)

@@ -5,6 +5,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_db
+from app.config import settings
 from app.main import app
 
 # In-memory SQLite async database for high-speed, isolated unit and integration testing
@@ -41,6 +42,12 @@ async def clean_database():
     async with test_engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
+
+
+@pytest.fixture(autouse=True)
+def allow_explicit_test_preview(monkeypatch):
+    """Allow unauthenticated browser tests without weakening production defaults."""
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", True)
 
 
 @pytest_asyncio.fixture

@@ -27,7 +27,8 @@ async def create_parent_request(
     Status is initialized to 'pending'.
     Forwards a notification card to the Telegram Admin Group.
     """
-    effective_tg_id = verified_user_id if verified_user_id is not None else payload.telegram_user_id
+    # Never trust telegram_user_id from the JSON body; it is client-controlled.
+    effective_tg_id = verified_user_id
 
     parent_req = ParentRequest(
         telegram_user_id=effective_tg_id,

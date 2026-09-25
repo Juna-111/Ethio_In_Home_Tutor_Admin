@@ -49,10 +49,12 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict
             logger.warning("Telegram initData HMAC verification failed.")
             return None
 
-        # Verify timestamp freshness (max 24 hours old)
+        # Verify timestamp freshness and reject future-dated tokens.
         auth_date = int(data_dict.get("auth_date", 0))
         current_time = int(time.time())
-        if current_time - auth_date > 86400:
+        clock_skew = 300
+        age = current_time - auth_date
+        if auth_date <= 0 or age < -clock_skew or age > 86400:
             logger.warning("Telegram initData expired: auth_date=%s, current=%s", auth_date, current_time)
             return None
 
@@ -95,11 +97,12 @@ async def get_current_telegram_user(
                 detail="Invalid or expired Telegram WebApp authentication credentials."
             )
 
-    # Missing Authorization header
-    if not settings.ALLOW_UNVERIFIED_WEB_PREVIEW and settings.ENVIRONMENT != "development":
+    # Missing Authorization header. Preview access must be explicitly enabled;
+    # environment name alone must never weaken identity verification.
+    if not settings.ALLOW_UNVERIFIED_WEB_PREVIEW:
         logger.warning(
             "Rejecting request: Missing Telegram WebApp authentication credentials. "
-            "(Set ALLOW_UNVERIFIED_WEB_PREVIEW=true to test without Telegram WebApp container)"
+            "(Set ALLOW_UNVERIFIED_WEB_PREVIEW=true only for local preview testing)"
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

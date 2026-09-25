@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, List, Optional
-from sqlalchemy import BigInteger, DateTime, Float, Integer, Numeric, String, Text, JSON, func
+from sqlalchemy import BigInteger, DateTime, Float, Integer, Numeric, String, Text, JSON, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -82,6 +82,9 @@ class AdminWizardState(Base):
 
 class MatchInvite(Base):
     __tablename__ = "match_invites"
+    __table_args__ = (
+        UniqueConstraint("request_id", "tutor_id", name="uq_match_invites_request_tutor"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
     request_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
