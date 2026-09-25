@@ -408,7 +408,7 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_tutor_card(tutor, status_override="🟢 <b>Approved</b>", admin_username=admin_name)
+            updated_text = format_tutor_card(tutor, status_override="<b>Approved</b>", admin_username=admin_name)
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -470,7 +470,7 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_tutor_card(tutor, status_override="🔴 <b>Rejected</b>", admin_username=admin_name)
+            updated_text = format_tutor_card(tutor, status_override="<b>Rejected</b>", admin_username=admin_name)
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -602,7 +602,7 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_parent_card(parent_req, status_override=f"⚪ <b>Closed by {admin_name}</b>")
+            updated_text = format_parent_card(parent_req, status_override=f"<b>Closed by {admin_name}</b>")
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -663,8 +663,8 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Format Tiered Match Radar (capped at 5 per tier to stay within Telegram message limits)
     subjects_str = _format_subjects(parent.subjects)
     lines = [
-        f"🎯 <b>MATCH RADAR FOR REQUEST #{parent_id}</b>",
-        f"📍 {html.escape(parent.location_subcity)} • 📚 {subjects_str} • 💰 {parent.budget_etb:,.2f} ETB/hr",
+        f"<b>MATCH RADAR FOR REQUEST #{parent_id}</b>",
+        f"Location: {html.escape(parent.location_subcity)} • Subjects: {subjects_str} • Budget: {parent.budget_etb:,.2f} ETB/hr",
         "━━━━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -673,33 +673,33 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Tier 1: Perfect Fit (cap 5)
     t1_matches = tiered["tier1"][:5]
     if t1_matches:
-        lines.append("\n🟢 <b>PERFECT FIT</b>")
+        lines.append("\n<b>PERFECT FIT</b>")
         for match in t1_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             matched_subs = ", ".join(match.get("matched_subjects", []))
             lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}, {html.escape(t.education_year)}) — {t.expected_fee_etb:,.0f} ETB/hr | ⭐ {t.years_of_experience:g} yrs\n"
-                f"  📍 Base: {html.escape(t.base_subcity)} | 📚 {html.escape(matched_subs)}"
+                f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}, {html.escape(t.education_year)}) — {t.expected_fee_etb:,.0f} ETB/hr | {t.years_of_experience:g} yrs experience\n"
+                f"  Base: {html.escape(t.base_subcity)} | Subjects: {html.escape(matched_subs)}"
             )
 
     # Tier 2: Commute / Proximity (cap 5)
     t2_matches = tiered["tier2"][:5]
     if t2_matches:
-        lines.append("\n🟡 <b>COMMUTE / PROXIMITY</b>")
+        lines.append("\n<b>COMMUTE / PROXIMITY</b>")
         for match in t2_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             cov_str = _format_subjects(t.coverage_areas)
             lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}) — {t.expected_fee_etb:,.0f} ETB/hr | ⭐ {t.years_of_experience:g} yrs\n"
-                f"  📍 Covers: {cov_str}"
+                f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}) — {t.expected_fee_etb:,.0f} ETB/hr | {t.years_of_experience:g} yrs experience\n"
+                f"  Covers: {cov_str}"
             )
 
     # Tier 3: Flexible Alternatives (cap 5)
     t3_matches = tiered["tier3"][:5]
     if t3_matches:
-        lines.append("\n⚪ <b>FLEX ALTERNATIVES</b>")
+        lines.append("\n<b>FLEX ALTERNATIVES</b>")
         for match in t3_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
@@ -798,11 +798,11 @@ async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_T
     schedule_str = _format_schedule(parent.schedule_days)
 
     ping_text = (
-        f"💼 <b>NEW TUTORING OPPORTUNITY!</b>\n\n"
-        f"📍 <b>Area:</b> {html.escape(parent.location_subcity)}{landmark}\n"
-        f"🎓 <b>Level:</b> {html.escape(parent.student_level)} | 📚 <b>Subjects:</b> {subjects_str}\n"
-        f"⏰ <b>Schedule:</b> {schedule_str} ({html.escape(parent.time_slot)})\n"
-        f"💰 <b>Rate:</b> {parent.budget_etb:,.2f} ETB/hr\n\n"
+        f"<b>NEW TUTORING OPPORTUNITY</b>\n\n"
+        f"<b>Area:</b> {html.escape(parent.location_subcity)}{landmark}\n"
+        f"<b>Level:</b> {html.escape(parent.student_level)} | <b>Subjects:</b> {subjects_str}\n"
+        f"<b>Schedule:</b> {schedule_str} ({html.escape(parent.time_slot)})\n"
+        f"<b>Rate:</b> {parent.budget_etb:,.2f} ETB/hr\n\n"
         "Are you available to take this student?"
     )
 
@@ -940,11 +940,11 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
         try:
             subjects_str = _format_subjects(tutor.subjects_qualified)
             admin_alert_text = (
-                f"🔔 <b>AVAILABILITY CONFIRMED!</b>\n"
+                f"<b>AVAILABILITY CONFIRMED</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🧑‍🏫 <b>{html.escape(tutor.full_name)}</b> (<code>{html.escape(tutor.phone_number)}</code>) is available for Request #{parent_id}!\n"
-                f"📚 <b>Subjects:</b> {subjects_str}\n"
-                f"📍 Base: {html.escape(tutor.base_subcity)} | 💰 Rate: {tutor.expected_fee_etb:,.2f} ETB/hr"
+                f"<b>{html.escape(tutor.full_name)}</b> (<code>{html.escape(tutor.phone_number)}</code>) is available for Request #{parent_id}.\n"
+                f"<b>Subjects:</b> {subjects_str}\n"
+                f"Base: {html.escape(tutor.base_subcity)} | Rate: {tutor.expected_fee_etb:,.2f} ETB/hr"
             )
             confirm_btn = InlineKeyboardMarkup([
                 [
@@ -1027,10 +1027,10 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
         try:
             subjects_str = _format_subjects(tutor.subjects_qualified)
             decline_alert_text = (
-                f"ℹ️ <b>AVAILABILITY UPDATE (DECLINED)</b>\n"
+                f"<b>AVAILABILITY UPDATE (DECLINED)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🧑‍🏫 <b>{html.escape(tutor.full_name)}</b> is not available for Request #{parent_id}.\n"
-                f"📚 <b>Subjects:</b> {subjects_str}"
+                f"<b>{html.escape(tutor.full_name)}</b> is not available for Request #{parent_id}.\n"
+                f"<b>Subjects:</b> {subjects_str}"
             )
             send_kwargs = {
                 "chat_id": settings.ADMIN_GROUP_ID,
@@ -1137,13 +1137,13 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
     if parent.telegram_user_id:
         try:
             parent_dm = (
-                f"🎉 <b>Great news, {html.escape(parent.parent_name)}!</b>\n\n"
+                f"<b>Great news, {html.escape(parent.parent_name)}!</b>\n\n"
                 f"A verified mentor has been assigned to your tutoring request:\n"
-                f"🧑‍🏫 <b>Mentor:</b> {html.escape(tutor.full_name)} ({html.escape(tutor.gender)})\n"
-                f"🏛 <b>Background:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)}\n"
-                f"⭐ <b>Experience:</b> {tutor.years_of_experience:g} years\n"
-                f"📞 <b>Phone:</b> {html.escape(tutor.phone_number)}\n\n"
-                f"Our coordinator or your mentor will contact you shortly to confirm your first trial session. Thank you for trusting MentorLink! 🌟"
+                f"<b>Mentor:</b> {html.escape(tutor.full_name)} ({html.escape(tutor.gender)})\n"
+                f"<b>Background:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)}\n"
+                f"<b>Experience:</b> {tutor.years_of_experience:g} years\n"
+                f"<b>Phone:</b> {html.escape(tutor.phone_number)}\n\n"
+                "Our coordinator or your mentor will contact you shortly to confirm your first trial session. Thank you for trusting MentorLink."
             )
             await context.bot.send_message(
                 chat_id=parent.telegram_user_id,
@@ -1161,15 +1161,15 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
             days_str = _format_schedule(parent.schedule_days)
 
             job_alert = (
-                f"📢 <b>New Tutoring Opportunity Assigned!</b>\n\n"
+                f"<b>New Tutoring Opportunity Assigned</b>\n\n"
                 f"Hello {html.escape(tutor.full_name)}, you have been assigned to Parent Request #{parent_id}:\n\n"
-                f"👤 <b>Parent:</b> {html.escape(parent.parent_name)}\n"
-                f"📞 <b>Contact:</b> {html.escape(parent.phone_number)}\n"
-                f"🎓 <b>Student Level:</b> {html.escape(parent.student_level)}\n"
-                f"📚 <b>Subjects:</b> {subjects_str}\n"
-                f"📍 <b>Location:</b> {html.escape(parent.location_subcity)}{landmark}\n"
-                f"📅 <b>Schedule:</b> {days_str} | {html.escape(parent.time_slot)} ({html.escape(parent.session_duration)})\n"
-                f"💰 <b>Budget:</b> {parent.budget_etb:,.2f} ETB\n\n"
+                f"<b>Parent:</b> {html.escape(parent.parent_name)}\n"
+                f"<b>Contact:</b> {html.escape(parent.phone_number)}\n"
+                f"<b>Student Level:</b> {html.escape(parent.student_level)}\n"
+                f"<b>Subjects:</b> {subjects_str}\n"
+                f"<b>Location:</b> {html.escape(parent.location_subcity)}{landmark}\n"
+                f"<b>Schedule:</b> {days_str} | {html.escape(parent.time_slot)} ({html.escape(parent.session_duration)})\n"
+                f"<b>Budget:</b> {parent.budget_etb:,.2f} ETB\n\n"
                 "Please reach out to the parent or contact admin to confirm your first session."
             )
             await context.bot.send_message(
@@ -1289,17 +1289,17 @@ async def render_analytics_card() -> str:
     match_pct = f"{(matched_requests / total_requests * 100):.0f}%" if total_requests > 0 else "0%"
 
     return (
-        "📊 <b>PLATFORM ANALYTICS & KPIS</b>\n\n"
-        "<blockquote><b>🧑‍🏫 Tutor Community:</b> <code>" + str(total_tutors) + "</code> Total\n"
-        f"├ 🟢 Verified: <code>{verified_tutors}</code> ({ver_pct})\n"
-        f"├ ⏳ Pending: <code>{pending_tutors}</code>\n"
-        f"└ 🔴 Rejected: <code>{rejected_tutors}</code>\n\n"
-        f"<b>📋 Parent Tutoring Requests:</b> <code>{total_requests}</code> Total\n"
-        f"├ 🟡 Open / Pending: <code>{open_requests}</code>\n"
-        f"└ ✅ Matched / Fulfilled: <code>{matched_requests}</code> ({match_pct})\n\n"
-        f"<b>💰 Economic Metrics:</b>\n"
+        "<b>PLATFORM ANALYTICS & KPIS</b>\n\n"
+        "<blockquote><b>Tutor Community:</b> <code>" + str(total_tutors) + "</code> Total\n"
+        f"├ Verified: <code>{verified_tutors}</code> ({ver_pct})\n"
+        f"├ Pending: <code>{pending_tutors}</code>\n"
+        f"└ Rejected: <code>{rejected_tutors}</code>\n\n"
+        f"<b>Parent Tutoring Requests:</b> <code>{total_requests}</code> Total\n"
+        f"├ Open / Pending: <code>{open_requests}</code>\n"
+        f"└ Matched / Fulfilled: <code>{matched_requests}</code> ({match_pct})\n\n"
+        f"<b>Economic Metrics:</b>\n"
         f"└ Avg Verified Fee: <code>{avg_fee:,.0f} ETB/hr</code>\n\n"
-        f"<b>📍 High-Demand Zones:</b>\n"
+        f"<b>High-Demand Zones:</b>\n"
         f"└ {subcities_str}</blockquote>"
     )
 
@@ -1595,7 +1595,7 @@ async def handle_cms_view_current(update: Update, context: ContextTypes.DEFAULT_
         current_val = setting.value if setting else "(Not set — using platform default)"
 
     await query.message.reply_text(
-        text=f"📄 <b>Current content for <code>{html.escape(setting_key)}</code>:</b>\n\n"
+        text=f"<b>Current content for <code>{html.escape(setting_key)}</code>:</b>\n\n"
              f"<pre>{html.escape(current_val)}</pre>",
         parse_mode=ParseMode.HTML
     )
@@ -1798,8 +1798,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 recipient_ids = await get_broadcast_recipient_ids(target)
 
                 preview_card = (
-                    "📢 <b>BROADCAST PREVIEW</b>\n\n"
-                    f"🎯 <b>Target:</b> <code>{target}</code> ({len(recipient_ids)} recipients)\n"
+                    "<b>BROADCAST PREVIEW</b>\n\n"
+                    f"<b>Target:</b> <code>{target}</code> ({len(recipient_ids)} recipients)\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"{html.escape(text)}\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n\n"

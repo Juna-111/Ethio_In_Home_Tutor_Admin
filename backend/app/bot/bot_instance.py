@@ -87,14 +87,14 @@ def format_schedule(schedule) -> str:
 
 def format_parent_card(parent_req, status_override: Optional[str] = None) -> str:
     """Renders the Blockquote Terminal Data Card for a parent tutoring request."""
-    header_status = status_override or "🟡 <b>Pending</b>"
+    header_status = status_override or "<b>Pending</b>"
     tg_id_str = str(parent_req.telegram_user_id) if parent_req.telegram_user_id else "N/A"
     landmark_part = f" ({html.escape(parent_req.location_landmark)})" if parent_req.location_landmark else ""
     timing_str = f"{format_schedule(parent_req.schedule_days)} ({html.escape(parent_req.time_slot)}, {html.escape(parent_req.session_duration)})"
     subjects_str = format_subjects(parent_req.subjects)
 
     return (
-        f"📋 <b>PARENT REQUEST #{parent_req.id:04d}</b> • {header_status}\n\n"
+        f"<b>PARENT REQUEST #{parent_req.id:04d}</b> • {header_status}\n\n"
         f"<blockquote><b>Parent:</b> {html.escape(parent_req.parent_name)}\n"
         f"<b>Contact:</b> <code>{html.escape(parent_req.phone_number)}</code> (TG: <code>{tg_id_str}</code>)\n"
         f"<b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_part}\n"
@@ -105,13 +105,13 @@ def format_parent_card(parent_req, status_override: Optional[str] = None) -> str
 
 
 def format_parent_directory_badge(parent_req) -> str:
-    """Renders the compact badge for the main Directory Index Topic ('📥 Parent Requests')."""
+    """Renders the compact badge for the main Parent Requests directory topic."""
     subjects_str = format_subjects(parent_req.subjects)
     schedule_str = format_schedule(parent_req.schedule_days)
     return (
-        f"🎫 <b>REQ-{parent_req.id:04d}</b> ── {html.escape(parent_req.student_level)} ({subjects_str})\n"
-        f"👤 <b>{html.escape(parent_req.parent_name)}</b> • {html.escape(parent_req.location_subcity)}\n"
-        f"⏰ {schedule_str} • 💰 {parent_req.budget_etb:,.2f} ETB/hr"
+        f"<b>REQ-{parent_req.id:04d}</b> ── {html.escape(parent_req.student_level)} ({subjects_str})\n"
+        f"<b>{html.escape(parent_req.parent_name)}</b> • {html.escape(parent_req.location_subcity)}\n"
+        f"{schedule_str} • {parent_req.budget_etb:,.2f} ETB/hr"
     )
 
 
@@ -122,18 +122,18 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
         links = []
         for idx, part in enumerate(parts):
             if part.startswith("/uploads/"):
-                links.append("📄 ID/Credential attached")
+                links.append("ID/Credential attached")
             elif part.startswith("http"):
-                label = "🌐 Portfolio/URL" if len(parts) > 1 and idx > 0 else "📄 View Document"
+                label = "Portfolio/URL" if len(parts) > 1 and idx > 0 else "View Document"
                 links.append(f'<a href="{html.escape(part)}">{label}</a>')
             else:
-                links.append(f'<a href="{html.escape(part)}">📄 Doc</a>')
+                links.append(f'<a href="{html.escape(part)}">Document</a>')
         doc_display = " │ ".join(links)
     else:
         doc_display = "Not provided"
 
     tg_id_str = str(tutor.telegram_user_id) if tutor.telegram_user_id else "N/A"
-    header_status = status_override or "🟡 <b>Pending Verification</b>"
+    header_status = status_override or "<b>Pending Verification</b>"
 
     if admin_username:
         clean_user = admin_username.lstrip("@")
@@ -159,7 +159,7 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
     grades_str = format_subjects(tutor.grades_qualified)
 
     return (
-        f"🧑‍🏫 <b>TUTOR TICKET #{tutor.id:04d}</b> • {header_status}\n"
+        f"<b>TUTOR TICKET #{tutor.id:04d}</b> • {header_status}\n"
         f"{admin_line}\n\n"
         f"<blockquote><b>Candidate:</b> {html.escape(tutor.full_name)} ({html.escape(tutor.gender)})\n"
         f"<b>Contact:</b> <code>{html.escape(tutor.phone_number)}</code> (TG: <code>{tg_id_str}</code>)\n"
@@ -169,7 +169,7 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
         f"<b>Level:</b> {grades_str}\n"
         f"<b>Territory:</b> Base {html.escape(tutor.base_subcity)} ({coverage_summary})\n"
         f"<b>Timing:</b> {timing_str}</blockquote>\n\n"
-        f"🔗 <b>Credentials:</b> {doc_display}"
+        f"<b>Credentials:</b> {doc_display}"
     )
 
 
