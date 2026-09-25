@@ -896,16 +896,18 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
     # Post confirmation to Admin Group topic
     if settings.ADMIN_GROUP_ID:
         try:
+            subjects_str = _format_subjects(tutor.subjects_qualified)
             admin_alert_text = (
                 f"🔔 <b>AVAILABILITY CONFIRMED!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"🧑‍🏫 <b>{html.escape(tutor.full_name)}</b> (<code>{html.escape(tutor.phone_number)}</code>) is available for Request #{parent_id}!\n"
+                f"📚 <b>Subjects:</b> {subjects_str}\n"
                 f"📍 Base: {html.escape(tutor.base_subcity)} | 💰 Rate: {tutor.expected_fee_etb:,.2f} ETB/hr"
             )
             confirm_btn = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "🤝 Confirm & Finalize Match",
+                        "✅ Assign",
                         callback_data=f"assign_match:{parent_id}:{tutor.id}"
                     )
                 ]
@@ -926,7 +928,7 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Handles tutor declining availability gracefully with single response guard."""
+    """Handles tutor declining availability gracefully with single response guard and alerts admin group."""
     query = update.callback_query
     parts = data.split(":")
     if len(parts) != 3:
@@ -947,6 +949,7 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
 
     async with AsyncSessionLocal() as session:
         tutor = await session.get(Tutor, tutor_id)
+        parent = await session.get(ParentRequest, parent_id)
         if not tutor or tutor.telegram_user_id != user.id:
             await query.answer("⛔ Unauthorized.", show_alert=True)
             return
@@ -977,6 +980,29 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as exc:
             logger.debug("Failed to edit tutor DM on avail no: %s", exc)
     await query.answer("Response recorded.")
+
+    # Post decline notification to Admin Group topic
+    if settings.ADMIN_GROUP_ID:
+        try:
+            subjects_str = _format_subjects(tutor.subjects_qualified)
+            decline_alert_text = (
+                f"ℹ️ <b>AVAILABILITY UPDATE (DECLINED)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🧑‍🏫 <b>{html.escape(tutor.full_name)}</b> is not available for Request #{parent_id}.\n"
+                f"📚 <b>Subjects:</b> {subjects_str}"
+            )
+            send_kwargs = {
+                "chat_id": settings.ADMIN_GROUP_ID,
+                "text": decline_alert_text,
+                "parse_mode": ParseMode.HTML,
+            }
+            topic_id = (parent.telegram_topic_id if parent else None) or get_parent_topic_id()
+            if topic_id is not None:
+                send_kwargs["message_thread_id"] = topic_id
+
+            await context.bot.send_message(**send_kwargs)
+        except Exception as exc:
+            logger.error("Failed to send decline alert to admin group: %s", exc)
 
 
 async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -1117,7 +1143,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not is_super_admin(update):
-        await msg.reply_text("⛔ Access denied. This console is restricted to the Super Admin.")
+        await msg.reply_text(text="⛔ Access denied. This console is restricted to the Super Admin.")
         return
 
     admin_keyboard = get_admin_reply_keyboard()
@@ -1127,6 +1153,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=admin_keyboard,
         parse_mode=ParseMode.HTML
     )
+    return
 
 
 async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1236,7 +1263,7 @@ async def handle_admin_analytics(update: Update, context: ContextTypes.DEFAULT_T
     if not msg:
         return
     if not is_super_admin(update):
-        await msg.reply_text("⛔ Restricted to Super Admin.")
+        await msg.reply_text(text="⛔ Restricted to Super Admin.")
         return
 
     card_text = await render_analytics_card()
@@ -1299,12 +1326,12 @@ async def handle_broadcast_menu(update: Update, context: ContextTypes.DEFAULT_TY
     if not msg:
         return
     if not is_super_admin(update):
-        await msg.reply_text("⛔ Restricted to Super Admin.")
+        await msg.reply_text(text="⛔ Restricted to Super Admin.")
         return
 
     await msg.reply_text(
-        "📢 <b>Segmented Broadcast Dispatcher</b>\n\n"
-        "Select your target recipient audience:",
+        text="📢 <b>Segmented Broadcast Dispatcher</b>\n\n"
+             "Select your target recipient audience:",
         parse_mode=ParseMode.HTML,
         reply_markup=get_broadcast_targets_keyboard()
     )
@@ -1493,12 +1520,12 @@ async def handle_cms_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
     if not is_super_admin(update):
-        await msg.reply_text("⛔ Restricted to Super Admin.")
+        await msg.reply_text(text="⛔ Restricted to Super Admin.")
         return
 
     await msg.reply_text(
-        "📝 <b>Content Management (CMS)</b>\n\n"
-        "Manage the live content served to users for <b>'About Us'</b> and <b>'Contact'</b>:",
+        text="📝 <b>Content Management (CMS)</b>\n\n"
+             "Manage the live content served to users for <b>'About Us'</b> and <b>'Contact'</b>:",
         parse_mode=ParseMode.HTML,
         reply_markup=get_cms_keyboard()
     )
@@ -1516,7 +1543,7 @@ async def handle_cms_view_current(update: Update, context: ContextTypes.DEFAULT_
         current_val = setting.value if setting else "(Not set — using platform default)"
 
     await query.message.reply_text(
-        f"📄 <b>Current content for <code>{setting_key}</code>:</b>\n\n{current_val}",
+        text=f"📄 <b>Current content for <code>{setting_key}</code>:</b>\n\n{current_val}",
         parse_mode=ParseMode.HTML
     )
     await query.answer()
@@ -1575,7 +1602,7 @@ async def handle_export_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not msg:
         return
     if not is_super_admin(update):
-        await msg.reply_text("⛔ Restricted to Super Admin.")
+        await msg.reply_text(text="⛔ Restricted to Super Admin.")
         return
 
     user_id = update.effective_user.id if update.effective_user else None
@@ -1583,8 +1610,8 @@ async def handle_export_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await clear_admin_state(user_id)
 
     await msg.reply_text(
-        "📥 <b>EXPORT DATA CENTER</b>\n\n"
-        "Choose the records you want to download as CSV (Excel compatible):",
+        text="📥 <b>EXPORT DATA CENTER</b>\n\n"
+             "Choose the records you want to download as CSV (Excel compatible):",
         parse_mode=ParseMode.HTML,
         reply_markup=get_export_keyboard()
     )
@@ -1653,10 +1680,10 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id:
         await clear_admin_state(user_id)
         if msg:
-            await msg.reply_text("❌ Action cancelled. Returned to main menu.")
+            await msg.reply_text(text="❌ Action cancelled. Returned to main menu.")
     else:
         if msg:
-            await msg.reply_text("ℹ️ No active action to cancel.")
+            await msg.reply_text(text="ℹ️ No active action to cancel.")
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1672,7 +1699,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if text.lower() in ("/cancel", "cancel"):
         if user_id:
             await clear_admin_state(user_id)
-            await msg.reply_text("❌ Action cancelled. Returned to main menu.")
+            await msg.reply_text(text="❌ Action cancelled. Returned to main menu.")
             return
 
     # Public Reply Keyboard buttons
@@ -1715,7 +1742,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             if current_state == "AWAITING_BROADCAST_TEXT":
                 if not is_valid_telegram_html(text):
                     await msg.reply_text(
-                        "⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed (e.g. <code>&lt;b&gt;...&lt;/b&gt;</code>) or send plain text.",
+                        text="⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed (e.g. <code>&lt;b&gt;...&lt;/b&gt;</code>) or send plain text.",
                         parse_mode=ParseMode.HTML
                     )
                     return
@@ -1739,13 +1766,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     ],
                     [InlineKeyboardButton("❌ Cancel", callback_data="admin_bcast_cancel")]
                 ])
-                await msg.reply_text(preview_card, parse_mode=ParseMode.HTML, reply_markup=confirm_keyboard)
+                await msg.reply_text(text=preview_card, parse_mode=ParseMode.HTML, reply_markup=confirm_keyboard)
                 return
 
             elif current_state == "AWAITING_CMS_INPUT":
                 if not is_valid_telegram_html(text):
                     await msg.reply_text(
-                        "⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed or send plain text.",
+                        text="⚠️ <b>Invalid HTML formatting!</b> Please ensure all tags are properly closed or send plain text.",
                         parse_mode=ParseMode.HTML
                     )
                     return
@@ -1764,7 +1791,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
                 label = "About Us" if setting_key == "about_us_text" else "Contact"
                 await msg.reply_text(
-                    f"✅ <b>{label}</b> content updated successfully! Public users will now see this update immediately.",
+                    text=f"✅ <b>{label}</b> content updated successfully! Public users will now see this update immediately.",
                     parse_mode=ParseMode.HTML
                 )
                 return

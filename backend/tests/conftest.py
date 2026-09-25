@@ -31,11 +31,24 @@ async def setup_test_db():
     await test_engine.dispose()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def clean_database():
+    """Truncates all tables before and after each test to guarantee strict test isolation."""
+    async with test_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+    yield
+    async with test_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Provides a transactional database session for tests."""
+    """Provides a transactional database session for tests with automatic rollback."""
     async with TestingSessionLocal() as session:
         yield session
+        await session.rollback()
 
 
 @pytest_asyncio.fixture

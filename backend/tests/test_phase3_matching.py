@@ -821,12 +821,21 @@ async def test_ping_candidates_and_availability_confirmation(db_session: AsyncSe
     admin_alert_args = mock_context.bot.send_message.call_args.kwargs
     assert "AVAILABILITY CONFIRMED" in admin_alert_args["text"]
     assert "Ping Tutor" in admin_alert_args["text"]
+    assert "Maths" in admin_alert_args["text"]
+    confirm_btn = admin_alert_args["reply_markup"].inline_keyboard[0][0]
+    assert confirm_btn.text == "✅ Assign"
+    assert confirm_btn.callback_data == f"assign_match:{parent.id}:{tutor.id}"
 
-    # 3. Test tutor_avail_no edits message politely
+    # 3. Test tutor_avail_no edits message politely and alerts Admin Group
     mock_tutor_msg.reset_mock()
+    mock_context.bot.send_message.reset_mock()
     await bot_handlers.handle_tutor_avail_no(mock_update, mock_context, f"tutor_avail_no:{parent.id}:{tutor.id}")
     assert mock_tutor_msg.edit_text.called
     assert "Thank you for letting us know" in mock_tutor_msg.edit_text.call_args.kwargs["text"]
+    assert mock_context.bot.send_message.called
+    decline_alert_args = mock_context.bot.send_message.call_args.kwargs
+    assert "DECLINED" in decline_alert_args["text"]
+    assert "Ping Tutor" in decline_alert_args["text"]
 
 
 @pytest.mark.asyncio

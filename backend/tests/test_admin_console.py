@@ -161,7 +161,8 @@ async def test_non_admin_blocked_from_admin_actions(monkeypatch):
 
     # Direct /admin command
     await bot_handlers.admin_command(mock_update, mock_context)
-    assert "Access denied" in mock_message.reply_text.call_args.args[0]
+    denied_text = mock_message.reply_text.call_args.kwargs.get("text") or mock_message.reply_text.call_args.args[0]
+    assert "Access denied" in denied_text
 
     # Callback action
     mock_query = AsyncMock()
@@ -270,7 +271,8 @@ async def test_admin_broadcast_flow(db_session: AsyncSession, monkeypatch):
 
     await bot_handlers.handle_text_message(mock_update, mock_context)
     assert bot_handlers.admin_states[admin_id]["state"] == "AWAITING_BROADCAST_CONFIRM"
-    assert "BROADCAST PREVIEW" in mock_msg.reply_text.call_args.args[0]
+    preview_text = mock_msg.reply_text.call_args.kwargs.get("text") or mock_msg.reply_text.call_args.args[0]
+    assert "BROADCAST PREVIEW" in preview_text
 
     # Step 3: Confirm broadcast
     mock_context.bot.send_message = AsyncMock()
@@ -280,7 +282,7 @@ async def test_admin_broadcast_flow(db_session: AsyncSession, monkeypatch):
     await bot_handlers.handle_callback_query(mock_update, mock_context)
     await asyncio.sleep(0.1)
     assert mock_context.bot.send_message.called
-    assert mock_context.bot.send_message.call_args.kwargs["chat_id"] == 111222
+    assert mock_context.bot.send_message.call_args_list[0].kwargs["chat_id"] == 111222
     assert admin_id not in bot_handlers.admin_states
 
 
@@ -303,7 +305,8 @@ async def test_admin_cancel_command_and_text_escape():
     # 1. /cancel command
     await bot_handlers.cancel_command(mock_update, mock_context)
     assert admin_id not in bot_handlers.admin_states
-    assert "cancelled" in mock_msg.reply_text.call_args.args[0].lower()
+    cancel_text1 = mock_msg.reply_text.call_args.kwargs.get("text") or mock_msg.reply_text.call_args.args[0]
+    assert "cancelled" in cancel_text1.lower()
 
     # 2. Text message 'cancel'
     bot_handlers.admin_states[admin_id] = {
@@ -315,7 +318,8 @@ async def test_admin_cancel_command_and_text_escape():
 
     await bot_handlers.handle_text_message(mock_update, mock_context)
     assert admin_id not in bot_handlers.admin_states
-    assert "cancelled" in mock_msg.reply_text.call_args.args[0].lower()
+    cancel_text2 = mock_msg.reply_text.call_args.kwargs.get("text") or mock_msg.reply_text.call_args.args[0]
+    assert "cancelled" in cancel_text2.lower()
 
 
 @pytest.mark.asyncio

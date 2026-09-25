@@ -59,6 +59,12 @@ async def test_ensure_forum_topics_loads_from_db_without_calling_telegram_again(
     TOPIC_CACHE["parent_requests_topic_id"] = None
     TOPIC_CACHE["tutor_verifications_topic_id"] = None
 
+    # Seed DB with existing topic settings from previous run
+    async with TestingSessionLocal() as session:
+        session.add(SystemSetting(key="parent_requests_topic_id", value="501"))
+        session.add(SystemSetting(key="tutor_verifications_topic_id", value="502"))
+        await session.commit()
+
     monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001234567890)
     monkeypatch.setattr(settings, "PARENT_REQUESTS_TOPIC_ID", None)
     monkeypatch.setattr(settings, "TUTOR_REGISTRATION_TOPIC_ID", None)

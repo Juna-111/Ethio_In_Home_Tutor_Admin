@@ -422,3 +422,19 @@ Following external code review of pushed commits on `hardening/phase-1`, 6 speci
    - Updated document upload test to match random UUID filename regex pattern.
    - Enforced database isolation across matching tests by resetting tables at test starts.
    - Added unit tests for unauthorized chat rejection (FIX 5) and admin document delivery (FIX 2).
+
+---
+
+## 10. Phase 1 Final Polish & Verification (September 25, 2026)
+
+1. **Admin Group Opportunity Alert on Response**:
+   - `handle_tutor_avail_yes`: Includes tutor's name, subjects (`_format_subjects`), and an inline `[ ✅ Assign ]` button (`callback_data=f"assign_match:{parent_id}:{tutor.id}"`) into the parent request's forum topic in `ADMIN_GROUP_ID`.
+   - `handle_tutor_avail_no`: Sends a decline notification into the parent request's forum topic with tutor's name and subjects so admins have full operational visibility.
+2. **Global Database Isolation (`tests/conftest.py`)**:
+   - Implemented `clean_database` autouse fixture in `conftest.py` that truncates all tables on setup and teardown before every test.
+   - Added explicit transaction rollback in `db_session` fixture.
+   - Seeded `SystemSetting` in `test_ensure_forum_topics_loads_from_db_without_calling_telegram_again` so tests run reliably in any execution order.
+3. **Keyword Parameter Standardisation**:
+   - Standardized all `reply_text` calls across `handlers.py` to explicitly use `text=...`, including `admin_command`, `handle_admin_analytics`, `handle_broadcast_menu`, `handle_cms_menu`, `handle_cms_view_current`, `handle_export_menu`, `cancel_command`, and `handle_text_message`.
+4. **Broadcast Flow Test Assertion Realignment**:
+   - Updated `test_admin_broadcast_flow` in `test_admin_console.py` to assert recipient delivery on `mock_context.bot.send_message.call_args_list[0].kwargs["chat_id"] == 111222`, distinguishing recipient dispatches from post-loop admin completion summaries.
