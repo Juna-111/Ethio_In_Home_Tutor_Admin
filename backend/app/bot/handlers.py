@@ -449,7 +449,7 @@ async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYP
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_tutor_card(tutor, status_override="<b>Approved</b>", admin_username=admin_name)
+            updated_text = format_tutor_card(tutor, status_override="Approved", admin_username=admin_name)
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -511,7 +511,7 @@ async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_tutor_card(tutor, status_override="<b>Rejected</b>", admin_username=admin_name)
+            updated_text = format_tutor_card(tutor, status_override="Rejected", admin_username=admin_name)
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -643,7 +643,7 @@ async def handle_close_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # In-place full card update preserving complete HTML formatting
     if query.message:
         try:
-            updated_text = format_parent_card(parent_req, status_override=f"<b>Closed by {admin_name}</b>")
+            updated_text = format_parent_card(parent_req, status_override=f"Closed by {admin_name}")
             await query.message.edit_text(
                 text=updated_text,
                 parse_mode=ParseMode.HTML,
@@ -704,9 +704,12 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Format Tiered Match Radar (capped at 5 per tier to stay within Telegram message limits)
     subjects_str = _format_subjects(parent.subjects)
     lines = [
-        f"<b>MATCH RADAR FOR REQUEST #{parent_id}</b>",
-        f"Location: {html.escape(parent.location_subcity)} • Subjects: {subjects_str} • Budget: {parent.budget_etb:,.2f} ETB/hr",
-        "━━━━━━━━━━━━━━━━━━━━━━"
+        f"<b>MATCH RADAR | REQUEST #{parent_id}</b>",
+        "",
+        "<b>REQUEST</b>",
+        f"Location: {html.escape(parent.location_subcity)}",
+        f"Subjects: {subjects_str}",
+        f"Budget: {parent.budget_etb:,.2f} ETB/hr",
     ]
 
     all_matched_tutors = []
@@ -714,46 +717,60 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Tier 1: Perfect Fit (cap 5)
     t1_matches = tiered["tier1"][:5]
     if t1_matches:
-        lines.append("\n<b>PERFECT FIT</b>")
+        lines.extend(["", "<b>PERFECT FIT</b>", ""])
         for match in t1_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             matched_subs = ", ".join(match.get("matched_subjects", []))
             reasons = "; ".join(match.get("match_reasons", []))
-            lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}, {html.escape(t.education_year)}) — {t.expected_fee_etb:,.0f} ETB/hr | {t.years_of_experience:g} yrs experience\n"
-                f"  Base: {html.escape(t.base_subcity)} | Subjects: {html.escape(matched_subs)}\n"
-                f"  Reason: {html.escape(reasons)}"
-            )
+            lines.extend([
+                f"<b>{html.escape(t.full_name)}</b>",
+                f"University: {html.escape(t.university)}",
+                f"Department: {html.escape(t.department)}",
+                f"Fee: {t.expected_fee_etb:,.0f} ETB/hr",
+                f"Experience: {t.years_of_experience:g} years",
+                f"Base: {html.escape(t.base_subcity)}",
+                f"Subjects: {html.escape(matched_subs)}",
+                f"Reason: {html.escape(reasons)}",
+                "",
+            ])
 
     # Tier 2: Commute / Proximity (cap 5)
     t2_matches = tiered["tier2"][:5]
     if t2_matches:
-        lines.append("\n<b>COMMUTE / PROXIMITY</b>")
+        lines.extend(["<b>COMMUTE / PROXIMITY</b>", ""])
         for match in t2_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             cov_str = _format_subjects(t.coverage_areas)
             reasons = "; ".join(match.get("match_reasons", []))
-            lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}) — {t.expected_fee_etb:,.0f} ETB/hr | {t.years_of_experience:g} yrs experience\n"
-                f"  Covers: {cov_str}\n"
-                f"  Reason: {html.escape(reasons)}"
-            )
+            lines.extend([
+                f"<b>{html.escape(t.full_name)}</b>",
+                f"University: {html.escape(t.university)}",
+                f"Department: {html.escape(t.department)}",
+                f"Fee: {t.expected_fee_etb:,.0f} ETB/hr",
+                f"Experience: {t.years_of_experience:g} years",
+                f"Covers: {cov_str}",
+                f"Reason: {html.escape(reasons)}",
+                "",
+            ])
 
     # Tier 3: Flexible Alternatives (cap 5)
     t3_matches = tiered["tier3"][:5]
     if t3_matches:
-        lines.append("\n<b>FLEX ALTERNATIVES</b>")
+        lines.extend(["<b>FLEXIBLE ALTERNATIVES</b>", ""])
         for match in t3_matches:
             t = match["tutor"]
             all_matched_tutors.append(t)
             note = match.get("flex_note", "Flex match")
             reasons = "; ".join(match.get("match_reasons", []))
-            lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> — {t.expected_fee_etb:,.0f} ETB/hr ({html.escape(note)})\n"
-                f"  Reason: {html.escape(reasons)}"
-            )
+            lines.extend([
+                f"<b>{html.escape(t.full_name)}</b>",
+                f"Fee: {t.expected_fee_etb:,.0f} ETB/hr",
+                f"Note: {html.escape(note)}",
+                f"Reason: {html.escape(reasons)}",
+                "",
+            ])
 
     # Build Action Controls (Inline Keyboard)
     assign_buttons = []
