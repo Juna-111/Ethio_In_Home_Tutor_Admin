@@ -26,6 +26,9 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict
     if not init_data or not bot_token:
         return None
 
+    bot_token = bot_token.strip().strip("'\"")
+    init_data = init_data.strip()
+
     try:
         # Parse query string preserving original values
         parsed_pairs = urllib.parse.parse_qsl(init_data, keep_blank_values=True)
@@ -78,7 +81,7 @@ async def get_current_telegram_user(
     """
     if authorization and authorization.lower().startswith("tma "):
         raw_init_data = authorization[4:].strip()
-        bot_token = settings.BOT_TOKEN or ""
+        bot_token = (settings.BOT_TOKEN or "").strip().strip("'\"")
         parsed = validate_telegram_init_data(raw_init_data, bot_token)
         if parsed and "user" in parsed and isinstance(parsed["user"], dict):
             user_id = parsed["user"].get("id")
@@ -94,6 +97,10 @@ async def get_current_telegram_user(
 
     # Missing Authorization header
     if not settings.ALLOW_UNVERIFIED_WEB_PREVIEW and settings.ENVIRONMENT != "development":
+        logger.warning(
+            "Rejecting request: Missing Telegram WebApp authentication credentials. "
+            "(Set ALLOW_UNVERIFIED_WEB_PREVIEW=true to test without Telegram WebApp container)"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing Telegram WebApp authentication credentials."

@@ -59,13 +59,32 @@ class Settings(BaseSettings):
                 return v
         return v
 
+    @field_validator("BOT_TOKEN", mode="before")
+    @classmethod
+    def sanitize_bot_token(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip().strip("'\"")
+            if not v:
+                return None
+            return v
+        return v
+
+    @field_validator("ALLOW_UNVERIFIED_WEB_PREVIEW", mode="before")
+    @classmethod
+    def parse_preview_flag(cls, v):
+        if isinstance(v, str):
+            return v.strip().lower() in ("true", "1", "yes", "t")
+        return bool(v)
+
     @field_validator("MINI_APP_URL", "WEBAPP_URL", mode="before")
     @classmethod
     def sanitize_urls(cls, v):
         if v is None:
             return None
         if isinstance(v, str):
-            v = v.strip()
+            v = v.strip().strip("'\"")
             if not v:
                 return None
             return v.rstrip("/")

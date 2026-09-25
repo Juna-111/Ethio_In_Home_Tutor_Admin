@@ -65,6 +65,11 @@ if settings.WEBAPP_URL:
     if clean_webapp_url not in cors_origins:
         cors_origins.append(clean_webapp_url)
 
+if settings.MINI_APP_URL and not settings.MINI_APP_URL.startswith("https://t.me/"):
+    clean_mini_app_url = settings.MINI_APP_URL.rstrip("/")
+    if clean_mini_app_url not in cors_origins:
+        cors_origins.append(clean_mini_app_url)
+
 if settings.ENVIRONMENT == "development":
     cors_origins.extend([
         "http://localhost:3000",

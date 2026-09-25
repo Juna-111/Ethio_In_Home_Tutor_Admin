@@ -20,15 +20,67 @@ function getBaseUrl() {
   return configured.replace(/\/+$/, "");
 }
 
-function getAuthHeaders() {
-  const headers = {};
+export function getTelegramInitData() {
+  if (typeof window === "undefined") return "";
+
+  // 1. Direct window.Telegram.WebApp.initData
   try {
-    const initData = window.Telegram?.WebApp?.initData;
-    if (initData && typeof initData === "string" && initData.trim()) {
-      headers["Authorization"] = `tma ${initData.trim()}`;
+    const webAppInitData = window.Telegram?.WebApp?.initData;
+    if (webAppInitData && typeof webAppInitData === "string" && webAppInitData.trim()) {
+      try {
+        sessionStorage.setItem("tma_init_data", webAppInitData.trim());
+      } catch (_) {}
+      return webAppInitData.trim();
     }
-  } catch (err) {
-    // Ignore in standard web preview
+  } catch (_) {}
+
+  // 2. Hash parameter fallback: #tgWebAppData=...
+  try {
+    if (window.location.hash) {
+      const hashStr = window.location.hash.startsWith("#")
+        ? window.location.hash.slice(1)
+        : window.location.hash;
+      const hashParams = new URLSearchParams(hashStr);
+      const hashInitData = hashParams.get("tgWebAppData");
+      if (hashInitData && hashInitData.trim()) {
+        try {
+          sessionStorage.setItem("tma_init_data", hashInitData.trim());
+        } catch (_) {}
+        return hashInitData.trim();
+      }
+    }
+  } catch (_) {}
+
+  // 3. Search query parameter fallback: ?tgWebAppData=...
+  try {
+    if (window.location.search) {
+      const searchParams = new URLSearchParams(window.location.search);
+      const queryInitData = searchParams.get("tgWebAppData");
+      if (queryInitData && queryInitData.trim()) {
+        try {
+          sessionStorage.setItem("tma_init_data", queryInitData.trim());
+        } catch (_) {}
+        return queryInitData.trim();
+      }
+    }
+  } catch (_) {}
+
+  // 4. SessionStorage cached initData
+  try {
+    const cached = sessionStorage.getItem("tma_init_data");
+    if (cached && cached.trim()) {
+      return cached.trim();
+    }
+  } catch (_) {}
+
+  return "";
+}
+
+export function getAuthHeaders() {
+  const headers = {};
+  const initData = getTelegramInitData();
+  if (initData) {
+    headers["Authorization"] = `tma ${initData}`;
   }
   return headers;
 }
@@ -69,6 +121,9 @@ async function request(path, options = {}) {
             .join("\n");
         } else if (typeof errorData.detail === "string") {
           errorMessage = errorData.detail;
+          if (errorMessage.includes("Telegram WebApp authentication")) {
+            errorMessage = "Please open this application inside Telegram using the official bot button (@MentorLinkBot) to register.";
+          }
         } else {
           errorMessage = JSON.stringify(errorData.detail);
         }

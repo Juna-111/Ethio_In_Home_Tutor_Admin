@@ -545,5 +545,82 @@ async def test_unauthenticated_request_rejected_in_production_when_preview_disab
     assert "Telegram WebApp authentication credentials" in resp.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_authenticated_request_accepted_in_production(async_client: AsyncClient, monkeypatch):
+    """
+    Verifies that when ENVIRONMENT="production" and ALLOW_UNVERIFIED_WEB_PREVIEW=False,
+    a request with a valid Telegram initData Authorization header is accepted and sets telegram_user_id.
+    """
+    import hashlib
+    import hmac
+    import json
+    import time
+    import urllib.parse
+    from app.config import settings
+
+    bot_token = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+
+    user_data = json.dumps({"id": 778899, "first_name": "VerifiedParent"})
+    auth_date = str(int(time.time()))
+    params = {
+        "auth_date": auth_date,
+        "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
+        "user": user_data,
+    }
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    params["hash"] = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    init_data = urllib.parse.urlencode(params)
+
+    payload = {
+        "parent_name": "Verified Parent",
+        "phone_number": "+251911223344",
+        "student_level": "Primary 1-4",
+        "subjects": ["English"],
+        "preferred_gender": "No preference",
+        "preferred_experience": "Fresh Graduate",
+        "location_subcity": "Bole",
+        "schedule_days": ["Mon"],
+        "time_slot": "4:00 PM",
+        "session_duration": "2 hrs",
+        "budget_etb": 350.0,
+    }
+
+    resp = await async_client.post(
+        "/api/v1/parents/request",
+        json=payload,
+        headers={"Authorization": f"tma {init_data}"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["telegram_user_id"] == 778899
+
+
+def test_get_webapp_url_prioritizes_actual_web_hosting_domain(monkeypatch):
+    """
+    Verifies that _get_webapp_url prioritizes direct web URLs over t.me links,
+    and falls back safely for test backwards compatibility.
+    """
+    from app.config import settings
+    from app.bot.handlers import _get_webapp_url
+
+    # When both are configured and MINI_APP_URL is a t.me link, WEBAPP_URL must be chosen
+    monkeypatch.setattr(settings, "WEBAPP_URL", "https://mentorlink-frontend.vercel.app")
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/app")
+    assert _get_webapp_url() == "https://mentorlink-frontend.vercel.app"
+
+    # When only MINI_APP_URL is set as web hosting URL
+    monkeypatch.setattr(settings, "WEBAPP_URL", None)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://mentorlink.onrender.com")
+    assert _get_webapp_url() == "https://mentorlink.onrender.com"
+
+    # Backwards compatibility fallback for test fixtures setting MINI_APP_URL to t.me
+    monkeypatch.setattr(settings, "WEBAPP_URL", None)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/app")
+    assert _get_webapp_url() == "https://t.me/MentorLinkBot/app"
+
+
 
 

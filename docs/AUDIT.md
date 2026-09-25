@@ -438,3 +438,20 @@ Following external code review of pushed commits on `hardening/phase-1`, 6 speci
    - Standardized all `reply_text` calls across `handlers.py` to explicitly use `text=...`, including `admin_command`, `handle_admin_analytics`, `handle_broadcast_menu`, `handle_cms_menu`, `handle_cms_view_current`, `handle_export_menu`, `cancel_command`, and `handle_text_message`.
 4. **Broadcast Flow Test Assertion Realignment**:
    - Updated `test_admin_broadcast_flow` in `test_admin_console.py` to assert recipient delivery on `mock_context.bot.send_message.call_args_list[0].kwargs["chat_id"] == 111222`, distinguishing recipient dispatches from post-loop admin completion summaries.
+
+---
+
+## 11. Production Telegram WebApp Authentication & URL Resolution Fix (September 25, 2026)
+
+1. **Root Cause Analysis ("Missing Telegram WebApp authentication")**:
+   - **Backend URL Ambiguity**: When `MINI_APP_URL` was configured as a Telegram bot link (`https://t.me/MentorLinkBot/app`), `handlers.py` passed `https://t.me/...` directly to Telegram's `WebAppInfo(url=...)`. Telegram prohibits `t.me` links inside `WebAppInfo` and opened the app in an external browser where `window.Telegram.WebApp.initData` was empty.
+   - **Frontend initData Fallbacks**: If the Mini App was opened inside an iframe or webview where `window.Telegram.WebApp.initData` had an initialization race condition, `api.js` did not check the URL hash (`#tgWebAppData=...`) or search parameters (`?tgWebAppData=...`) or sessionStorage cache.
+   - **Production Security Check**: In production (`ENVIRONMENT="production"`), `get_current_telegram_user` strictly rejects unauthenticated requests with 401 Unauthorized when `Authorization: tma ...` is omitted.
+
+2. **Remediation & Enhancements**:
+   - **`backend/app/bot/handlers.py`**: Added `_get_webapp_url()` which prioritizes direct HTTPS web hosting URLs (`settings.WEBAPP_URL`) over `t.me` links for `WebAppInfo(url=...)`. Preserved backward compatibility fallback for test fixtures.
+   - **`frontend/src/services/api.js`**: Enhanced `getTelegramInitData()` with a multi-source fallback checking `window.Telegram.WebApp.initData`, `window.location.hash` (`#tgWebAppData=...`), `window.location.search` (`?tgWebAppData=...`), and `sessionStorage`. All API requests now reliably supply `Authorization: tma <initData>`.
+   - **`frontend/src/App.jsx`**: Caches initData to `sessionStorage` on mount and fallback-parses user profile JSON from `getTelegramInitData()`.
+   - **`backend/app/config.py` & `auth.py`**: Added token trimming to strip quotes and whitespace from `BOT_TOKEN`, parsed `ALLOW_UNVERIFIED_WEB_PREVIEW` safely, and added logging for missing auth in production.
+   - **`backend/app/main.py`**: Expanded CORS origins to include `MINI_APP_URL` hosting domains.
+   - **Test Coverage**: Added `test_authenticated_request_accepted_in_production` and `test_get_webapp_url_prioritizes_actual_web_hosting_domain` in `backend/tests/test_api.py`.

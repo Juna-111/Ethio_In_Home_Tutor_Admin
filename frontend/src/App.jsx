@@ -4,6 +4,7 @@ import TabNavigation from './components/TabNavigation';
 import ParentForm from './components/ParentForm';
 import TutorForm from './components/TutorForm';
 import SuccessModal from './components/SuccessModal';
+import { getTelegramInitData } from './services/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('parent');
@@ -21,9 +22,27 @@ export default function App() {
       if (tg) {
         tg.ready();
         tg.expand();
+        if (tg.initData) {
+          try {
+            sessionStorage.setItem("tma_init_data", tg.initData);
+          } catch (_) {}
+        }
         if (tg.initDataUnsafe?.user) {
           setUser(tg.initDataUnsafe.user);
         }
+      }
+
+      // If user is not yet populated via tg.initDataUnsafe, attempt extraction from raw initData
+      const rawInitData = getTelegramInitData();
+      if (rawInitData) {
+        try {
+          const params = new URLSearchParams(rawInitData);
+          const userStr = params.get("user");
+          if (userStr) {
+            const parsedUser = JSON.parse(userStr);
+            setUser((prev) => prev || parsedUser);
+          }
+        } catch (_) {}
       }
     } catch (e) {
       console.info("Telegram WebApp initialization skipped (running in standard browser mode).");

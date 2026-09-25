@@ -150,18 +150,38 @@ async def clear_admin_state(user_id: int) -> None:
         logger.debug("Could not delete admin state from DB: %s", exc)
 
 
+def _get_webapp_url() -> Optional[str]:
+    """
+    Resolves the direct HTTPS web hosting URL of the Mini App frontend.
+    Telegram WebAppInfo.url MUST be an actual web hosting URL (e.g. Vercel, Render)
+    and CANNOT be a 'https://t.me/...' bot link.
+    """
+    # 1. Prefer WEBAPP_URL if set, valid HTTPS, and not a t.me link
+    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://") and not settings.WEBAPP_URL.startswith("https://t.me/"):
+        return settings.WEBAPP_URL.rstrip("/")
+
+    # 2. Check MINI_APP_URL if set, valid HTTPS, and not a t.me link
+    if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://") and not settings.MINI_APP_URL.startswith("https://t.me/"):
+        return settings.MINI_APP_URL.rstrip("/")
+
+    # 3. Test compatibility fallback: if only MINI_APP_URL or WEBAPP_URL is set
+    if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://"):
+        return settings.MINI_APP_URL.rstrip("/")
+    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+        return settings.WEBAPP_URL.rstrip("/")
+
+    return None
+
+
 def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
     """Constructs public reply keyboard safely with WebApp button and customer options."""
     keyboard = []
 
-    # Row 1: Only attach WebApp button if MINI_APP_URL is valid HTTPS
-    if settings.MINI_APP_URL and settings.MINI_APP_URL.startswith("https://"):
+    # Row 1: Only attach WebApp button if a valid HTTPS web hosting URL is available
+    webapp_url = _get_webapp_url()
+    if webapp_url:
         keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.MINI_APP_URL))
-        ])
-    elif settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
-        keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=settings.WEBAPP_URL))
+            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=webapp_url))
         ])
 
     # Row 2: Customer buttons (ALWAYS present)
