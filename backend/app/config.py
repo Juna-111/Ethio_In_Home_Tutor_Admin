@@ -1,6 +1,6 @@
 import os
-from typing import Optional, Union
-from pydantic import field_validator
+from typing import Literal, Optional, Union
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,9 +11,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./mentorlink.db"
     BOT_TOKEN: Optional[str] = None
+    BOT_MODE: Literal["polling", "webhook"] = "polling"
+    WEBHOOK_URL: Optional[str] = None
+    WEBHOOK_SECRET: Optional[str] = None
     ADMIN_GROUP_ID: Optional[Union[int, str]] = None
     SUPER_ADMIN_ID: Optional[int] = None
-    ADMIN_IDS: list[int] = []
+    ADMIN_IDS: list[int] = Field(default_factory=list)
     PARENT_REQUESTS_TOPIC_ID: Optional[int] = None
     TUTOR_REGISTRATION_TOPIC_ID: Optional[int] = None
     WEBAPP_URL: Optional[str] = None
@@ -89,6 +92,27 @@ class Settings(BaseSettings):
                 return None
             return v.rstrip("/")
         return v
+
+    @field_validator("WEBHOOK_URL", "WEBHOOK_SECRET", mode="before")
+    @classmethod
+    def sanitize_webhook_settings(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip().strip("'\"")
+            return v or None
+        return v
+
+    @model_validator(mode="after")
+    def validate_runtime_settings(self):
+        if self.ENVIRONMENT.lower() == "production" and self.ALLOW_UNVERIFIED_WEB_PREVIEW:
+            raise ValueError("ALLOW_UNVERIFIED_WEB_PREVIEW must be false in production")
+        if self.BOT_MODE == "webhook":
+            if not self.WEBHOOK_URL or not self.WEBHOOK_SECRET:
+                raise ValueError("WEBHOOK_URL and WEBHOOK_SECRET are required when BOT_MODE=webhook")
+            if not self.WEBHOOK_URL.startswith("https://"):
+                raise ValueError("WEBHOOK_URL must use HTTPS")
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

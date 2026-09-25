@@ -27,27 +27,38 @@ async def init_bot_app() -> Optional[Application]:
         logger.info("BOT_TOKEN is not configured. Telegram bot forwarding will be disabled.")
         return None
 
-    try:
-        from app.bot.handlers import register_handlers
+    if settings.BOT_MODE == "webhook" and (not settings.WEBHOOK_URL or not settings.WEBHOOK_SECRET):
+        raise RuntimeError("WEBHOOK_URL and WEBHOOK_SECRET are required when BOT_MODE=webhook")
 
-        application = ApplicationBuilder().token(token.strip()).build()
+    try:
+        from app.bot.handlers import load_admin_registry, register_handlers
+
+        builder = ApplicationBuilder().token(token.strip())
+        if settings.BOT_MODE == "webhook":
+            builder = builder.updater(None)
+        application = builder.build()
         register_handlers(application)
+        await load_admin_registry()
 
         await application.initialize()
         await application.start()
 
-        # Purge stale webhooks and update locks before attaching updater
-        try:
+        if settings.BOT_MODE == "webhook":
+            await application.bot.set_webhook(
+                url=settings.WEBHOOK_URL,
+                secret_token=settings.WEBHOOK_SECRET,
+                drop_pending_updates=True,
+            )
+            logger.info("Telegram bot webhook registered.")
+        else:
+            # Purge stale webhooks and update locks before attaching polling.
             await application.bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Cleared stale webhooks and pending updates successfully.")
-        except Exception as e:
-            logger.warning("Could not delete webhook on startup: %s", e)
-
-        if application.updater:
-            await application.updater.start_polling(drop_pending_updates=True)
+            if application.updater:
+                await application.updater.start_polling(drop_pending_updates=True)
+            logger.info("Telegram bot polling started.")
 
         bot_app = application
-        logger.info("Telegram Bot Application successfully initialized and polling started.")
+        logger.info("Telegram Bot Application successfully initialized in %s mode.", settings.BOT_MODE)
         return bot_app
     except Exception as exc:
         logger.error("Failed to initialize Telegram Bot: %s", exc, exc_info=True)

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, List, Optional
-from sqlalchemy import BigInteger, DateTime, Float, Integer, Numeric, String, Text, JSON, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, Numeric, String, Text, JSON, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -52,6 +52,7 @@ class Tutor(Base):
     availability_schedule: Mapped[Any] = mapped_column(JSON, nullable=False)
     id_document_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
+    is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -64,6 +65,18 @@ class SystemSetting(Base):
 
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="admin", index=True)
+    added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class AdminWizardState(Base):

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.models import ParentRequest, SystemSetting, Tutor
+from app.models import AdminUser, ParentRequest, SystemSetting, Tutor
 import app.bot.handlers as bot_handlers
 from tests.conftest import TestingSessionLocal
 
@@ -151,10 +151,54 @@ async def test_super_admin_start_renders_admin_keyboard(monkeypatch):
     assert "SUPER ADMIN CONSOLE" in kwargs["text"]
 
     keyboard = kwargs["reply_markup"].keyboard
-    assert len(keyboard) == 2
+    assert len(keyboard) == 3
     assert keyboard[0][0].text == "📊 Analytics"
     assert keyboard[0][1].text == "📢 Broadcast"
     assert keyboard[1][0].text == "📝 Manage \"About Us\""
+    assert keyboard[2][0].text == "👥 Manage Admins"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_manage_database_admins(db_session: AsyncSession, monkeypatch):
+    admin_id = 999000111
+    managed_id = 456789123
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+
+    mock_query = AsyncMock()
+    mock_query.data = "admin_users_add:admin"
+    mock_query.message = AsyncMock()
+    mock_update = MagicMock()
+    mock_update.callback_query = mock_query
+    mock_update.effective_user.id = admin_id
+
+    await bot_handlers.handle_callback_query(mock_update, MagicMock())
+
+    mock_message = AsyncMock()
+    mock_message.text = str(managed_id)
+    mock_update.message = mock_message
+    mock_update.effective_message = mock_message
+    await bot_handlers.handle_text_message(mock_update, MagicMock())
+
+    record = await db_session.get(AdminUser, managed_id)
+    assert record is not None
+    assert record.role == "admin"
+    assert record.is_active is True
+
+    await bot_handlers.load_admin_registry()
+    managed_update = MagicMock()
+    managed_update.effective_user.id = managed_id
+    assert await bot_handlers.is_admin(managed_update, MagicMock()) is True
+
+    remove_query = AsyncMock()
+    remove_query.data = f"admin_users_remove:{managed_id}"
+    remove_query.message = AsyncMock()
+    mock_update.callback_query = remove_query
+    mock_update.effective_user.id = admin_id
+    await bot_handlers.handle_callback_query(mock_update, MagicMock())
+
+    await db_session.refresh(record)
+    assert record.is_active is False
 
 
 @pytest.mark.asyncio
@@ -502,9 +546,10 @@ def test_admin_reply_keyboard_contains_export_button():
 
 
 @pytest.mark.asyncio
-async def test_handle_export_menu_renders_options():
+async def test_handle_export_menu_renders_options(monkeypatch):
     """Verifies that tapping '📥 Export CSV' presents the inline dataset selection menu."""
     admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
     mock_message = AsyncMock()
     mock_update = MagicMock()
     mock_update.message = mock_message

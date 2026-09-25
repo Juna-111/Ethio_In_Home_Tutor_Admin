@@ -32,7 +32,7 @@ from app.bot.bot_instance import format_parent_card, format_tutor_card
 from app.bot.topics import get_parent_topic_id
 from app.config import settings, UPLOAD_DIR
 from app.database import AsyncSessionLocal
-from app.models import AdminWizardState, Assignment, MatchInvite, ParentRequest, SystemSetting, Tutor
+from app.models import AdminUser, AdminWizardState, Assignment, MatchInvite, ParentRequest, SystemSetting, Tutor
 from app.services.export_service import generate_parents_csv, generate_tutors_csv
 from app.services.matcher import find_top_matches, get_tiered_matches
 
@@ -41,15 +41,32 @@ logger = logging.getLogger("mentorlink.bot.handlers")
 # In-memory session cache & TTL cache for admin status
 admin_states: Dict[int, dict] = {}
 _admin_cache: Dict[int, Tuple[bool, float]] = {}
+_admin_roles: Dict[int, str] = {}
 _admin_state_cache_times: Dict[int, float] = {}
 ADMIN_STATE_TTL_SECONDS = 30 * 60
 
 
 def is_super_admin(update: Update) -> bool:
     """Checks whether the effective user is the configured SUPER_ADMIN_ID."""
-    if not settings.SUPER_ADMIN_ID or not update.effective_user:
+    if not update.effective_user:
         return False
-    return update.effective_user.id == settings.SUPER_ADMIN_ID
+    return (
+        update.effective_user.id == settings.SUPER_ADMIN_ID
+        or _admin_roles.get(update.effective_user.id) == "super_admin"
+    )
+
+
+async def load_admin_registry() -> None:
+    """Load database-managed admin roles into the authorization cache."""
+    _admin_roles.clear()
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(AdminUser.telegram_id, AdminUser.role).where(AdminUser.is_active.is_(True))
+            )
+            _admin_roles.update({telegram_id: role for telegram_id, role in result.all()})
+    except Exception as exc:
+        logger.warning("Could not load database admin registry: %s", exc)
 
 
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -68,6 +85,18 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
 
     if settings.ADMIN_IDS and user.id in settings.ADMIN_IDS:
         return True
+
+    if _admin_roles.get(user.id) in ("admin", "super_admin"):
+        return True
+
+    try:
+        async with AsyncSessionLocal() as session:
+            admin_user = await session.get(AdminUser, user.id)
+            if admin_user and admin_user.is_active and admin_user.role in ("admin", "super_admin"):
+                _admin_roles[user.id] = admin_user.role
+                return True
+    except Exception as exc:
+        logger.debug("Database admin lookup failed for user %s: %s", user.id, exc)
 
     if not settings.ADMIN_GROUP_ID or not context or not context.bot:
         return False
@@ -207,7 +236,8 @@ def get_admin_reply_keyboard() -> ReplyKeyboardMarkup:
     """Builds persistent admin control keyboard."""
     keyboard = [
         [KeyboardButton("📊 Analytics"), KeyboardButton("📢 Broadcast")],
-        [KeyboardButton("📝 Manage \"About Us\""), KeyboardButton("📥 Export CSV")]
+        [KeyboardButton("📝 Manage \"About Us\""), KeyboardButton("📥 Export CSV")],
+        [KeyboardButton("👥 Manage Admins")]
     ]
     return ReplyKeyboardMarkup(
         keyboard,
@@ -305,6 +335,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         "admin_bcast_",
         "admin_cms_",
         "export:",
+        "admin_users_",
     )
     admin_group_action_prefixes = (
         "approve_tutor:",
@@ -317,7 +348,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     )
     if data.startswith(admin_action_prefixes):
         if not await is_admin(update, context):
-            await query.answer("⛔ Access denied. Admin privileges required.", show_alert=True)
+            await query.answer("⛔ Access denied.", show_alert=True)
             return
 
         if data.startswith(admin_group_action_prefixes) and settings.ADMIN_GROUP_ID and query.message and getattr(query.message, "chat_id", None) is not None:
@@ -363,6 +394,16 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_cms_cancel(update, context)
     elif data.startswith("export:"):
         await handle_export_callback(update, context, data)
+    elif data == "admin_users_menu":
+        await handle_admin_users_menu(update, context)
+    elif data == "admin_users_list":
+        await handle_admin_users_list(update, context)
+    elif data.startswith("admin_users_add:"):
+        await handle_admin_users_add(update, context, data)
+    elif data.startswith("admin_users_remove:"):
+        await handle_admin_users_remove(update, context, data)
+    elif data == "admin_users_close":
+        await handle_admin_users_close(update, context)
     elif data in ("noop", "assigned"):
         await query.answer("This action has already been processed.")
     else:
@@ -678,9 +719,11 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
             t = match["tutor"]
             all_matched_tutors.append(t)
             matched_subs = ", ".join(match.get("matched_subjects", []))
+            reasons = "; ".join(match.get("match_reasons", []))
             lines.append(
                 f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}, {html.escape(t.education_year)}) — {t.expected_fee_etb:,.0f} ETB/hr | {t.years_of_experience:g} yrs experience\n"
-                f"  Base: {html.escape(t.base_subcity)} | Subjects: {html.escape(matched_subs)}"
+                f"  Base: {html.escape(t.base_subcity)} | Subjects: {html.escape(matched_subs)}\n"
+                f"  Reason: {html.escape(reasons)}"
             )
 
     # Tier 2: Commute / Proximity (cap 5)
@@ -691,9 +734,11 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
             t = match["tutor"]
             all_matched_tutors.append(t)
             cov_str = _format_subjects(t.coverage_areas)
+            reasons = "; ".join(match.get("match_reasons", []))
             lines.append(
                 f"• <b>{html.escape(t.full_name)}</b> ({html.escape(t.university)} {html.escape(t.department)}) — {t.expected_fee_etb:,.0f} ETB/hr | {t.years_of_experience:g} yrs experience\n"
-                f"  Covers: {cov_str}"
+                f"  Covers: {cov_str}\n"
+                f"  Reason: {html.escape(reasons)}"
             )
 
     # Tier 3: Flexible Alternatives (cap 5)
@@ -704,8 +749,10 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
             t = match["tutor"]
             all_matched_tutors.append(t)
             note = match.get("flex_note", "Flex match")
+            reasons = "; ".join(match.get("match_reasons", []))
             lines.append(
-                f"• <b>{html.escape(t.full_name)}</b> — {t.expected_fee_etb:,.0f} ETB/hr ({html.escape(note)})"
+                f"• <b>{html.escape(t.full_name)}</b> — {t.expected_fee_etb:,.0f} ETB/hr ({html.escape(note)})\n"
+                f"  Reason: {html.escape(reasons)}"
             )
 
     # Build Action Controls (Inline Keyboard)
@@ -734,7 +781,10 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     full_text = "\n".join(lines).strip()
     if len(full_text) > 4000:
-        full_text = full_text[:3950] + "\n\n<i>... [radar truncated for length]</i>"
+        truncated_lines = list(lines)
+        while truncated_lines and len("\n".join(truncated_lines)) > 3850:
+            truncated_lines.pop()
+        full_text = "\n".join(truncated_lines).strip() + "\n\n<i>... [radar truncated for length]</i>"
 
     if query.message:
         reply_kwargs = {
@@ -916,7 +966,7 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         invite.status = "yes"
-        invite.responded_at = datetime.utcnow()
+        invite.responded_at = datetime.now(timezone.utc)
 
         await session.commit()
 
@@ -1009,7 +1059,7 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         invite.status = "no"
-        invite.responded_at = datetime.utcnow()
+        invite.responded_at = datetime.now(timezone.utc)
         await session.commit()
 
     if query.message:
@@ -1209,6 +1259,111 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
     return
+
+
+def get_admin_users_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("List administrators", callback_data="admin_users_list")],
+        [
+            InlineKeyboardButton("Add admin", callback_data="admin_users_add:admin"),
+            InlineKeyboardButton("Add Super Admin", callback_data="admin_users_add:super_admin"),
+        ],
+        [InlineKeyboardButton("Close", callback_data="admin_users_close")],
+    ])
+
+
+async def handle_admin_users_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+    await query.message.edit_text(
+        "<b>Administrator Management</b>\n\n"
+        "Administrators are stored in the database. The environment Super Admin remains the bootstrap owner.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_admin_users_keyboard(),
+    )
+    await query.answer()
+
+
+async def handle_admin_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(AdminUser).where(AdminUser.is_active.is_(True)).order_by(AdminUser.role, AdminUser.telegram_id)
+        )
+        managed_admins = result.scalars().all()
+
+    lines = ["<b>Active administrators</b>", "", f"Bootstrap Super Admin: <code>{settings.SUPER_ADMIN_ID or 'not configured'}</code>"]
+    buttons = []
+    for admin_user in managed_admins:
+        lines.append(f"{html.escape(admin_user.role)}: <code>{admin_user.telegram_id}</code>")
+        if admin_user.telegram_id != settings.SUPER_ADMIN_ID:
+            buttons.append([InlineKeyboardButton(
+                f"Remove {admin_user.telegram_id}",
+                callback_data=f"admin_users_remove:{admin_user.telegram_id}"
+            )])
+    buttons.append([InlineKeyboardButton("Back", callback_data="admin_users_menu")])
+    await query.message.edit_text(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    await query.answer()
+
+
+async def handle_admin_users_add(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    query = update.callback_query
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+    role = data.split(":", 1)[1]
+    if role not in ("admin", "super_admin"):
+        await query.answer("Invalid administrator role.", show_alert=True)
+        return
+    await set_admin_state(update.effective_user.id, "AWAITING_ADMIN_ID", {"role": role})
+    await query.message.edit_text(
+        f"Send the numeric Telegram user ID to add as <b>{html.escape(role)}</b>.\n\n"
+        "Send /cancel to stop.",
+        parse_mode=ParseMode.HTML,
+    )
+    await query.answer()
+
+
+async def handle_admin_users_remove(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    query = update.callback_query
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+    try:
+        telegram_id = int(data.split(":", 1)[1])
+    except ValueError:
+        await query.answer("Invalid Telegram user ID.", show_alert=True)
+        return
+    if telegram_id == settings.SUPER_ADMIN_ID:
+        await query.answer("The bootstrap Super Admin cannot be removed here.", show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        admin_user = await session.get(AdminUser, telegram_id)
+        if admin_user:
+            admin_user.is_active = False
+            await session.commit()
+    _admin_roles.pop(telegram_id, None)
+    await query.answer("Administrator removed.")
+    await handle_admin_users_list(update, context)
+
+
+async def handle_admin_users_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not is_super_admin(update):
+        await query.answer("⛔ Access denied.", show_alert=True)
+        return
+    await query.message.edit_text("Administrator management closed.", reply_markup=None)
+    await query.answer("Closed.")
 
 
 async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1692,7 +1847,7 @@ async def handle_export_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     await query.answer("⏳ Generating CSV export...")
     chat_id = update.effective_chat.id if update.effective_chat else update.effective_user.id
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     async with AsyncSessionLocal() as session:
         if action in ("tutors", "both"):
@@ -1769,7 +1924,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Super Admin Reply Keyboard buttons
     if is_super_admin(update):
-        if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'", "📥 Export CSV"):
+        if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'", "📥 Export CSV", "👥 Manage Admins"):
             if user_id:
                 await clear_admin_state(user_id)
 
@@ -1785,12 +1940,55 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         elif text == "📥 Export CSV":
             await handle_export_menu(update, context)
             return
+        elif text == "👥 Manage Admins":
+            await msg.reply_text(
+                "<b>Administrator Management</b>\n\n"
+                "Administrators are stored in the database. The environment Super Admin remains the bootstrap owner.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_users_keyboard(),
+            )
+            return
 
     # Super Admin Interactive Wizard States
     if user_id and is_super_admin(update):
         state_data = await get_admin_state(user_id)
         if state_data:
             current_state = state_data.get("state")
+
+            if current_state == "AWAITING_ADMIN_ID":
+                try:
+                    target_id = int(text)
+                    if target_id <= 0:
+                        raise ValueError
+                except ValueError:
+                    await msg.reply_text("Send a valid positive numeric Telegram user ID.")
+                    return
+
+                if target_id == settings.SUPER_ADMIN_ID:
+                    await msg.reply_text("That user is already the bootstrap Super Admin.")
+                    return
+
+                role = state_data.get("role", "admin")
+                async with AsyncSessionLocal() as session:
+                    admin_user = await session.get(AdminUser, target_id)
+                    if not admin_user:
+                        admin_user = AdminUser(
+                            telegram_id=target_id,
+                            role=role,
+                            added_by=user_id,
+                            is_active=True,
+                        )
+                        session.add(admin_user)
+                    else:
+                        admin_user.role = role
+                        admin_user.added_by = user_id
+                        admin_user.is_active = True
+                    await session.commit()
+
+                _admin_roles[target_id] = role
+                await clear_admin_state(user_id)
+                await msg.reply_text(f"Administrator {target_id} is now active as {role}.")
+                return
 
             if current_state == "AWAITING_BROADCAST_TEXT":
                 target = state_data.get("target", "all")

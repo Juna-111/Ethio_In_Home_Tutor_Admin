@@ -598,6 +598,33 @@ async def test_authenticated_request_accepted_in_production(async_client: AsyncC
     assert resp.json()["telegram_user_id"] == 778899
 
 
+def test_webhook_settings_require_secret_and_https():
+    """Webhook mode must not start without a secret and HTTPS endpoint."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(BOT_MODE="webhook", WEBHOOK_URL="http://example.com/telegram", WEBHOOK_SECRET="secret")
+
+    with pytest.raises(ValidationError):
+        Settings(BOT_MODE="webhook", WEBHOOK_URL="https://example.com/telegram")
+
+
+@pytest.mark.asyncio
+async def test_webhook_rejects_invalid_secret(async_client: AsyncClient, monkeypatch):
+    """Webhook requests with an invalid path/header secret are rejected."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "BOT_MODE", "webhook")
+    monkeypatch.setattr(settings, "WEBHOOK_SECRET", "test-secret")
+    response = await async_client.post(
+        "/telegram/webhook/wrong-secret",
+        json={"update_id": 1},
+        headers={"X-Telegram-Bot-Api-Secret-Token": "wrong-secret"},
+    )
+    assert response.status_code == 404
+
+
 def test_get_webapp_url_prioritizes_actual_web_hosting_domain(monkeypatch):
     """
     Verifies that _get_webapp_url prioritizes direct web URLs over t.me links,

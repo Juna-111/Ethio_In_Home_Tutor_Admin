@@ -154,7 +154,10 @@ async def get_tiered_matches(
         logger.warning("Parent request #%s not found for tiered matching.", parent_request_id)
         return None, empty_result
 
-    tutors_query = select(Tutor).where(Tutor.status == "verified")
+    tutors_query = select(Tutor).where(
+        Tutor.status == "verified",
+        Tutor.is_paused.is_(False),
+    ).order_by(Tutor.id.asc())
     tutors_result = await session.execute(tutors_query)
     verified_tutors = tutors_result.scalars().all()
 
@@ -195,6 +198,17 @@ async def get_tiered_matches(
         is_in_coverage = (parent_subcity in tutor_coverage)
         fee = float(tutor.expected_fee_etb or 0.0)
         exp = float(tutor.years_of_experience or 0.0)
+        match_reasons = [f"Subject overlap: {len(matched_subjects_norm)}"]
+        if is_base_subcity:
+            match_reasons.append("Tutor is based in the requested subcity")
+        elif is_in_coverage:
+            match_reasons.append("Tutor covers the requested subcity")
+        if gender_matches:
+            match_reasons.append("Gender preference matched")
+        if budget == 0.0 or fee <= budget:
+            match_reasons.append("Fee is within budget")
+        else:
+            match_reasons.append(f"Fee is {((fee - budget) / budget * 100):.0f}% over budget")
 
         candidate_data = {
             "tutor": tutor,
@@ -202,7 +216,8 @@ async def get_tiered_matches(
             "years_of_experience": exp,
             "expected_fee_etb": fee,
             "is_base_location": is_base_subcity,
-            "match_score": len(matched_subjects_norm) * 10 + (2 if is_base_subcity else 0)
+            "match_score": len(matched_subjects_norm) * 10 + (2 if is_base_subcity else 0),
+            "match_reasons": match_reasons,
         }
 
         # Check Tier 1: Perfect Fit
@@ -230,8 +245,8 @@ async def get_tiered_matches(
             candidate_data["flex_note"] = ", ".join(notes) if notes else "Flex match"
             tier3_candidates.append(candidate_data)
 
-    # Sort each tier by years_of_experience DESC, expected_fee_etb ASC
-    sort_key = lambda c: (-c["years_of_experience"], c["expected_fee_etb"])
+    # Sort each tier by years_of_experience DESC, expected_fee_etb ASC, tutor ID.
+    sort_key = lambda c: (-c["years_of_experience"], c["expected_fee_etb"], c["tutor"].id)
     tier1_candidates.sort(key=sort_key)
     tier2_candidates.sort(key=sort_key)
     tier3_candidates.sort(key=sort_key)

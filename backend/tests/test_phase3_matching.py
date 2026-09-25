@@ -418,6 +418,8 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await db_session.commit()
     await db_session.refresh(parent)
     await db_session.refresh(tutor)
+    db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    await db_session.commit()
 
     monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
 
@@ -508,6 +510,8 @@ async def test_match_and_assign_preserves_topic_thread_id(db_session: AsyncSessi
     await db_session.commit()
     await db_session.refresh(parent)
     await db_session.refresh(tutor)
+    db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    await db_session.commit()
 
     monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
 
@@ -731,6 +735,9 @@ async def test_ping_candidates_and_availability_confirmation(db_session: AsyncSe
     3. handle_tutor_avail_no gracefully acknowledges in tutor DM.
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001234567890)
 
     await db_session.execute(delete(MatchInvite))
     await db_session.execute(delete(Tutor))
@@ -826,16 +833,13 @@ async def test_ping_candidates_and_availability_confirmation(db_session: AsyncSe
     assert confirm_btn.text == "✅ Assign"
     assert confirm_btn.callback_data == f"assign_match:{parent.id}:{tutor.id}"
 
-    # 3. Test tutor_avail_no edits message politely and alerts Admin Group
+    # 3. A second response on the same invite is ignored.
     mock_tutor_msg.reset_mock()
     mock_context.bot.send_message.reset_mock()
     await bot_handlers.handle_tutor_avail_no(mock_update, mock_context, f"tutor_avail_no:{parent.id}:{tutor.id}")
-    assert mock_tutor_msg.edit_text.called
-    assert "Thank you for letting us know" in mock_tutor_msg.edit_text.call_args.kwargs["text"]
-    assert mock_context.bot.send_message.called
-    decline_alert_args = mock_context.bot.send_message.call_args.kwargs
-    assert "DECLINED" in decline_alert_args["text"]
-    assert "Ping Tutor" in decline_alert_args["text"]
+    assert not mock_tutor_msg.edit_text.called
+    assert not mock_context.bot.send_message.called
+    assert mock_query.answer.call_args.kwargs.get("show_alert") is True
 
 
 @pytest.mark.asyncio
