@@ -360,6 +360,24 @@ export default function TutorForm({ user, lang, onSuccess }) {
             {errors.education_year && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.education_year}</p>}
           </div>
         </div>
+  
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {formT.entranceResult}
+          </label>
+          <p className="text-[11px] text-gray-400 mb-2">{formT.entranceResultHint}</p>
+          <input
+            type="number"
+            placeholder={formT.entranceResultPlaceholder}
+            min="0"
+            step="any"
+            inputMode="decimal"
+            value={formData.entrance_result}
+            onChange={(e) => handleFieldChange('entrance_result', e.target.value)}
+            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
       </div>
 
       {/* 3. Teaching Qualifications */}
@@ -628,22 +646,6 @@ export default function TutorForm({ user, lang, onSuccess }) {
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {formT.entranceResult}
-          </label>
-          <p className="text-[11px] text-gray-400 mb-2">{formT.entranceResultHint}</p>
-          <input
-            type="number"
-            placeholder={formT.entranceResultPlaceholder}
-            min="0"
-            step="any"
-            inputMode="decimal"
-            value={formData.entrance_result}
-            onChange={(e) => handleFieldChange('entrance_result', e.target.value)}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
-          />
-        </div>
       </div>
 
       {/* Submit Button */}

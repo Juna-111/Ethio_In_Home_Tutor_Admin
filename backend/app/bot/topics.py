@@ -33,7 +33,7 @@ def get_tutor_topic_id() -> Optional[int]:
 async def ensure_forum_topics(bot: Optional[Bot], session_factory) -> None:
     """
     Checks database for existing topic IDs or creates dedicated forum topics
-    ('📥 Parent Requests' and '🧑‍🏫 Tutor Profiles') in the Admin Group on startup.
+    ('Parent' and 'Tutor Profiles') in the Admin Group on startup.
     Gracefully falls back to main chat if forum topics are not enabled or permissions are missing.
     """
     if not bot or not settings.ADMIN_GROUP_ID:

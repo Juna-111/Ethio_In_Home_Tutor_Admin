@@ -105,21 +105,21 @@ def format_parent_card(parent_req, status_override: Optional[str] = None) -> str
     subjects_str = format_subjects(parent_req.subjects)
 
     return (
-        f"<b>PARENT REQUEST #{parent_req.id:04d} | {header_status}</b>\n\n"
+        f"<b>PARENT REQUEST | {header_status}</b>\n\n"
         "<b>CONTACT</b>\n"
-        f"<blockquote>Parent: {html.escape(parent_req.parent_name)}\n"
-        f"Phone: <code>{html.escape(parent_req.phone_number)}</code>\n"
-        f"Telegram ID: <code>{tg_id_str}</code></blockquote>\n\n"
+        f"<blockquote><b>Parent:</b> {html.escape(parent_req.parent_name)}\n"
+        f"<b>Phone:</b> <code>{html.escape(parent_req.phone_number)}</code>\n"
+        f"<b>Telegram ID:</b> <code>{tg_id_str}</code></blockquote>\n\n"
         "<b>STUDENT REQUIREMENTS</b>\n"
-        f"<blockquote>Level: {html.escape(parent_req.student_level)}\n"
-        f"Subjects: {subjects_str}\n"
-        f"Tutor preference: {html.escape(parent_req.preferred_gender)}\n"
-        f"Experience preference: {html.escape(parent_req.preferred_experience)}</blockquote>\n\n"
+        f"<blockquote><b>Level:</b> {html.escape(parent_req.student_level)}\n"
+        f"<b>Subjects:</b> {subjects_str}\n"
+        f"<b>Tutor preference:</b> {html.escape(parent_req.preferred_gender)}\n"
+        f"<b>Experience preference:</b> {html.escape(parent_req.preferred_experience)}</blockquote>\n\n"
         "<b>LOCATION</b>\n"
-        f"<blockquote>Subcity: {html.escape(parent_req.location_subcity)}{landmark_part}</blockquote>\n\n"
+        f"<blockquote><b>Subcity:</b> {html.escape(parent_req.location_subcity)}{landmark_part}</blockquote>\n\n"
         "<b>SCHEDULE AND BUDGET</b>\n"
-        f"<blockquote>Schedule: {timing_str}\n"
-        f"Budget: {parent_req.budget_etb:,.2f} ETB/hr</blockquote>"
+        f"<blockquote><b>Schedule:</b> {timing_str}\n"
+        f"<b>Budget:</b> {parent_req.budget_etb:,.2f} ETB/hr</blockquote>"
     )
 
 
@@ -128,28 +128,14 @@ def format_parent_directory_badge(parent_req) -> str:
     subjects_str = format_subjects(parent_req.subjects)
     schedule_str = format_schedule(parent_req.schedule_days)
     return (
-        f"<b>REQ-{parent_req.id:04d}</b> ── {html.escape(parent_req.student_level)} ({subjects_str})\n"
+        f"<b>REQ-{parent_req.id:04d}</b> ── {html.escape(parent_req.student_level)}\n"
         f"<b>{html.escape(parent_req.parent_name)}</b> • {html.escape(parent_req.location_subcity)}\n"
-        f"{schedule_str} • {parent_req.budget_etb:,.2f} ETB/hr"
+        f"Status: <b>{html.escape(parent_req.status)}</b>"
     )
 
 
 def format_tutor_card(tutor, status_override: Optional[str] = None, admin_username: Optional[str] = None) -> str:
     """Renders the Blockquote Terminal Data Card for a tutor profile with optional status override."""
-    if tutor.id_document_url:
-        parts = [p.strip() for p in tutor.id_document_url.split(" | ") if p.strip()]
-        links = []
-        for idx, part in enumerate(parts):
-            if part.startswith("/uploads/"):
-                links.append("ID/Credential attached")
-            elif part.startswith("http"):
-                label = "Portfolio/URL" if len(parts) > 1 and idx > 0 else "View Document"
-                links.append(f'<a href="{html.escape(part)}">{label}</a>')
-            else:
-                links.append(f'<a href="{html.escape(part)}">Document</a>')
-        doc_display = " │ ".join(links)
-    else:
-        doc_display = "Not provided"
 
     entrance_result_display = f"{tutor.entrance_result:g}" if tutor.entrance_result is not None else "Not provided"
 
@@ -180,27 +166,27 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
     grades_str = format_subjects(tutor.grades_qualified)
 
     return (
-        f"<b>TUTOR TICKET #{tutor.id:04d} | {header_status}</b>\n"
+        f"<b>TUTOR TICKET | {header_status}</b>\n"
         f"{admin_line}\n\n"
         "<b>CANDIDATE</b>\n"
-        f"<blockquote>Name: {html.escape(tutor.full_name)}\n"
-        f"Gender: {html.escape(tutor.gender)}\n"
-        f"Phone: <code>{html.escape(tutor.phone_number)}</code>\n"
-        f"Telegram ID: <code>{tg_id_str}</code></blockquote>\n\n"
+        f"<blockquote><b>Name:</b> {html.escape(tutor.full_name)}\n"
+        f"<b>Gender:</b> {html.escape(tutor.gender)}\n"
+        f"<b>Phone:</b> <code>{html.escape(tutor.phone_number)}</code>\n"
+        f"<b>Telegram ID:</b> <code>{tg_id_str}</code></blockquote>\n\n"
         "<b>ACADEMIC BACKGROUND</b>\n"
-        f"<blockquote>University: {html.escape(tutor.university)}\n"
-        f"Department: {html.escape(tutor.department)}\n"
-        f"Education: {html.escape(tutor.education_year)}</blockquote>\n\n"
+        f"<blockquote><b>University:</b> {html.escape(tutor.university)}\n"
+        f"<b>Department:</b> {html.escape(tutor.department)}\n"
+        f"<b>Education:</b> {html.escape(tutor.education_year)}</blockquote>\n\n"
         "<b>TEACHING PROFILE</b>\n"
-        f"<blockquote>Subjects: {subjects_str}\n"
-        f"Grades: {grades_str}\n"
-        f"Experience: {years_exp} years\n"
-        f"Expected fee: {tutor.expected_fee_etb:,.2f} ETB/hr</blockquote>\n\n"
+        f"<blockquote><b>Subjects:</b> {subjects_str}\n"
+        f"<b>Grades:</b> {grades_str}\n"
+        f"<b>Experience:</b> {years_exp} years\n"
+        f"<b>Expected fee:</b> {tutor.expected_fee_etb:,.2f} ETB/hr</blockquote>\n\n"
         "<b>LOCATION AND AVAILABILITY</b>\n"
-        f"<blockquote>Base subcity: {html.escape(tutor.base_subcity)}\n"
-        f"Coverage areas: {coverage_summary}\n"
-        f"Schedule: {timing_str}</blockquote>\n\n"
-        f"<b>DOCUMENTS AND RESULTS</b>\nID/Credential: {doc_display}\nEntrance result: {entrance_result_display}"
+        f"<blockquote><b>Base subcity:</b> {html.escape(tutor.base_subcity)}\n"
+        f"<b>Coverage areas:</b> {coverage_summary}\n"
+        f"<b>Schedule:</b> {timing_str}</blockquote>\n\n"
+        f"<b>DOCUMENTS AND RESULTS</b>\nEntrance result: {entrance_result_display}"
     )
 
 
@@ -235,12 +221,11 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
         topic = None
         if hasattr(bot_app.bot, "create_forum_topic"):
             try:
-                prefix = f"REQ-{parent_req.id:04d} — "
-                subcity_part = f" ({parent_req.location_subcity})" if parent_req.location_subcity else ""
-                max_name_len = 128 - len(prefix) - len(subcity_part)
+                prefix = f"PAR-{parent_req.id:04d} — "
+                max_name_len = 128 - len(prefix)
                 name_clean = parent_req.parent_name or "Parent"
                 name_part = name_clean[:max_name_len] if max_name_len > 5 else name_clean[:20]
-                topic_name = f"{prefix}{name_part}{subcity_part}"[:128]
+                topic_name = f"{prefix}{name_part}"[:128]
 
                 topic = await bot_app.bot.create_forum_topic(
                     chat_id=settings.ADMIN_GROUP_ID,
@@ -279,13 +264,13 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
                 message_thread_id=topic.message_thread_id
             )
 
-            # 2. Post Ticket Notification to the Index Topic ("📥 Parent Requests")
+            # 2. Post Ticket Notification to the Index Topic ("Parent")
             clean_id = get_clean_chat_id(settings.ADMIN_GROUP_ID)
             topic_url = f"https://t.me/c/{clean_id}/{topic.message_thread_id}"
 
             index_text = format_parent_directory_badge(parent_req)
             index_keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Open Workspace / Ticket ↗️", url=topic_url)]
+                [InlineKeyboardButton("🔗 Open Workspace", url=topic_url)]
             ])
 
             index_kwargs = {
