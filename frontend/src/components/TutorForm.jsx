@@ -14,6 +14,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
   const formT = t.tutorForm;
   const tVal = t.validation;
+  const choices = t.choices || {};
 
   const [formData, setFormData] = useState({
     full_name: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '',
@@ -139,7 +140,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
     // Document requirement check
     if (!selectedFile && !uploadedFileUrl && !formData.id_document_url.trim()) {
-      newErrors.id_document = lang === 'am' ? 'የመታወቂያ ወይም የሰነድ ማስረጃ ማያያዝ ግዴታ ነው' : 'ID or credential document is required.';
+      newErrors.id_document = t.messages.documentRequired;
     }
 
     setErrors(newErrors);
@@ -151,7 +152,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
     setGlobalError(null);
 
     if (!validateForm()) {
-      setGlobalError(lang === 'am' ? 'እባክዎ በቀይ የተሰመሩትን መረጃዎች በትክክል ይሙሉ' : 'Please fix the highlighted required fields.');
+      setGlobalError(t.messages.fixErrors);
       return;
     }
 
@@ -174,14 +175,10 @@ export default function TutorForm({ user, lang, onSuccess }) {
           } else {
             finalDocUrl = docUrl;
           }
-        } catch (uploadErr) {
+        } catch {
           setFileUploadStatus('error');
           setLoading(false);
-          setGlobalError(
-            lang === 'am'
-              ? 'የሰነድ ጭነት አልተሳካም። እባክዎ እንደገና ይሞክሩ።'
-              : `Document upload failed: ${uploadErr.message || 'Please check your file and retry.'}`
-          );
+          setGlobalError(t.messages.uploadFailed);
           return;
         }
       } else if (uploadedFileUrl) {
@@ -190,11 +187,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
       if (!finalDocUrl) {
         setLoading(false);
-        setGlobalError(
-          lang === 'am'
-            ? 'የመታወቂያ ወይም የሰነድ ማስረጃ ማያያዝ ግዴታ ነው'
-            : 'ID or credential document is required.'
-        );
+        setGlobalError(t.messages.documentRequired);
         return;
       }
 
@@ -219,8 +212,8 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
       const result = await submitTutorRegistration(payload);
       onSuccess(result, 'tutor');
-    } catch (err) {
-      setGlobalError(err.message || 'Failed to register profile. Please try again.');
+    } catch {
+      setGlobalError(t.messages.registrationFailed);
     } finally {
       setLoading(false);
     }
@@ -361,7 +354,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             >
               <option value="">{formT.selectYearPlaceholder}</option>
               {EDUCATION_YEARS.map((year) => (
-                <option key={year} value={year}>{year}</option>
+                <option key={year} value={year}>{choices.educationYears?.[year] || year}</option>
               ))}
             </select>
             {errors.education_year && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.education_year}</p>}
@@ -399,7 +392,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   }`}
                 >
                   {selected && <Check className="w-3 h-3 mr-0.5" />}
-                  <span>{subject}</span>
+                  <span>{choices.subjects?.[subject] || subject}</span>
                 </button>
               );
             })}
@@ -434,7 +427,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                       : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  {level}
+                  {choices.studentLevels?.[level] || level}
                 </button>
               );
             })}
@@ -453,7 +446,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               type="number"
               min="0"
               step="0.5"
-              placeholder="e.g. 2"
+              placeholder={formT.experiencePlaceholder}
               value={formData.years_of_experience}
               onChange={(e) => handleFieldChange('years_of_experience', e.target.value)}
               className={`w-full text-xs px-3 py-2.5 rounded-xl border transition ${
@@ -510,7 +503,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
           >
             <option value="">{formT.selectBaseSubcityPlaceholder}</option>
             {SUBCITIES.map((subcity) => (
-              <option key={subcity} value={subcity}>{subcity}</option>
+              <option key={subcity} value={subcity}>{choices.subcities?.[subcity] || subcity}</option>
             ))}
           </select>
           {errors.base_subcity && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.base_subcity}</p>}
@@ -541,7 +534,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {subcity}
+                  {choices.subcities?.[subcity] || subcity}
                 </button>
               );
             })}
@@ -642,6 +635,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
           <p className="text-[11px] text-gray-400 mb-2">{formT.entranceResultHint}</p>
           <input
             type="number"
+            placeholder={formT.entranceResultPlaceholder}
             min="0"
             step="any"
             inputMode="decimal"

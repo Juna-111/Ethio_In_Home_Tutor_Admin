@@ -5,12 +5,21 @@ import ParentForm from './components/ParentForm';
 import TutorForm from './components/TutorForm';
 import SuccessModal from './components/SuccessModal';
 import { getTelegramInitData } from './services/api';
+import { TRANSLATIONS } from './constants/translations';
+
+const LANGUAGE_STORAGE_KEY = 'mentorlink-language';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('parent');
   const [user, setUser] = useState(null);
   const [submissionSuccess, setSubmissionSuccess] = useState(null);
-  const [lang, setLang] = useState('en');
+  const [lang, setLang] = useState(() => {
+    try {
+      return window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'am' ? 'am' : 'en';
+    } catch {
+      return 'en';
+    }
+  });
 
   const toggleLanguage = () => {
     setLang((prev) => (prev === 'en' ? 'am' : 'en'));
@@ -48,6 +57,15 @@ export default function App() {
       console.info("Telegram WebApp initialization skipped (running in standard browser mode).");
     }
   }, []);
+
+  useEffect(() => {
+    const translation = TRANSLATIONS[lang] || TRANSLATIONS.en;
+    document.documentElement.lang = lang;
+    document.title = `${translation.appTitle} - ${translation.appSubtitle}`;
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+    } catch {}
+  }, [lang]);
 
   const handleSuccess = (result, type) => {
     setSubmissionSuccess({ data: result, type });

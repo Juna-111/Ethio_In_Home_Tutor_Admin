@@ -730,8 +730,8 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"Fee: {t.expected_fee_etb:,.0f} ETB/hr",
                 f"Experience: {t.years_of_experience:g} years",
                 f"Base: {html.escape(t.base_subcity)}",
-                f"Subjects: {html.escape(matched_subs)}",
-                f"Reason: {html.escape(reasons)}",
+                f"Subjects: {html.escape(matched_subs)}\n",
+                f"<blockquote>Reason: {html.escape(reasons)}</blockquote>",
                 "",
             ])
 
@@ -750,8 +750,8 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"Department: {html.escape(t.department)}",
                 f"Fee: {t.expected_fee_etb:,.0f} ETB/hr",
                 f"Experience: {t.years_of_experience:g} years",
-                f"Covers: {cov_str}",
-                f"Reason: {html.escape(reasons)}",
+                f"Covers: {cov_str}\n",
+                f"<blockquote>Reason: {html.escape(reasons)}</blockquote>",
                 "",
             ])
 
@@ -768,7 +768,7 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"<b>{html.escape(t.full_name)}</b>",
                 f"Fee: {t.expected_fee_etb:,.0f} ETB/hr",
                 f"Note: {html.escape(note)}",
-                f"Reason: {html.escape(reasons)}",
+                f"<blockquote>Reason: {html.escape(reasons)}</blockquote>",
                 "",
             ])
 
@@ -1719,7 +1719,7 @@ async def handle_bcast_retype(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.edit_text(
             "✍️ Send the revised broadcast message text now:",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancel", callback_data="admin_bcast_cancel")]
+                [InlineKeyboardButton("✖ Cancel", callback_data="admin_bcast_cancel")]
             ])
         )
     await query.answer()
@@ -1735,7 +1735,7 @@ def get_cms_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("👁️ View 'Contact'", callback_data="admin_cms_view:support_contact"),
             InlineKeyboardButton("✏️ Edit 'Contact'", callback_data="admin_cms_edit:support_contact")
         ],
-        [InlineKeyboardButton("❌ Close", callback_data="admin_cms_cancel")]
+        [InlineKeyboardButton("✖ Close", callback_data="admin_cms_cancel")]
     ])
 
 
@@ -1814,10 +1814,10 @@ async def handle_cms_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def get_export_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧑‍🏫 Export Tutors", callback_data="export:tutors")],
-        [InlineKeyboardButton("👨‍👩‍👦 Export Parent Requests", callback_data="export:parents")],
-        [InlineKeyboardButton("📦 Export All (Both)", callback_data="export:both")],
-        [InlineKeyboardButton("❌ Close", callback_data="export:close")]
+        [InlineKeyboardButton("Export Tutors", callback_data="export:tutors")],
+        [InlineKeyboardButton("Export Parent Requests", callback_data="export:parents")],
+        [InlineKeyboardButton("Export All (Both)", callback_data="export:both")],
+        [InlineKeyboardButton("✖ Close", callback_data="export:close")]
     ])
 
 

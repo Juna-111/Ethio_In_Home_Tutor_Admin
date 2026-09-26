@@ -14,6 +14,7 @@ import { normalizeEthiopianPhone } from '../utils/phone';
 
 export default function ParentForm({ user, lang, onSuccess }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+  const choices = t.choices || {};
 
   const [formData, setFormData] = useState({
     parent_name: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '',
@@ -142,8 +143,8 @@ export default function ParentForm({ user, lang, onSuccess }) {
 
       const result = await submitParentRequest(payload);
       onSuccess(result, 'parent');
-    } catch (err) {
-      setGlobalError(err.message || "Failed to submit request. Please try again.");
+    } catch {
+      setGlobalError(t.messages.requestFailed);
     } finally {
       setLoading(false);
     }
@@ -227,7 +228,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
           >
             <option value="">{t.parentForm.selectGradePlaceholder}</option>
             {STUDENT_LEVELS.map((level) => (
-              <option key={level} value={level}>{level}</option>
+              <option key={level} value={level}>{choices.studentLevels?.[level] || level}</option>
             ))}
           </select>
           {errors.student_level && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.student_level}</p>}
@@ -257,7 +258,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   }`}
                 >
                   {selected && <Check className="w-3 h-3 mr-0.5" />}
-                  <span>{subject}</span>
+                  <span>{choices.subjects?.[subject] || subject}</span>
                 </button>
               );
             })}
@@ -288,7 +289,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
           >
             <option value="">{t.parentForm.selectSubcityPlaceholder}</option>
             {SUBCITIES.map((subcity) => (
-              <option key={subcity} value={subcity}>{subcity}</option>
+              <option key={subcity} value={subcity}>{choices.subcities?.[subcity] || subcity}</option>
             ))}
           </select>
           {errors.location_subcity && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.location_subcity}</p>}
@@ -328,7 +329,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {day}
+                  {choices.days?.[day] || day}
                 </button>
               );
             })}
@@ -376,7 +377,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             >
               <option value="">{t.parentForm.selectDurationPlaceholder}</option>
               {SESSION_DURATIONS.map((dur) => (
-                <option key={dur} value={dur}>{dur}</option>
+                <option key={dur} value={dur}>{choices.durations?.[dur] || dur}</option>
               ))}
             </select>
             {errors.session_duration && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.session_duration}</p>}
@@ -405,7 +406,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   : 'border-gray-200 focus:border-blue-500'
               }`}
             />
-            <span className="absolute right-3.5 top-2.5 text-xs text-gray-400 font-medium">ETB / hr</span>
+            <span className="absolute right-3.5 top-2.5 text-xs text-gray-400 font-medium">{t.parentForm.perHour}</span>
           </div>
           {errors.budget_etb && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.budget_etb}</p>}
 
@@ -470,7 +471,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {exp}
+                {choices.experiences?.[exp] || exp}
               </button>
             ))}
           </div>

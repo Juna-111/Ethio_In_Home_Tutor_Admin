@@ -38,17 +38,16 @@ export const SUBJECTS_LIST = [
   "Chemistry",
   "Biology",
   "English",
-  "Civics",
+  "Citizenship",
   "History",
   "Geography",
   "Amharic",
-  "Economics",
-  "Computer Science"
+  "Economics"
 ];
 
-export const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Anytime"];
 
-export const SESSION_DURATIONS = ["1 hr", "1.5 hrs", "2 hrs", "2.5 hrs"];
+export const SESSION_DURATIONS = ["1 hr", "1.5 hrs", "2 hrs", "2.5 hrs",];
 
 export const PREFERRED_EXPERIENCES = [
   "University Student",
