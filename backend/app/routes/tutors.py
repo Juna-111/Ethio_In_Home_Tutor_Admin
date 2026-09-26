@@ -160,6 +160,7 @@ async def register_tutor(
         coverage_areas=payload.coverage_areas,
         availability_schedule=payload.availability_schedule,
         id_document_url=payload.id_document_url,
+        entrance_result=payload.entrance_result,
         status="pending",
     )
 

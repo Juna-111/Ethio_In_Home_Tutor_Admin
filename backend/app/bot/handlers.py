@@ -215,7 +215,7 @@ def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
     webapp_url = _get_webapp_url()
     if webapp_url:
         keyboard.append([
-            KeyboardButton("🚀 Open MentorLink", web_app=WebAppInfo(url=webapp_url))
+            KeyboardButton("Register", web_app=WebAppInfo(url=webapp_url))
         ])
 
     # Row 2: Customer buttons (ALWAYS present)
@@ -235,9 +235,9 @@ def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
 def get_admin_reply_keyboard() -> ReplyKeyboardMarkup:
     """Builds persistent admin control keyboard."""
     keyboard = [
-        [KeyboardButton("📊 Analytics"), KeyboardButton("📢 Broadcast")],
-        [KeyboardButton("📝 Manage \"About Us\""), KeyboardButton("📥 Export CSV")],
-        [KeyboardButton("👥 Manage Admins")]
+        [KeyboardButton("Analytics"), KeyboardButton("Broadcast")],
+        [KeyboardButton("Manage"), KeyboardButton("Export CSV")],
+        [KeyboardButton("Manage Admins")]
     ]
     return ReplyKeyboardMarkup(
         keyboard,
@@ -298,7 +298,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 <b>Welcome to MentorLink!</b>\n\n"
         "Connecting families with verified in-home tutors and university mentors across Addis Ababa.\n\n"
         "<blockquote><b>How It Works:</b>\n"
-        "1️⃣ <b>Find a Tutor:</b> Tap <b>🚀 Open MentorLink</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
+        "1️⃣ <b>Find a Tutor:</b> Tap <b>Register</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
         "2️⃣ <b>Become a Tutor:</b> Scholars & teachers can submit credentials for fast verification.\n"
         "3️⃣ <b>Direct Help:</b> Tap <b>ℹ️ About Us</b> or <b>📞 Contact</b> for coordinator support.</blockquote>\n\n"
         "<i>Select an option below to get started:</i>"
@@ -348,7 +348,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     )
     if data.startswith(admin_action_prefixes):
         if not await is_admin(update, context):
-            await query.answer("⛔ Access denied.", show_alert=True)
+            await query.answer("⛔ Access denied. ", show_alert=True)
             return
 
         if data.startswith(admin_group_action_prefixes) and settings.ADMIN_GROUP_ID and query.message and getattr(query.message, "chat_id", None) is not None:

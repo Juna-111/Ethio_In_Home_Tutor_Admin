@@ -115,6 +115,7 @@ class TutorCreate(BaseModel):
     coverage_areas: List[str] = Field(..., min_length=1, description="Subcities tutor is willing to travel to")
     availability_schedule: Union[dict, List[str], str] = Field(..., description="Available days and time slots")
     id_document_url: Optional[str] = Field(None, max_length=2048, description="URL or Telegram file ID of student/national ID")
+    entrance_result: Optional[float] = Field(None, ge=0, description="Numeric entrance exam result")
 
     @field_validator("phone_number", mode="before")
     @classmethod

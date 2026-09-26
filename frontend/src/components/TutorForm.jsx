@@ -29,7 +29,8 @@ export default function TutorForm({ user, lang, onSuccess }) {
     base_subcity: '',
     coverage_areas: [],
     availability_schedule: '',
-    id_document_url: ''
+    id_document_url: '',
+    entrance_result: ''
   });
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -212,7 +213,8 @@ export default function TutorForm({ user, lang, onSuccess }) {
         base_subcity: formData.base_subcity,
         coverage_areas: formData.coverage_areas,
         availability_schedule: formData.availability_schedule.trim(),
-        id_document_url: finalDocUrl
+        id_document_url: finalDocUrl,
+        entrance_result: formData.entrance_result === '' ? null : Number(formData.entrance_result)
       };
 
       const result = await submitTutorRegistration(payload);
@@ -629,6 +631,22 @@ export default function TutorForm({ user, lang, onSuccess }) {
             placeholder={formT.documentUrlPlaceholder}
             value={formData.id_document_url}
             onChange={(e) => handleFieldChange('id_document_url', e.target.value)}
+            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {formT.entranceResult}
+          </label>
+          <p className="text-[11px] text-gray-400 mb-2">{formT.entranceResultHint}</p>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            inputMode="decimal"
+            value={formData.entrance_result}
+            onChange={(e) => handleFieldChange('entrance_result', e.target.value)}
             className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
           />
         </div>

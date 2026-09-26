@@ -65,13 +65,13 @@ async def ensure_forum_topics(bot: Optional[Bot], session_factory) -> None:
                 try:
                     topic = await bot.create_forum_topic(
                         chat_id=settings.ADMIN_GROUP_ID,
-                        name="📥 Parent Requests"
+                        name="Parent"
                     )
                     thread_id = topic.message_thread_id
                     TOPIC_CACHE["parent_requests_topic_id"] = thread_id
                     session.add(SystemSetting(key="parent_requests_topic_id", value=str(thread_id)))
                     await session.commit()
-                    logger.info("Auto-created forum topic '📥 Parent Requests' with ID: %s", thread_id)
+                    logger.info("Auto-created forum topic 'Parents' with ID: %s", thread_id)
                 except (TelegramError, Exception) as exc:
                     logger.info("Forum topics not active or permission missing for Parent Requests; defaulting to main chat (%s)", exc)
 
@@ -86,13 +86,13 @@ async def ensure_forum_topics(bot: Optional[Bot], session_factory) -> None:
                 try:
                     topic = await bot.create_forum_topic(
                         chat_id=settings.ADMIN_GROUP_ID,
-                        name="🧑‍🏫 Tutor Profiles"
+                        name="Tutor Profiles"
                     )
                     thread_id = topic.message_thread_id
                     TOPIC_CACHE["tutor_verifications_topic_id"] = thread_id
                     session.add(SystemSetting(key="tutor_verifications_topic_id", value=str(thread_id)))
                     await session.commit()
-                    logger.info("Auto-created forum topic '🧑‍🏫 Tutor Profiles' with ID: %s", thread_id)
+                    logger.info("Auto-created forum topic 'Tutor Profiles' with ID: %s", thread_id)
                 except (TelegramError, Exception) as exc:
                     logger.info("Forum topics not active or permission missing for Tutor Profiles; defaulting to main chat (%s)", exc)
 

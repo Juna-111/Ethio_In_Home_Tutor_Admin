@@ -96,7 +96,8 @@ async def test_register_tutor_success(async_client: AsyncClient, db_session: Asy
             "weekdays": "after 5 PM",
             "weekends": "all day"
         },
-        "id_document_url": "https://example.com/uploads/sara_id.jpg"
+        "id_document_url": "https://example.com/uploads/sara_id.jpg",
+        "entrance_result": 92.5
     }
 
     response = await async_client.post("/api/v1/tutors/register", json=payload)
@@ -108,6 +109,7 @@ async def test_register_tutor_success(async_client: AsyncClient, db_session: Asy
     assert data["gender"] == "Female"
     assert data["base_subcity"] == "Yeka"
     assert data["subjects_qualified"] == ["Maths", "Physics", "Chemistry"]
+    assert data["entrance_result"] == payload["entrance_result"]
 
     # Verify directly against database
     query = select(Tutor).where(Tutor.id == data["id"])
@@ -117,6 +119,7 @@ async def test_register_tutor_success(async_client: AsyncClient, db_session: Asy
     assert record.full_name == "Sara Tadesse"
     assert record.status == "pending"
     assert record.expected_fee_etb == 350.0
+    assert record.entrance_result == payload["entrance_result"]
 
 
 @pytest.mark.asyncio
@@ -277,7 +280,8 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
         "base_subcity": "Kirkos",
         "coverage_areas": ["Kirkos", "Bole", "Lideta"],
         "availability_schedule": "Daily after 4 PM",
-        "id_document_url": "https://example.com/id/dawit.pdf"
+        "id_document_url": "https://example.com/id/dawit.pdf",
+        "entrance_result": 88
     }
 
     response = await async_client.post("/api/v1/tutors/register", json=payload)
@@ -293,6 +297,7 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
     assert "Kirkos" in call_kwargs["text"]
     assert "<blockquote>" in call_kwargs["text"]
     assert "https://example.com/id/dawit.pdf" in call_kwargs["text"]
+    assert "Entrance result: 88" in call_kwargs["text"]
 
     # Verify compact inline buttons
     reply_markup = call_kwargs["reply_markup"]

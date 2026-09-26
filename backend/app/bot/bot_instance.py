@@ -151,6 +151,8 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
     else:
         doc_display = "Not provided"
 
+    entrance_result_display = f"{tutor.entrance_result:g}" if tutor.entrance_result is not None else "Not provided"
+
     tg_id_str = str(tutor.telegram_user_id) if tutor.telegram_user_id else "N/A"
     header_status = status_override or "Pending Verification"
 
@@ -198,7 +200,7 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
         f"<blockquote>Base subcity: {html.escape(tutor.base_subcity)}\n"
         f"Coverage areas: {coverage_summary}\n"
         f"Schedule: {timing_str}</blockquote>\n\n"
-        f"<b>DOCUMENTS</b>\n{doc_display}"
+        f"<b>DOCUMENTS AND RESULTS</b>\nID/Credential: {doc_display}\nEntrance result: {entrance_result_display}"
     )
 
 

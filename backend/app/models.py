@@ -51,6 +51,8 @@ class Tutor(Base):
     coverage_areas: Mapped[List[str]] = mapped_column(JSON, nullable=False)
     availability_schedule: Mapped[Any] = mapped_column(JSON, nullable=False)
     id_document_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    entrance_result_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    entrance_result: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
