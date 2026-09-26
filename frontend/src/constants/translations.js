@@ -279,6 +279,7 @@ export const TRANSLATIONS = {
         Fri: "ዓርብ",
         Sat: "ቅዳሜ",
         Sun: "እሁድ",
+        Anytime: "ማንኛውም ጊዜ",
       },
       durations: {
         "1 hr": "1 ሰዓት",
