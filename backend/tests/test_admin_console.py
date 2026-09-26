@@ -152,10 +152,11 @@ async def test_super_admin_start_renders_admin_keyboard(monkeypatch):
 
     keyboard = kwargs["reply_markup"].keyboard
     assert len(keyboard) == 3
-    assert keyboard[0][0].text == "📊 Analytics"
-    assert keyboard[0][1].text == "📢 Broadcast"
-    assert keyboard[1][0].text == "📝 Manage \"About Us\""
-    assert keyboard[2][0].text == "👥 Manage Admins"
+    assert keyboard[0][0].text == "Analytics"
+    assert keyboard[0][1].text == "Broadcast"
+    assert keyboard[1][0].text == "About_Us"
+    assert keyboard[1][1].text == "Export CSV"
+    assert keyboard[2][0].text == "Manage Admins"
 
 
 @pytest.mark.asyncio
@@ -727,15 +728,37 @@ async def test_generate_parents_csv_content_and_encoding(db_session: AsyncSessio
 
 
 def test_admin_reply_keyboard_contains_export_button():
-    """Verifies that the Super Admin persistent keyboard includes the '📥 Export CSV' button."""
+    """Verifies that the Super Admin persistent keyboard includes the Export CSV button."""
     markup = bot_handlers.get_admin_reply_keyboard()
     all_button_texts = [btn.text for row in markup.keyboard for btn in row]
-    assert "📥 Export CSV" in all_button_texts
+    assert "Export CSV" in all_button_texts
+
+
+@pytest.mark.asyncio
+async def test_admin_about_us_keyboard_label_opens_cms(monkeypatch):
+    admin_id = 999000111
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    clear_state = AsyncMock()
+    open_cms = AsyncMock()
+    monkeypatch.setattr(bot_handlers, "clear_admin_state", clear_state)
+    monkeypatch.setattr(bot_handlers, "handle_cms_menu", open_cms)
+
+    message = AsyncMock()
+    message.text = "About_Us"
+    update = MagicMock()
+    update.message = message
+    update.effective_message = message
+    update.effective_user.id = admin_id
+
+    await bot_handlers.handle_text_message(update, MagicMock())
+
+    clear_state.assert_awaited_once_with(admin_id)
+    open_cms.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_export_menu_renders_options(monkeypatch):
-    """Verifies that tapping '📥 Export CSV' presents the inline dataset selection menu."""
+    """Verifies that tapping 'Export CSV' presents the inline dataset selection menu."""
     admin_id = 999000111
     monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
     mock_message = AsyncMock()

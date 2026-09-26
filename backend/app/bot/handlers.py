@@ -250,7 +250,7 @@ def get_admin_reply_keyboard() -> ReplyKeyboardMarkup:
     """Builds persistent admin control keyboard."""
     keyboard = [
         [KeyboardButton("Analytics"), KeyboardButton("Broadcast")],
-        [KeyboardButton("Manage"), KeyboardButton("Export CSV")],
+        [KeyboardButton("About_Us"), KeyboardButton("Export CSV")],
         [KeyboardButton("Manage Admins")]
     ]
     return ReplyKeyboardMarkup(
@@ -1027,7 +1027,7 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
                 f"<b>AVAILABILITY CONFIRMED</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"<b>{html.escape(tutor.full_name)}</b>\n"
-                f"(<code>{html.escape(tutor.phone_number)}</code>)\n"
+                f"<code>{html.escape(tutor.phone_number)}</code>\n"
                 f"<b>Subjects:</b> {subjects_str}\n"
                 f"<b>Base:</b> {html.escape(tutor.base_subcity)} | <b>Rate:</b> {tutor.expected_fee_etb:,.2f} ETB/hr"
             )
@@ -2228,23 +2228,23 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Super Admin Reply Keyboard buttons
     if is_super_admin(update):
-        if text in ("📊 Analytics", "📢 Broadcast", "📝 Manage \"About Us\"", "📝 Manage 'About Us'", "📥 Export CSV", "👥 Manage Admins"):
+        if text in ("Analytics", "Broadcast", "About_Us", "Export CSV", "Manage Admins"):
             if user_id:
                 await clear_admin_state(user_id)
 
-        if text == "📊 Analytics":
+        if text == "Analytics":
             await handle_admin_analytics(update, context)
             return
-        elif text == "📢 Broadcast":
+        elif text == "Broadcast":
             await handle_broadcast_menu(update, context)
             return
-        elif text in ("📝 Manage \"About Us\"", "📝 Manage 'About Us'"):
+        elif text == "About_Us":
             await handle_cms_menu(update, context)
             return
-        elif text == "📥 Export CSV":
+        elif text == "Export CSV":
             await handle_export_menu(update, context)
             return
-        elif text == "👥 Manage Admins":
+        elif text == "Manage Admins":
             await msg.reply_text(
                 "<b>Administrator Management</b>\n\n"
                 "Administrators are stored in the database. The environment Super Admin remains the bootstrap owner.",
