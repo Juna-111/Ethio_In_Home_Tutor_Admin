@@ -343,6 +343,194 @@ async def test_admin_broadcast_flow(db_session: AsyncSession, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_group_broadcast_command_confirms_and_copies_matching_place_recipients(db_session: AsyncSession, monkeypatch):
+    admin_id = 999000111
+    group_id = -1001234567890
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", group_id)
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+    bot_handlers.pending_group_broadcasts.clear()
+
+    parent = ParentRequest(
+        telegram_user_id=111222,
+        parent_name="Parent Bole",
+        phone_number="+251911111111",
+        student_level="Grade 8",
+        subjects=["Maths"],
+        preferred_gender="No preference",
+        preferred_experience="University Student",
+        location_subcity="Bole",
+        schedule_days=["Mon"],
+        time_slot="4 PM",
+        session_duration="1 hr",
+        budget_etb=300,
+    )
+    tutor = Tutor(
+        telegram_user_id=222333,
+        full_name="Verified Bole Tutor",
+        gender="Female",
+        phone_number="+251922222222",
+        university="AAU",
+        department="Maths",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["Grade 8"],
+        years_of_experience=2,
+        expected_fee_etb=400,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule={},
+        status="verified",
+    )
+    elsewhere = Tutor(
+        telegram_user_id=333444,
+        full_name="Verified Yeka Tutor",
+        gender="Male",
+        phone_number="+251933333333",
+        university="AAU",
+        department="Physics",
+        education_year="Graduate",
+        subjects_qualified=["Physics"],
+        grades_qualified=["Grade 8"],
+        years_of_experience=2,
+        expected_fee_etb=400,
+        base_subcity="Yeka",
+        coverage_areas=["Yeka"],
+        availability_schedule={},
+        status="verified",
+    )
+    db_session.add_all([parent, tutor, elsewhere])
+    await db_session.commit()
+
+    source = MagicMock()
+    source.chat_id = group_id
+    source.message_id = 501
+    source.message_thread_id = 1
+    source.text = "Announcement text"
+    source.caption = None
+
+    command_message = AsyncMock()
+    command_message.chat_id = group_id
+    command_message.message_thread_id = 1
+    command_message.text = '/broadcast "Bole"'
+    command_message.reply_to_message = source
+    preview_message = MagicMock()
+    preview_message.message_id = 601
+    command_message.reply_text = AsyncMock(return_value=preview_message)
+
+    update = MagicMock()
+    update.message = command_message
+    update.effective_message = command_message
+    update.effective_user.id = admin_id
+    context = MagicMock()
+
+    await bot_handlers.handle_group_broadcast_command(update, context)
+
+    preview_text = command_message.reply_text.call_args.kwargs["text"]
+    assert "Recipients: 2" in preview_text
+    token = next(iter(bot_handlers.pending_group_broadcasts))
+
+    callback_message = MagicMock()
+    callback_message.chat_id = group_id
+    callback_message.message_thread_id = 1
+    callback_message.message_id = preview_message.message_id
+    callback_message.edit_text = AsyncMock()
+    callback_query = AsyncMock()
+    callback_query.data = f"admin_group_broadcast_confirm:{token}"
+    callback_query.message = callback_message
+    update.callback_query = callback_query
+    context.bot.copy_message = AsyncMock()
+    context.bot.send_message = AsyncMock()
+
+    await bot_handlers.handle_callback_query(update, context)
+    await asyncio.sleep(0.15)
+
+    copied_to = {call.kwargs["chat_id"] for call in context.bot.copy_message.call_args_list}
+    assert copied_to == {111222, 222333}
+    assert all(call.kwargs["from_chat_id"] == group_id for call in context.bot.copy_message.call_args_list)
+    assert all(call.kwargs["message_id"] == 501 for call in context.bot.copy_message.call_args_list)
+    assert context.bot.send_message.call_args.kwargs["chat_id"] == group_id
+    assert "Sent: 2" in context.bot.send_message.call_args.kwargs["text"]
+    assert token not in bot_handlers.pending_group_broadcasts
+
+
+@pytest.mark.asyncio
+async def test_group_broadcast_subject_filter_and_unknown_filter(db_session: AsyncSession, monkeypatch):
+    admin_id = 999000111
+    group_id = -1001234567890
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", group_id)
+    monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
+
+    matching_tutor = Tutor(
+        telegram_user_id=444555,
+        full_name="Math Tutor",
+        gender="Female",
+        phone_number="+251944444444",
+        university="AAU",
+        department="Maths",
+        education_year="Graduate",
+        subjects_qualified=["Maths", "Physics"],
+        grades_qualified=["Grade 8"],
+        years_of_experience=2,
+        expected_fee_etb=400,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule={},
+        status="verified",
+    )
+    pending_tutor = Tutor(
+        telegram_user_id=555666,
+        full_name="Pending Math Tutor",
+        gender="Male",
+        phone_number="+251955555555",
+        university="AAU",
+        department="Maths",
+        education_year="Graduate",
+        subjects_qualified=["Maths"],
+        grades_qualified=["Grade 8"],
+        years_of_experience=1,
+        expected_fee_etb=300,
+        base_subcity="Bole",
+        coverage_areas=["Bole"],
+        availability_schedule={},
+        status="pending",
+    )
+    db_session.add_all([matching_tutor, pending_tutor])
+    await db_session.commit()
+
+    assert await bot_handlers.get_group_broadcast_recipient_ids("tutors", subject="Maths") == [444555]
+    assert bot_handlers._resolve_group_broadcast("broadcast", "mAtHs") == {
+        "audience": "tutors", "place": None, "subject": "Maths"
+    }
+    with pytest.raises(ValueError, match="Unknown place or subject"):
+        bot_handlers._resolve_group_broadcast("broadcast", "Atlantis")
+    with pytest.raises(ValueError, match="Unknown place"):
+        bot_handlers._resolve_group_broadcast("parentbroadcast", "Maths")
+
+
+@pytest.mark.asyncio
+async def test_group_broadcast_command_rejects_non_general_topic(monkeypatch):
+    admin_id = 999000111
+    group_id = -1001234567890
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", admin_id)
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", group_id)
+
+    message = AsyncMock()
+    message.chat_id = group_id
+    message.message_thread_id = 42
+    message.text = "/broadcast"
+    update = MagicMock()
+    update.message = message
+    update.effective_message = message
+    update.effective_user.id = admin_id
+
+    await bot_handlers.handle_group_broadcast_command(update, MagicMock())
+
+    assert "only available in the General topic" in message.reply_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_admin_cancel_command_and_text_escape():
     """Verifies that /cancel and typing 'cancel' cleanly clears active wizard states."""
     admin_id = 999000111

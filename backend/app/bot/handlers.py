@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime, timezone
 import html
 import logging
+import secrets
+import shlex
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -44,6 +46,18 @@ _admin_cache: Dict[int, Tuple[bool, float]] = {}
 _admin_roles: Dict[int, str] = {}
 _admin_state_cache_times: Dict[int, float] = {}
 ADMIN_STATE_TTL_SECONDS = 30 * 60
+GENERAL_TOPIC_THREAD_ID = 1
+GROUP_BROADCAST_TTL_SECONDS = 15 * 60
+GROUP_BROADCAST_PLACES = (
+    "Bole", "Yeka", "Arada", "Kirkos", "Lideta", "Kolfe Keranio",
+    "Gullele", "Nifas Silk-Lafto", "Akaki Kality", "Addis Ketema",
+    "Lemi Kura", "Akaki", "Other",
+)
+GROUP_BROADCAST_SUBJECTS = (
+    "Maths", "Physics", "Chemistry", "Biology", "English", "Civics",
+    "History", "Geography", "Amharic", "Economics", "Computer Science",
+)
+pending_group_broadcasts: Dict[str, dict] = {}
 
 
 def is_super_admin(update: Update) -> bool:
@@ -333,6 +347,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         "view_doc:",
         "admin_analytics_",
         "admin_bcast_",
+        "admin_group_broadcast_",
         "admin_cms_",
         "export:",
         "admin_users_",
@@ -386,6 +401,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_bcast_cancel(update, context)
     elif data == "admin_bcast_retype":
         await handle_bcast_retype(update, context)
+    elif data.startswith(("admin_group_broadcast_confirm:", "admin_group_broadcast_cancel:")):
+        await handle_group_broadcast_callback(update, context, data)
     elif data.startswith("admin_cms_edit:"):
         await handle_cms_edit_select(update, context, data)
     elif data.startswith("admin_cms_view:"):
@@ -1538,6 +1555,275 @@ async def handle_admin_close_stats(update: Update, context: ContextTypes.DEFAULT
     await query.answer("Closed.")
 
 
+def _is_general_topic(message) -> bool:
+    return getattr(message, "message_thread_id", None) in (None, GENERAL_TOPIC_THREAD_ID)
+
+
+def _resolve_group_broadcast(command: str, argument: Optional[str]) -> dict:
+    audience_by_command = {
+        "broadcast": "all",
+        "parentbroadcast": "parents",
+        "tutorbroadcast": "tutors",
+    }
+    audience = audience_by_command[command]
+    if argument is None:
+        return {"audience": audience, "place": None, "subject": None}
+
+    normalized_argument = argument.casefold()
+    places = {place.casefold(): place for place in GROUP_BROADCAST_PLACES}
+    place = places.get(normalized_argument)
+    if place:
+        return {"audience": audience, "place": place, "subject": None}
+
+    if command == "broadcast":
+        subjects = {subject.casefold(): subject for subject in GROUP_BROADCAST_SUBJECTS}
+        subject = subjects.get(normalized_argument)
+        if subject:
+            return {"audience": "tutors", "place": None, "subject": subject}
+        raise ValueError(f'Unknown place or subject "{argument}". No broadcast was started.')
+
+    raise ValueError(f'Unknown place "{argument}". No broadcast was started.')
+
+
+async def get_group_broadcast_recipient_ids(audience: str, place: Optional[str] = None, subject: Optional[str] = None) -> List[int]:
+    recipient_ids = set()
+    async with AsyncSessionLocal() as session:
+        if audience in ("all", "parents"):
+            parent_query = select(ParentRequest.telegram_user_id).where(
+                ParentRequest.telegram_user_id.isnot(None)
+            )
+            if place:
+                parent_query = parent_query.where(
+                    func.lower(ParentRequest.location_subcity) == place.casefold()
+                )
+            parent_ids = (await session.execute(parent_query)).scalars().all()
+            recipient_ids.update(parent_ids)
+
+        if audience in ("all", "tutors"):
+            tutor_query = select(Tutor.telegram_user_id, Tutor.subjects_qualified).where(
+                Tutor.status == "verified",
+                Tutor.telegram_user_id.isnot(None),
+            )
+            if place:
+                tutor_query = tutor_query.where(
+                    func.lower(Tutor.base_subcity) == place.casefold()
+                )
+            tutors = (await session.execute(tutor_query)).all()
+            for telegram_user_id, qualified_subjects in tutors:
+                if subject and not any(
+                    str(value).casefold() == subject.casefold()
+                    for value in (qualified_subjects or [])
+                ):
+                    continue
+                recipient_ids.add(telegram_user_id)
+
+    return sorted(recipient_ids)
+
+
+async def handle_group_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message or update.message
+    user = update.effective_user
+    if not message or not user:
+        return
+
+    if not settings.ADMIN_GROUP_ID or str(message.chat_id) != str(settings.ADMIN_GROUP_ID):
+        await message.reply_text("Use broadcast commands in the admins group's General topic.")
+        return
+    if not _is_general_topic(message):
+        await message.reply_text("Broadcast commands are only available in the General topic.")
+        return
+    if not await is_admin(update, context):
+        await message.reply_text("⛔ Only an authorized admin can start a broadcast.")
+        return
+
+    try:
+        command_parts = shlex.split(message.text or "")
+    except ValueError:
+        await message.reply_text('Invalid command quoting. Example: /broadcast "Bole"')
+        return
+
+    command = command_parts[0].split("@", 1)[0].lstrip("/").casefold() if command_parts else ""
+    if command not in ("broadcast", "parentbroadcast", "tutorbroadcast"):
+        return
+    if len(command_parts) > 2:
+        await message.reply_text('Use one quoted place or subject, for example: /broadcast "Kolfe Keranio"')
+        return
+
+    try:
+        target = _resolve_group_broadcast(command, command_parts[1] if len(command_parts) == 2 else None)
+    except ValueError as exc:
+        await message.reply_text(str(exc))
+        return
+
+    source_message = message.reply_to_message
+    if not source_message:
+        await message.reply_text("Reply to the announcement message with the broadcast command.")
+        return
+    if (
+        str(source_message.chat_id) != str(settings.ADMIN_GROUP_ID)
+        or not _is_general_topic(source_message)
+    ):
+        await message.reply_text("Reply to an announcement in the General topic of the admins group.")
+        return
+
+    recipient_ids = await get_group_broadcast_recipient_ids(**target)
+    if not recipient_ids:
+        await message.reply_text("No recipients match this audience and filter. Nothing was sent.")
+        return
+
+    audience_labels = {
+        "all": "all customers (parents and verified tutors)",
+        "parents": "parents",
+        "tutors": "verified tutors",
+    }
+    filter_label = f'Place: {target["place"]}' if target["place"] else ""
+    if target["subject"]:
+        filter_label = f'Subject: {target["subject"]}'
+    message_preview = source_message.text or source_message.caption or "Original message (media/content will be copied)."
+    message_preview = message_preview.replace("\n", " ")[:180]
+
+    now = time.time()
+    for token, pending in list(pending_group_broadcasts.items()):
+        if pending["expires_at"] <= now:
+            pending_group_broadcasts.pop(token, None)
+
+    token = secrets.token_urlsafe(8)
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Confirm broadcast", callback_data=f"admin_group_broadcast_confirm:{token}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"admin_group_broadcast_cancel:{token}"),
+        ]
+    ])
+    preview = await message.reply_text(
+        text=(
+            f"📢 Broadcast confirmation\n"
+            f"Audience: {audience_labels[target['audience']]}\n"
+            f"{filter_label + chr(10) if filter_label else ''}"
+            f"Recipients: {len(recipient_ids)}\n"
+            f"Message: {message_preview}\n\n"
+            "Confirm to send the replied-to message, including media and caption."
+        ),
+        reply_markup=keyboard,
+    )
+    pending_group_broadcasts[token] = {
+        **target,
+        "source_chat_id": source_message.chat_id,
+        "source_message_id": source_message.message_id,
+        "report_chat_id": message.chat_id,
+        "report_thread_id": getattr(message, "message_thread_id", None),
+        "preview_message_id": getattr(preview, "message_id", None),
+        "expires_at": now + GROUP_BROADCAST_TTL_SECONDS,
+    }
+
+
+async def _run_group_broadcast_task(
+    bot,
+    recipient_ids: List[int],
+    source_chat_id: int,
+    source_message_id: int,
+    report_chat_id: int,
+    report_thread_id: Optional[int],
+):
+    success_count = 0
+    fail_count = 0
+
+    for recipient_id in recipient_ids:
+        try:
+            await bot.copy_message(
+                chat_id=recipient_id,
+                from_chat_id=source_chat_id,
+                message_id=source_message_id,
+            )
+            success_count += 1
+        except RetryAfter as exc:
+            await asyncio.sleep(exc.retry_after + 0.1)
+            try:
+                await bot.copy_message(
+                    chat_id=recipient_id,
+                    from_chat_id=source_chat_id,
+                    message_id=source_message_id,
+                )
+                success_count += 1
+            except Exception as retry_error:
+                logger.warning("Broadcast retry failed for user %s: %s", recipient_id, retry_error)
+                fail_count += 1
+        except Exception as exc:
+            logger.warning("Failed to copy broadcast to user %s: %s", recipient_id, exc)
+            fail_count += 1
+        await asyncio.sleep(0.05)
+
+    report_kwargs = {"chat_id": report_chat_id}
+    if report_thread_id is not None:
+        report_kwargs["message_thread_id"] = report_thread_id
+    try:
+        await bot.send_message(
+            **report_kwargs,
+            text=(
+                "✅ Broadcast completed.\n"
+                f"Sent: {success_count}\n"
+                f"Failed/blocked: {fail_count}\n"
+                f"Total audience: {len(recipient_ids)}"
+            ),
+        )
+    except Exception as exc:
+        logger.error("Failed to send group broadcast report: %s", exc)
+
+
+async def handle_group_broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    query = update.callback_query
+    message = query.message
+    if not message or not _is_general_topic(message):
+        await query.answer("This confirmation is only valid in the General topic.", show_alert=True)
+        return
+    if not settings.ADMIN_GROUP_ID or str(message.chat_id) != str(settings.ADMIN_GROUP_ID):
+        await query.answer("This confirmation is only valid in the admins group.", show_alert=True)
+        return
+    if not await is_admin(update, context):
+        await query.answer("⛔ Only an authorized admin can confirm a broadcast.", show_alert=True)
+        return
+
+    action, token = data.split(":", 1)
+    pending = pending_group_broadcasts.get(token)
+    if (
+        not pending
+        or pending["expires_at"] <= time.time()
+        or pending["preview_message_id"] != getattr(message, "message_id", None)
+    ):
+        pending_group_broadcasts.pop(token, None)
+        await query.answer("This broadcast confirmation has expired.", show_alert=True)
+        return
+
+    pending_group_broadcasts.pop(token, None)
+    if action == "admin_group_broadcast_cancel":
+        await message.edit_text("❌ Broadcast cancelled.", reply_markup=None)
+        await query.answer("Broadcast cancelled.")
+        return
+
+    recipient_ids = await get_group_broadcast_recipient_ids(
+        pending["audience"], pending["place"], pending["subject"]
+    )
+    if not recipient_ids:
+        await message.edit_text("No recipients match anymore. Nothing was sent.", reply_markup=None)
+        await query.answer("No recipients to send to.", show_alert=True)
+        return
+
+    await message.edit_text(
+        f"⏳ Broadcast started for {len(recipient_ids)} recipients. Results will be reported here.",
+        reply_markup=None,
+    )
+    await query.answer("Broadcast started.")
+    asyncio.create_task(
+        _run_group_broadcast_task(
+            bot=context.bot,
+            recipient_ids=recipient_ids,
+            source_chat_id=pending["source_chat_id"],
+            source_message_id=pending["source_message_id"],
+            report_chat_id=pending["report_chat_id"],
+            report_thread_id=pending["report_thread_id"],
+        )
+    )
+
+
 def get_broadcast_targets_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 All Users", callback_data="admin_bcast_target:all")],
@@ -2061,6 +2347,10 @@ def register_handlers(application: Application):
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
+    application.add_handler(CommandHandler(
+        ["broadcast", "parentbroadcast", "tutorbroadcast"],
+        handle_group_broadcast_command,
+    ))
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     application.add_error_handler(error_handler)

@@ -264,7 +264,7 @@ export const TRANSLATIONS = {
         Chemistry: "ኬሚስትሪ",
         Biology: "ባዮሎጂ",
         English: "እንግሊዝኛ",
-        Civics: "ዜግነት ትምህርት",
+        Citizenship: "ዜግነት ትምህርት",
         History: "ታሪክ",
         Geography: "ጂኦግራፊ",
         Amharic: "አማርኛ",
