@@ -332,14 +332,21 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
     assert "https://example.com/id/dawit.pdf" not in call_kwargs["text"]
     assert "Entrance result: 88" in call_kwargs["text"]
 
-    # Verify compact inline buttons
+    # Phase 3: approve/reject buttons removed — approval requires the verification
+    # checklist in the miniapp.  Cards now carry only optional View Document + Review in App.
     reply_markup = call_kwargs["reply_markup"]
-    buttons = next(row for row in reply_markup.inline_keyboard if any(button.callback_data and button.callback_data.startswith("approve_tutor:") for button in row))
-    assert buttons[0].text == "✅ Approve"
-    assert buttons[0].callback_data == f"approve_tutor:{created_id}"
-    assert buttons[1].text == "❌ Reject"
-    assert buttons[1].callback_data == f"reject_tutor:{created_id}"
-    review_button = next(button for row in reply_markup.inline_keyboard for button in row if button.text == "Review in App")
+    all_buttons = [button for row in reply_markup.inline_keyboard for button in row]
+    # No approve/reject callback buttons
+    assert not any(
+        getattr(b, "callback_data", None) and b.callback_data.startswith("approve_tutor:")
+        for b in all_buttons
+    ), "approve_tutor button should no longer be present on tutor cards"
+    assert not any(
+        getattr(b, "callback_data", None) and b.callback_data.startswith("reject_tutor:")
+        for b in all_buttons
+    ), "reject_tutor button should no longer be present on tutor cards"
+    # Review in App deep-link button is present
+    review_button = next(button for button in all_buttons if button.text == "Review in App")
     assert review_button.url == f"https://t.me/MentorLinkBot/admin?startapp=tutor_{created_id}"
 
 

@@ -10,10 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from app.admin_auth import AdminPrincipal, require_admin
+from app.admin_auth import AdminPrincipal, require_admin, require_role
 from app.bot import bot_instance
 from app.database import get_db
-from app.models import Assignment, MatchInvite, ParentRequest, Tutor
 from app.schemas import (
     AdminActionResponse,
     AdminAssignRequest,
@@ -26,7 +25,27 @@ from app.schemas import (
     AdminRequestListItem,
     AdminRequestListResponse,
     ParentRequestResponse,
+    AdminVerificationPatch,
+    AdminVerificationResponse,
+    AdminTutorDetailResponse,
+    AdminTutorListItem,
+    AdminTutorListResponse,
+    AdminRejectRequest,
+    AdminTutorScorecardResponse,
+    AdminIncidentCreate,
+    AdminIncidentPatch,
+    AdminIncidentResponse,
+    AdminIncidentListResponse,
+    AdminFlagResponse,
+    AdminUserCreate,
+    AdminUserResponse,
+    AdminUserListResponse,
+    AdminAuditLogItem,
+    AdminAuditLogResponse,
 )
+from fastapi.responses import FileResponse
+from app.config import UPLOAD_DIR
+from app.models import Assignment, MatchInvite, ParentRequest, Tutor, TutorVerification, SessionFeedback, TutorIncident, AuditLog, AdminUser
 from app.services.audit import log_action
 from app.services.matcher import get_tiered_matches
 
@@ -178,7 +197,7 @@ async def get_admin_request_candidates(
 async def ping_admin_request_candidates(
     request_id: int,
     payload: AdminPingRequest,
-    admin: AdminPrincipal = Depends(require_admin),
+    admin: AdminPrincipal = Depends(require_role("matcher", "super_admin")),
     db: AsyncSession = Depends(get_db),
 ) -> AdminActionResponse:
     parent, tiered = await get_tiered_matches(request_id, db)
@@ -279,7 +298,7 @@ async def ping_admin_request_candidates(
 async def assign_admin_request(
     request_id: int,
     payload: AdminAssignRequest,
-    admin: AdminPrincipal = Depends(require_admin),
+    admin: AdminPrincipal = Depends(require_role("matcher", "super_admin")),
     db: AsyncSession = Depends(get_db),
 ) -> AdminActionResponse:
     tutor_id = payload.tutor_id
@@ -477,3 +496,417 @@ async def nudge_idle_admin_tutor(
     log_action(db, admin.telegram_id, "reactivate_nudge", "tutor", tutor_id)
     await db.commit()
     return AdminActionResponse(ok=True, message="Tutor nudge sent.")
+
+
+@router.patch("/tutors/{tutor_id}/verification", response_model=AdminVerificationResponse, summary="Update tutor verification flags")
+async def update_admin_tutor_verification(
+    tutor_id: int,
+    payload: AdminVerificationPatch,
+    admin: AdminPrincipal = Depends(require_role("verifier", "super_admin")),
+    db: AsyncSession = Depends(get_db),
+) -> AdminVerificationResponse:
+    tutor = await db.get(Tutor, tutor_id)
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor not found.")
+
+    verification = await db.get(TutorVerification, tutor_id)
+    if not verification:
+        verification = TutorVerification(tutor_id=tutor_id)
+        db.add(verification)
+
+    if payload.id_verified is not None:
+        verification.id_verified = payload.id_verified
+    if payload.entrance_result_verified is not None:
+        verification.entrance_result_verified = payload.entrance_result_verified
+    if payload.phone_confirmed is not None:
+        verification.phone_confirmed = payload.phone_confirmed
+    if payload.claims_plausible is not None:
+        verification.claims_plausible = payload.claims_plausible
+
+    verification.last_verified_at = datetime.now(timezone.utc)
+    verification.verified_by = admin.telegram_id
+
+    all_complete = bool(
+        verification.id_verified and 
+        verification.entrance_result_verified and 
+        verification.phone_confirmed and 
+        verification.claims_plausible
+    )
+
+    if all_complete:
+        tutor.status = "verified"
+    elif tutor.status == "verified":
+        tutor.status = "pending"
+
+    log_action(db, admin.telegram_id, "update_verification", "tutor", tutor_id)
+    await db.commit()
+
+    return AdminVerificationResponse(
+        tutor_id=tutor_id,
+        id_verified=verification.id_verified,
+        entrance_result_verified=verification.entrance_result_verified,
+        phone_confirmed=verification.phone_confirmed,
+        claims_plausible=verification.claims_plausible,
+        all_complete=all_complete,
+        tutor_status=tutor.status
+    )
+
+
+@router.post("/tutors/{tutor_id}/reject", response_model=AdminActionResponse, summary="Reject a tutor")
+async def reject_admin_tutor(
+    tutor_id: int,
+    payload: AdminRejectRequest,
+    admin: AdminPrincipal = Depends(require_role("verifier", "super_admin")),
+    db: AsyncSession = Depends(get_db),
+) -> AdminActionResponse:
+    tutor = await db.get(Tutor, tutor_id)
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor not found.")
+
+    tutor.status = "rejected"
+    log_action(db, admin.telegram_id, "reject_tutor", "tutor", tutor_id, reason=payload.reason)
+    await db.commit()
+    return AdminActionResponse(ok=True, message="Tutor rejected.")
+
+
+import os
+
+@router.get("/tutors/{tutor_id}/document", summary="View tutor ID document")
+async def get_admin_tutor_document(
+    tutor_id: int,
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    tutor = await db.get(Tutor, tutor_id)
+    if not tutor or not tutor.id_document_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    filename = tutor.id_document_url.replace("/uploads/", "")
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file missing.")
+
+    ext = os.path.splitext(filename)[1].lower()
+    media_type = "application/octet-stream"
+    if ext == ".pdf":
+        media_type = "application/pdf"
+    elif ext == ".png":
+        media_type = "image/png"
+    elif ext in [".jpg", ".jpeg"]:
+        media_type = "image/jpeg"
+
+    return FileResponse(file_path, media_type=media_type)
+
+
+@router.get("/tutors/{tutor_id}/scorecard", response_model=AdminTutorScorecardResponse, summary="Get tutor scorecard")
+async def get_admin_tutor_scorecard(
+    tutor_id: int,
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminTutorScorecardResponse:
+    stmt = select(func.avg(SessionFeedback.rating), func.count(SessionFeedback.id)).join(Assignment, SessionFeedback.assignment_id == Assignment.id).where(Assignment.tutor_id == tutor_id)
+    result = await db.execute(stmt)
+    avg_rating, feedback_count = result.first()
+
+    invites_stmt = select(func.count(MatchInvite.id), func.count(MatchInvite.responded_at)).where(MatchInvite.tutor_id == tutor_id)
+    invites_res = await db.execute(invites_stmt)
+    invite_count, responded_count = invites_res.first()
+    
+    response_rate = responded_count / invite_count if invite_count and invite_count > 0 else None
+    
+    return AdminTutorScorecardResponse(
+        tutor_id=tutor_id,
+        avg_rating=float(avg_rating) if avg_rating else None,
+        response_rate=float(response_rate) if response_rate is not None else None,
+        feedback_count=feedback_count or 0,
+        invite_count=invite_count or 0,
+        incident_count=await db.scalar(select(func.count(TutorIncident.id)).where(TutorIncident.tutor_id == tutor_id)) or 0
+    )
+
+
+@router.get("/tutors", response_model=AdminTutorListResponse, summary="List tutors")
+async def list_admin_tutors(
+    tutor_status: Optional[str] = Query(None, alias="status", max_length=50),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminTutorListResponse:
+    query = select(Tutor)
+    count_query = select(func.count(Tutor.id))
+    filters = []
+    if tutor_status:
+        filters.append(Tutor.status == tutor_status)
+    if filters:
+        query = query.where(*filters)
+        count_query = count_query.where(*filters)
+
+    total = await db.scalar(count_query) or 0
+    result = await db.execute(
+        query.order_by(Tutor.created_at.desc(), Tutor.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = [
+        AdminTutorListItem(
+            id=item.id,
+            full_name=item.full_name,
+            gender=item.gender,
+            base_subcity=item.base_subcity,
+            subjects_qualified=item.subjects_qualified,
+            status=item.status,
+            created_at=item.created_at,
+            entrance_result=item.entrance_result,
+            phone_number=item.phone_number
+        )
+        for item in result.scalars().all()
+    ]
+    return AdminTutorListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/tutors/{tutor_id}", response_model=AdminTutorDetailResponse, summary="Get full tutor profile")
+async def get_admin_tutor_detail(
+    tutor_id: int,
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminTutorDetailResponse:
+    tutor = await db.get(Tutor, tutor_id)
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor not found.")
+
+    verification = await db.get(TutorVerification, tutor_id)
+    verification_resp = None
+    if verification:
+        all_complete = bool(
+            verification.id_verified and 
+            verification.entrance_result_verified and 
+            verification.phone_confirmed and 
+            verification.claims_plausible
+        )
+        verification_resp = AdminVerificationResponse(
+            tutor_id=tutor_id,
+            id_verified=verification.id_verified,
+            entrance_result_verified=verification.entrance_result_verified,
+            phone_confirmed=verification.phone_confirmed,
+            claims_plausible=verification.claims_plausible,
+            all_complete=all_complete,
+            tutor_status=tutor.status
+        )
+
+    resp_dict = tutor.__dict__.copy()
+    resp_dict["verification"] = verification_resp
+    return AdminTutorDetailResponse(**resp_dict)
+
+# Incidents CRUD
+@router.get("/incidents", response_model=AdminIncidentListResponse, summary="List tutor incidents")
+async def list_admin_incidents(
+    tutor_id: Optional[int] = Query(None),
+    incident_status: Optional[str] = Query(None, alias="status"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminIncidentListResponse:
+    query = select(TutorIncident)
+    count_query = select(func.count(TutorIncident.id))
+    filters = []
+    if tutor_id is not None:
+        filters.append(TutorIncident.tutor_id == tutor_id)
+    if incident_status:
+        filters.append(TutorIncident.status == incident_status)
+    if filters:
+        query = query.where(*filters)
+        count_query = count_query.where(*filters)
+    total = await db.scalar(count_query) or 0
+    result = await db.execute(
+        query.order_by(TutorIncident.created_at.desc(), TutorIncident.id.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )
+    items = [AdminIncidentResponse.model_validate(i) for i in result.scalars().all()]
+    return AdminIncidentListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.post("/incidents", response_model=AdminIncidentResponse, status_code=201, summary="Create a tutor incident")
+async def create_admin_incident(
+    payload: AdminIncidentCreate,
+    admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminIncidentResponse:
+    tutor = await db.get(Tutor, payload.tutor_id)
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor not found.")
+    incident = TutorIncident(
+        tutor_id=payload.tutor_id,
+        request_id=payload.request_id,
+        severity=payload.severity,
+        description=payload.description,
+        reported_by=admin.telegram_id,
+    )
+    db.add(incident)
+    log_action(db, admin.telegram_id, "create_incident", "tutor", payload.tutor_id, reason=payload.description)
+    await db.commit()
+    await db.refresh(incident)
+    return AdminIncidentResponse.model_validate(incident)
+
+
+@router.patch("/incidents/{incident_id}", response_model=AdminIncidentResponse, summary="Update a tutor incident")
+async def update_admin_incident(
+    incident_id: int,
+    payload: AdminIncidentPatch,
+    admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminIncidentResponse:
+    incident = await db.get(TutorIncident, incident_id)
+    if not incident:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found.")
+    if payload.severity is not None:
+        incident.severity = payload.severity
+    if payload.description is not None:
+        incident.description = payload.description
+    if payload.status is not None:
+        incident.status = payload.status
+        if payload.status == "resolved":
+            incident.resolved_at = datetime.now(timezone.utc)
+    log_action(db, admin.telegram_id, "update_incident", "tutor_incident", incident_id)
+    await db.commit()
+    await db.refresh(incident)
+    return AdminIncidentResponse.model_validate(incident)
+
+
+# Red-flag detector
+@router.get("/flags", response_model=list[AdminFlagResponse], summary="Detect red flags across tutors")
+async def get_admin_flags(
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminFlagResponse]:
+    flags: list[AdminFlagResponse] = []
+    # Load configurable thresholds from SystemSetting
+    from app.models import SystemSetting
+    entrance_threshold_setting = await db.get(SystemSetting, "entrance_score_threshold")
+    entrance_threshold = float(entrance_threshold_setting.value) if entrance_threshold_setting else 50.0
+    fee_outlier_setting = await db.get(SystemSetting, "fee_outlier_factor")
+    fee_outlier_factor = float(fee_outlier_setting.value) if fee_outlier_setting else 2.0
+
+    tutor_result = await db.execute(select(Tutor).where(Tutor.status.in_(["pending", "verified"])))
+    tutors = tutor_result.scalars().all()
+
+    # Build phone -> tutor IDs map for duplicate detection
+    phone_map: dict[str, list] = {}
+    # Build experience-band fee averages
+    exp_fees: dict[str, list[float]] = {}
+    for t in tutors:
+        phone_map.setdefault(t.phone_number, []).append(t)
+        band = "0-1" if t.years_of_experience < 1 else ("1-3" if t.years_of_experience < 3 else "3+")
+        exp_fees.setdefault(band, []).append(t.expected_fee_etb)
+    band_avg = {band: sum(fees) / len(fees) for band, fees in exp_fees.items() if fees}
+
+    for t in tutors:
+        # Missing ID document
+        if not t.id_document_url:
+            flags.append(AdminFlagResponse(
+                flag_type="missing_document", tutor_id=t.id, tutor_name=t.full_name,
+                detail="No ID document uploaded.", severity="medium",
+            ))
+        # Low entrance score
+        if t.entrance_result is not None and t.entrance_result < entrance_threshold:
+            flags.append(AdminFlagResponse(
+                flag_type="low_entrance_score", tutor_id=t.id, tutor_name=t.full_name,
+                detail=f"Entrance score {t.entrance_result} is below threshold {entrance_threshold}.",
+                severity="medium",
+            ))
+        # Duplicate phone
+        if len(phone_map.get(t.phone_number, [])) > 1:
+            other_ids = [o.id for o in phone_map[t.phone_number] if o.id != t.id]
+            flags.append(AdminFlagResponse(
+                flag_type="duplicate_phone", tutor_id=t.id, tutor_name=t.full_name,
+                detail=f"Phone {t.phone_number} shared with tutor(s) {other_ids}.",
+                severity="high",
+            ))
+        # Fee outlier
+        band = "0-1" if t.years_of_experience < 1 else ("1-3" if t.years_of_experience < 3 else "3+")
+        avg = band_avg.get(band)
+        if avg and t.expected_fee_etb > avg * fee_outlier_factor:
+            flags.append(AdminFlagResponse(
+                flag_type="fee_outlier", tutor_id=t.id, tutor_name=t.full_name,
+                detail=f"Fee {t.expected_fee_etb:.0f} ETB exceeds {fee_outlier_factor}x band avg ({avg:.0f} ETB).",
+                severity="low",
+            ))
+    return sorted(flags, key=lambda f: {"high": 0, "medium": 1, "low": 2}.get(f.severity, 3))
+
+
+# Admin user CRUD (super_admin only)
+@router.get("/admins", response_model=AdminUserListResponse, summary="List admin users")
+async def list_admin_users(
+    admin: AdminPrincipal = Depends(require_role("super_admin")),
+    db: AsyncSession = Depends(get_db),
+) -> AdminUserListResponse:
+    result = await db.execute(select(AdminUser).order_by(AdminUser.created_at.desc()))
+    items = [AdminUserResponse.model_validate(a) for a in result.scalars().all()]
+    return AdminUserListResponse(items=items, total=len(items))
+
+
+@router.post("/admins", response_model=AdminUserResponse, status_code=201, summary="Add an admin user")
+async def create_admin_user(
+    payload: AdminUserCreate,
+    admin: AdminPrincipal = Depends(require_role("super_admin")),
+    db: AsyncSession = Depends(get_db),
+) -> AdminUserResponse:
+    existing = await db.get(AdminUser, payload.telegram_id)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Admin user already exists.")
+    admin_user = AdminUser(
+        telegram_id=payload.telegram_id,
+        role=payload.role,
+        added_by=admin.telegram_id,
+    )
+    db.add(admin_user)
+    log_action(db, admin.telegram_id, "add_admin", "admin_user", payload.telegram_id, reason=f"Role: {payload.role}")
+    await db.commit()
+    await db.refresh(admin_user)
+    return AdminUserResponse.model_validate(admin_user)
+
+
+@router.delete("/admins/{telegram_id}", response_model=AdminActionResponse, summary="Remove an admin user")
+async def delete_admin_user(
+    telegram_id: int,
+    admin: AdminPrincipal = Depends(require_role("super_admin")),
+    db: AsyncSession = Depends(get_db),
+) -> AdminActionResponse:
+    admin_user = await db.get(AdminUser, telegram_id)
+    if not admin_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found.")
+    if telegram_id == admin.telegram_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot remove yourself.")
+    await db.delete(admin_user)
+    log_action(db, admin.telegram_id, "remove_admin", "admin_user", telegram_id)
+    await db.commit()
+    return AdminActionResponse(ok=True, message="Admin user removed.")
+
+
+# Audit log viewer (super_admin only)
+@router.get("/audit", response_model=AdminAuditLogResponse, summary="View audit log")
+async def list_admin_audit_log(
+    target_type: Optional[str] = Query(None, max_length=30),
+    actor: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    admin: AdminPrincipal = Depends(require_role("super_admin")),
+    db: AsyncSession = Depends(get_db),
+) -> AdminAuditLogResponse:
+    query = select(AuditLog)
+    count_query = select(func.count(AuditLog.id))
+    filters = []
+    if target_type:
+        filters.append(AuditLog.target_type == target_type)
+    if actor is not None:
+        filters.append(AuditLog.actor_telegram_id == actor)
+    if filters:
+        query = query.where(*filters)
+        count_query = count_query.where(*filters)
+    total = await db.scalar(count_query) or 0
+    result = await db.execute(
+        query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )
+    items = [AdminAuditLogItem.model_validate(a) for a in result.scalars().all()]
+    return AdminAuditLogResponse(items=items, total=total, page=page, page_size=page_size)

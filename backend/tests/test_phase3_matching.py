@@ -223,8 +223,8 @@ async def test_matching_no_gender_preference(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_approve_tutor_callback_updates_db_and_notifies(db_session: AsyncSession, monkeypatch):
-    """Verifies that approving a tutor updates status to 'verified' and dispatches DM."""
+async def test_approve_tutor_callback_graceful_stub(db_session: AsyncSession, monkeypatch):
+    """Phase 3: approving via chat button shows a 'use the app' message without changing tutor status."""
     tutor = Tutor(
         telegram_user_id=777888999,
         full_name="Tesfaye Abera",
@@ -246,45 +246,30 @@ async def test_approve_tutor_callback_updates_db_and_notifies(db_session: AsyncS
     await db_session.commit()
     await db_session.refresh(tutor)
 
-    # Mock AsyncSessionLocal so handler uses our test session
     monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
 
-    # Mock Telegram Update & Context
     mock_query = AsyncMock()
-    mock_query.message = AsyncMock()
-    mock_query.message.text = "🧑‍🏫 NEW TUTOR REGISTRATION #1\n📊 Status: ⏳ Pending"
-
     mock_update = MagicMock()
     mock_update.callback_query = mock_query
     mock_update.effective_user.username = "test_admin"
 
     mock_context = MagicMock()
-    mock_context.bot = MagicMock()
-    mock_context.bot.send_message = AsyncMock()
 
     await bot_handlers.handle_approve_tutor(mock_update, mock_context, f"approve_tutor:{tutor.id}")
 
-    # Verify status in database
+    # Status must remain pending — approval now requires the miniapp checklist
     await db_session.refresh(tutor)
-    assert tutor.status == "verified"
+    assert tutor.status == "pending"
 
-    # Verify card edited in Admin Group
-    assert mock_query.message.edit_text.called
-    edit_args = mock_query.message.edit_text.call_args.kwargs
-    assert "Approved" in edit_args["text"]
-    assert "Admin: @test_admin" in edit_args["text"]
-    assert "<blockquote>" in edit_args["text"]
-
-    # Verify direct message sent to tutor
-    assert mock_context.bot.send_message.called
-    dm_args = mock_context.bot.send_message.call_args.kwargs
-    assert dm_args["chat_id"] == 777888999
-    assert "Congratulations, Tesfaye Abera" in dm_args["text"]
+    # Graceful answer shown to the admin
+    mock_query.answer.assert_called_once()
+    answer_text = mock_query.answer.call_args.args[0] if mock_query.answer.call_args.args else mock_query.answer.call_args.kwargs.get("text", "")
+    assert "Admin App" in answer_text or "verification checklist" in answer_text
 
 
 @pytest.mark.asyncio
-async def test_reject_tutor_callback_updates_db(db_session: AsyncSession, monkeypatch):
-    """Verifies that rejecting a tutor updates status to 'rejected'."""
+async def test_reject_tutor_callback_graceful_stub(db_session: AsyncSession, monkeypatch):
+    """Phase 3: rejecting via chat button shows a 'use the app' message without changing tutor status."""
     tutor = Tutor(
         telegram_user_id=111222333,
         full_name="Bizuayehu Worku",
@@ -309,24 +294,22 @@ async def test_reject_tutor_callback_updates_db(db_session: AsyncSession, monkey
     monkeypatch.setattr(bot_handlers, "AsyncSessionLocal", TestingSessionLocal)
 
     mock_query = AsyncMock()
-    mock_query.message = AsyncMock()
-    mock_query.message.text = "🧑‍🏫 NEW TUTOR REGISTRATION #2\n📊 Status: ⏳ Pending"
-
     mock_update = MagicMock()
     mock_update.callback_query = mock_query
     mock_update.effective_user.username = "lead_admin"
 
     mock_context = MagicMock()
-    mock_context.bot = MagicMock()
-    mock_context.bot.send_message = AsyncMock()
 
     await bot_handlers.handle_reject_tutor(mock_update, mock_context, f"reject_tutor:{tutor.id}")
 
+    # Status must remain pending — rejection now requires the miniapp
     await db_session.refresh(tutor)
-    assert tutor.status == "rejected"
-    assert "Rejected" in mock_query.message.edit_text.call_args.kwargs["text"]
-    assert "Admin: @lead_admin" in mock_query.message.edit_text.call_args.kwargs["text"]
-    assert "<blockquote>" in mock_query.message.edit_text.call_args.kwargs["text"]
+    assert tutor.status == "pending"
+
+    # Graceful answer shown to the admin
+    mock_query.answer.assert_called_once()
+    answer_text = mock_query.answer.call_args.args[0] if mock_query.answer.call_args.args else mock_query.answer.call_args.kwargs.get("text", "")
+    assert "Admin App" in answer_text or "verification checklist" in answer_text
 
 
 @pytest.mark.asyncio

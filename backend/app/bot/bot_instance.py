@@ -325,8 +325,9 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
 async def send_tutor_registration_card(tutor) -> Optional[int]:
     """
     Sends a compact formatted tutor verification card to ADMIN_GROUP_ID with action buttons:
-    - [✅ Approve] (callback_data: approve_tutor:<id>)
-    - [❌ Reject] (callback_data: reject_tutor:<id>)
+    - [📎 View Document] (if uploaded to /uploads/)
+    - [Review in App] (deep-link to admin miniapp)
+    Phase 3: approve/reject buttons removed — approval requires the verification checklist.
     Routes to get_tutor_topic_id() if configured (Telegram Forum Supergroup).
     """
     if not bot_app or not settings.ADMIN_GROUP_ID:
@@ -342,10 +343,6 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
         review_url = get_admin_review_url(f"tutor_{tutor.id}")
         if review_url:
             buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
-        buttons.append([
-            InlineKeyboardButton("✅ Approve", callback_data=f"approve_tutor:{tutor.id}"),
-            InlineKeyboardButton("❌ Reject", callback_data=f"reject_tutor:{tutor.id}")
-        ])
         keyboard = InlineKeyboardMarkup(buttons)
 
         send_kwargs = {

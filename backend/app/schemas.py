@@ -226,3 +226,138 @@ class AdminAssignRequest(BaseModel):
 class AdminActionResponse(BaseModel):
     ok: bool
     message: str
+
+
+class AdminVerificationPatch(BaseModel):
+    id_verified: Optional[bool] = None
+    entrance_result_verified: Optional[bool] = None
+    phone_confirmed: Optional[bool] = None
+    claims_plausible: Optional[bool] = None
+
+
+class AdminVerificationResponse(BaseModel):
+    tutor_id: int
+    id_verified: bool
+    entrance_result_verified: bool
+    phone_confirmed: bool
+    claims_plausible: bool
+    all_complete: bool
+    tutor_status: str
+
+
+class AdminTutorDetailResponse(TutorResponse):
+    verification: Optional[AdminVerificationResponse] = None
+
+
+class AdminTutorListItem(BaseModel):
+    id: int
+    full_name: str
+    gender: str
+    base_subcity: str
+    subjects_qualified: List[str]
+    status: str
+    created_at: datetime
+    entrance_result: Optional[float] = None
+    phone_number: str
+
+
+class AdminTutorListResponse(BaseModel):
+    items: List[AdminTutorListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=5)
+
+
+class AdminTutorScorecardResponse(BaseModel):
+    tutor_id: int
+    avg_rating: Optional[float] = None
+    response_rate: Optional[float] = None
+    feedback_count: int
+    invite_count: int
+    incident_count: int
+
+# ==========================================
+# Phase 4 — Ops Layer Schemas
+# ==========================================
+
+class AdminIncidentCreate(BaseModel):
+    tutor_id: int = Field(..., gt=0)
+    request_id: Optional[int] = None
+    severity: str = Field("low", pattern=r"^(low|medium|high)$")
+    description: str = Field(..., min_length=5)
+
+
+class AdminIncidentPatch(BaseModel):
+    severity: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    status: Optional[str] = Field(None, pattern=r"^(open|investigating|resolved)$")
+    description: Optional[str] = Field(None, min_length=5)
+
+
+class AdminIncidentResponse(BaseModel):
+    id: int
+    tutor_id: int
+    request_id: Optional[int] = None
+    severity: str
+    description: str
+    status: str
+    reported_by: Optional[int] = None
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminIncidentListResponse(BaseModel):
+    items: List[AdminIncidentResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminFlagResponse(BaseModel):
+    flag_type: str
+    tutor_id: int
+    tutor_name: str
+    detail: str
+    severity: str
+
+
+class AdminUserCreate(BaseModel):
+    telegram_id: int = Field(..., gt=0)
+    role: str = Field("admin", pattern=r"^(admin|verifier|matcher|super_admin)$")
+
+
+class AdminUserResponse(BaseModel):
+    telegram_id: int
+    role: str
+    is_active: bool
+    added_by: Optional[int] = None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminUserListResponse(BaseModel):
+    items: List[AdminUserResponse]
+    total: int
+
+
+class AdminAuditLogItem(BaseModel):
+    id: int
+    actor_telegram_id: int
+    action: str
+    target_type: str
+    target_id: int
+    reason: Optional[str] = None
+    source: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminAuditLogResponse(BaseModel):
+    items: List[AdminAuditLogItem]
+    total: int
+    page: int
+    page_size: int

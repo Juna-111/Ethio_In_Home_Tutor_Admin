@@ -421,134 +421,44 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_admin_users_remove(update, context, data)
     elif data == "admin_users_close":
         await handle_admin_users_close(update, context)
+    elif data.startswith("rate_session:"):
+        await handle_rate_session(update, context, data)
     elif data in ("noop", "assigned"):
         await query.answer("This action has already been processed.")
     else:
         await query.answer("Unrecognized action.")
 
+async def handle_rate_session(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    query = update.callback_query
+    parts = data.split(":")
+    if len(parts) != 3:
+        await query.answer("Invalid rating callback.")
+        return
+    assignment_id = int(parts[1])
+    rating = int(parts[2])
+    
+    from app.bot.feedback import record_feedback
+    from app.database import AsyncSessionLocal
+    
+    async with AsyncSessionLocal() as session:
+        await record_feedback(assignment_id, rating, session)
+        
+    await query.answer(f"Thank you for your rating! ⭐ {rating}/5")
+    if query.message:
+        try:
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception as exc:
+            logger.error("Failed to remove rating keyboard: %s", exc)
 
 async def handle_approve_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Approves tutor with atomic status update, edits card in-place, and DMs tutor."""
+    """Graceful handler for old approve buttons."""
     query = update.callback_query
-    tutor_id_str = data.split(":", 1)[1]
-    admin_name = _get_admin_name(update)
-
-    try:
-        tutor_id = int(tutor_id_str)
-    except ValueError:
-        await query.answer("Invalid Tutor ID.")
-        return
-
-    async with AsyncSessionLocal() as session:
-        tutor = await session.get(Tutor, tutor_id)
-        if not tutor:
-            await query.answer(f"Tutor #{tutor_id} not found.", show_alert=True)
-            return
-
-        if tutor.status != "pending":
-            await query.answer(f"⚠️ Tutor #{tutor_id} is already {tutor.status}.", show_alert=True)
-            return
-
-        stmt = (
-            sql_update(Tutor)
-            .where(Tutor.id == tutor_id, Tutor.status == "pending")
-            .values(status="verified")
-        )
-        res = await session.execute(stmt)
-        if res.rowcount == 0:
-            await query.answer("⚠️ This tutor has already been processed.", show_alert=True)
-            return
-        await session.commit()
-        await session.refresh(tutor)
-
-    await query.answer(f"Tutor #{tutor_id} approved!")
-
-    # In-place full card update preserving complete HTML formatting
-    if query.message:
-        try:
-            updated_text = format_tutor_card(tutor, status_override="Approved", admin_username=admin_name)
-            await query.message.edit_text(
-                text=updated_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=None,
-                disable_web_page_preview=False
-            )
-        except Exception as exc:
-            logger.error("Failed to edit tutor card for #%s: %s", tutor_id, exc)
-
-    # Dispatch confirmation DM to tutor
-    if tutor.telegram_user_id:
-        try:
-            dm_text = (
-                f"🎉 Congratulations, {html.escape(tutor.full_name)}!\n\n"
-                "Your MentorLink tutor profile has been approved. "
-                "You will now receive student match alerts."
-            )
-            await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text, parse_mode=ParseMode.HTML)
-        except Exception as exc:
-            logger.warning("Could not send approval DM to tutor %s (tg_id: %s): %s", tutor.full_name, tutor.telegram_user_id, exc)
-
+    await query.answer("Tutor approval now requires the verification checklist. Please use the Admin App to review this tutor.", show_alert=True)
 
 async def handle_reject_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Rejects tutor with atomic status update, edits card in-place, and DMs tutor."""
+    """Graceful handler for old reject buttons."""
     query = update.callback_query
-    tutor_id_str = data.split(":", 1)[1]
-    admin_name = _get_admin_name(update)
-
-    try:
-        tutor_id = int(tutor_id_str)
-    except ValueError:
-        await query.answer("Invalid Tutor ID.")
-        return
-
-    async with AsyncSessionLocal() as session:
-        tutor = await session.get(Tutor, tutor_id)
-        if not tutor:
-            await query.answer(f"Tutor #{tutor_id} not found.", show_alert=True)
-            return
-
-        if tutor.status != "pending":
-            await query.answer(f"⚠️ Tutor #{tutor_id} is already {tutor.status}.", show_alert=True)
-            return
-
-        stmt = (
-            sql_update(Tutor)
-            .where(Tutor.id == tutor_id, Tutor.status == "pending")
-            .values(status="rejected")
-        )
-        res = await session.execute(stmt)
-        if res.rowcount == 0:
-            await query.answer("⚠️ This tutor has already been processed.", show_alert=True)
-            return
-        await session.commit()
-        await session.refresh(tutor)
-
-    await query.answer(f"Tutor #{tutor_id} rejected.")
-
-    # In-place full card update preserving complete HTML formatting
-    if query.message:
-        try:
-            updated_text = format_tutor_card(tutor, status_override="Rejected", admin_username=admin_name)
-            await query.message.edit_text(
-                text=updated_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=None,
-                disable_web_page_preview=False
-            )
-        except Exception as exc:
-            logger.error("Failed to edit tutor card for #%s: %s", tutor_id, exc)
-
-    # Dispatch rejection DM to tutor
-    if tutor.telegram_user_id:
-        try:
-            dm_text = (
-                f"Hello {html.escape(tutor.full_name)},\n\n"
-                "Thank you for your interest in MentorLink. After review, we are unable to approve "
-                "your tutor profile at this time. If you have any questions, please contact our support team."
-            )
-            await context.bot.send_message(chat_id=tutor.telegram_user_id, text=dm_text, parse_mode=ParseMode.HTML)
-        except Exception as exc:
-            logger.warning("Could not send rejection DM to tutor %s: %s", tutor.full_name, exc)
+    await query.answer("Tutor approval now requires the verification checklist. Please use the Admin App to review this tutor.", show_alert=True)
 
 
 async def handle_view_document(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -2343,11 +2253,71 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error("Exception while handling an update: %s", context.error, exc_info=context.error)
 
 
+async def complaint_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /complaint <tutor_id> <description>
+    Fast-capture fallback: writes directly into TutorIncident.
+    Only admins in the admin group can use this.
+    """
+    if not await is_admin(update, context):
+        await update.message.reply_text("⛔ Only admins can report complaints.")
+        return
+
+    user = update.effective_user
+    if not user:
+        return
+
+    args = (context.args or [])
+    if len(args) < 2:
+        await update.message.reply_text(
+            "Usage: /complaint <tutor_id> <description>\n"
+            "Example: /complaint 42 Late to three sessions in a row"
+        )
+        return
+
+    try:
+        tutor_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ First argument must be a numeric tutor ID.")
+        return
+
+    description = " ".join(args[1:])
+    if len(description) < 5:
+        await update.message.reply_text("❌ Description must be at least 5 characters.")
+        return
+
+    from app.models import TutorIncident
+    async with AsyncSessionLocal() as session:
+        tutor = await session.get(Tutor, tutor_id)
+        if not tutor:
+            await update.message.reply_text(f"❌ Tutor #{tutor_id} not found.")
+            return
+
+        incident = TutorIncident(
+            tutor_id=tutor_id,
+            severity="medium",
+            description=description,
+            reported_by=user.id,
+        )
+        session.add(incident)
+        from app.services.audit import log_action
+        log_action(session, user.id, "complaint", "tutor", tutor_id, reason=description, source="bot")
+        await session.commit()
+        await session.refresh(incident)
+
+    await update.message.reply_text(
+        f"✅ Complaint #{incident.id} logged against tutor #{tutor_id} ({html.escape(tutor.full_name)}).\n"
+        f"Severity: medium | Status: open\n"
+        f"Review and resolve in the Admin App."
+    )
+
+
 def register_handlers(application: Application):
     """Registers command, callback query, message handlers, and global error handler."""
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
+    application.add_handler(CommandHandler("complaint", complaint_command))
     application.add_handler(CommandHandler(
         ["broadcast", "parentbroadcast", "tutorbroadcast"],
         handle_group_broadcast_command,
@@ -2355,3 +2325,4 @@ def register_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     application.add_error_handler(error_handler)
+

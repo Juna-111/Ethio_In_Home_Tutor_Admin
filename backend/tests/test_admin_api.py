@@ -243,7 +243,7 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
     monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
     parent = _parent_request("Assign Parent")
     tutor = _tutor("Assign Tutor", status="verified")
-    db_session.add_all([AdminUser(telegram_id=admin_id, role="admin", is_active=True), parent, tutor])
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
     await db_session.commit()
@@ -314,7 +314,7 @@ async def test_admin_ping_sends_bulk_availability_prompt_and_audits(
     parent = _parent_request("Ping Parent")
     tutor = _tutor("Ping Tutor", status="verified")
     tutor.telegram_user_id = 456123
-    db_session.add_all([AdminUser(telegram_id=admin_id, role="admin", is_active=True), parent, tutor])
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.commit()
 
     response = await async_client.post(

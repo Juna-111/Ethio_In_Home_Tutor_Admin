@@ -154,3 +154,25 @@ class Assignment(Base):
     )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", index=True)
 
+
+class SessionFeedback(Base):
+    __tablename__ = "session_feedback"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    assignment_id: Mapped[int] = mapped_column(Integer, ForeignKey("assignments.id"), nullable=False, index=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-5
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    submitted_by: Mapped[str] = mapped_column(String(20), nullable=False, default="parent")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TutorIncident(Base):
+    __tablename__ = "tutor_incidents"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tutor_id: Mapped[int] = mapped_column(Integer, ForeignKey("tutors.id"), nullable=False, index=True)
+    request_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="low")  # low|medium|high
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
+    reported_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
