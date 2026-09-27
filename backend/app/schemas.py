@@ -148,3 +148,81 @@ class AdminDashboardResponse(BaseModel):
     pending_requests: int
     active_assignments: int
     requests_today: int
+
+
+class AdminRequestListItem(BaseModel):
+    id: int
+    parent_name: str
+    location_subcity: str
+    student_level: str
+    subjects: List[str]
+    preferred_gender: str
+    budget_etb: float
+    status: str
+    created_at: datetime
+
+
+class AdminRequestListResponse(BaseModel):
+    items: List[AdminRequestListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminCandidateResponse(BaseModel):
+    tutor_id: int
+    full_name: str
+    gender: str
+    university: str
+    department: str
+    education_year: str
+    subjects_qualified: List[str]
+    grades_qualified: List[str]
+    years_of_experience: float
+    expected_fee_etb: float
+    base_subcity: str
+    coverage_areas: List[str]
+    availability_schedule: Any
+    tier: str
+    matched_subjects: List[str]
+    match_reasons: List[str]
+    overall_score: float
+    score_breakdown: dict[str, dict[str, Any]]
+    invite_status: Optional[str] = None
+    telegram_available: bool
+
+
+class AdminCandidatesResponse(BaseModel):
+    request_id: int
+    candidates: List[AdminCandidateResponse]
+
+
+class AdminCoverageGapResponse(BaseModel):
+    subcity: str
+    subject: str
+    pending_requests: int
+    approved_tutors: int
+    gap_ratio: float
+
+
+class AdminIdleTutorResponse(BaseModel):
+    id: int
+    full_name: str
+    phone_number: str
+    telegram_user_id: Optional[int]
+    base_subcity: str
+    subjects_qualified: List[str]
+    last_assigned_at: Optional[datetime] = None
+
+
+class AdminPingRequest(BaseModel):
+    tutor_ids: List[int] = Field(..., min_length=1, max_length=20)
+
+
+class AdminAssignRequest(BaseModel):
+    tutor_id: int = Field(..., gt=0)
+
+
+class AdminActionResponse(BaseModel):
+    ok: bool
+    message: str

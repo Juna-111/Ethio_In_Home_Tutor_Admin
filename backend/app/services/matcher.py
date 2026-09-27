@@ -7,6 +7,24 @@ from app.models import ParentRequest, Tutor
 
 logger = logging.getLogger("mentorlink.matcher")
 
+SCORE_WEIGHTS = {
+    "subject_match": 0.30,
+    "distance": 0.25,
+    "budget_fit": 0.20,
+    "schedule_overlap": 0.15,
+    "experience": 0.10,
+}
+WEEKDAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+DAY_ALIASES = {
+    "mon": "mon", "monday": "mon",
+    "tue": "tue", "tues": "tue", "tuesday": "tue",
+    "wed": "wed", "wednesday": "wed",
+    "thu": "thu", "thur": "thu", "thurs": "thu", "thursday": "thu",
+    "fri": "fri", "friday": "fri",
+    "sat": "sat", "saturday": "sat",
+    "sun": "sun", "sunday": "sun",
+}
+
 
 def _normalize_str(val: Optional[str]) -> str:
     return val.strip().lower() if val else ""
@@ -18,6 +36,101 @@ def _normalize_list(items: Any) -> List[str]:
     if isinstance(items, str):
         return [_normalize_str(items)]
     return []
+
+
+def _schedule_days(schedule: Any) -> Optional[set[str]]:
+    import re
+
+    if isinstance(schedule, (list, tuple, set)):
+        text = " ".join(str(item) for item in schedule)
+    elif isinstance(schedule, dict):
+        text = " ".join(f"{key} {value}" for key, value in schedule.items())
+    elif isinstance(schedule, str):
+        text = schedule
+    else:
+        return None
+
+    normalized = text.strip().lower()
+    if not normalized:
+        return None
+    if "anytime" in normalized or "every day" in normalized or "daily" in normalized:
+        return set(WEEKDAYS)
+
+    days = set()
+    for token in re.findall(r"[a-z]+", normalized):
+        if token in DAY_ALIASES:
+            days.add(DAY_ALIASES[token])
+    if "weekdays" in normalized or "weekday" in normalized:
+        days.update({"mon", "tue", "wed", "thu", "fri"})
+    if "weekends" in normalized or "weekend" in normalized:
+        days.update({"sat", "sun"})
+    return days or None
+
+
+def _factor_scores(parent: ParentRequest, tutor: Tutor, matched_subject_count: int) -> Dict[str, Any]:
+    parent_subject_count = len(_normalize_list(parent.subjects))
+    subject_score = min(100.0, matched_subject_count / max(parent_subject_count, 1) * 100)
+
+    is_base = _normalize_str(tutor.base_subcity) == _normalize_str(parent.location_subcity)
+    distance_score = 100.0 if is_base else 70.0
+
+    budget = float(parent.budget_etb or 0.0)
+    fee = float(tutor.expected_fee_etb or 0.0)
+    if budget <= 0 or fee <= budget:
+        budget_score = 100.0
+    else:
+        budget_score = max(0.0, 100.0 - ((fee - budget) / (budget * 0.35) * 100.0))
+
+    requested_days = _schedule_days(parent.schedule_days)
+    available_days = _schedule_days(tutor.availability_schedule)
+    schedule_score = None
+    if requested_days and available_days:
+        schedule_score = len(requested_days & available_days) / len(requested_days) * 100.0
+
+    experience = float(tutor.years_of_experience or 0.0)
+    preferred_experience = _normalize_str(parent.preferred_experience)
+    if "senior" in preferred_experience:
+        experience_score = min(experience / 5.0 * 100.0, 100.0)
+    elif "fresh" in preferred_experience:
+        experience_score = 100.0 if "graduate" in _normalize_str(tutor.education_year) else 60.0
+    elif "university" in preferred_experience:
+        education_year = _normalize_str(tutor.education_year)
+        experience_score = 100.0 if "graduate" not in education_year else 60.0
+    else:
+        experience_score = min(experience / 5.0 * 100.0, 100.0)
+
+    scores = {
+        "subject_match": subject_score,
+        "distance": distance_score,
+        "budget_fit": budget_score,
+        "schedule_overlap": schedule_score,
+        "experience": experience_score,
+    }
+    available_weight = sum(SCORE_WEIGHTS[key] for key, value in scores.items() if value is not None)
+    overall_score = round(
+        sum(float(value) * SCORE_WEIGHTS[key] for key, value in scores.items() if value is not None)
+        / available_weight,
+        1,
+    ) if available_weight else 0.0
+
+    explanations = {
+        "subject_match": f"{matched_subject_count} of {parent_subject_count} requested subjects overlap",
+        "distance": "Tutor is based in the requested subcity" if is_base else "Tutor covers the requested subcity",
+        "budget_fit": "Fee is within budget" if fee <= budget or budget <= 0 else f"Fee is {(fee - budget) / budget:.0%} above budget",
+        "schedule_overlap": "No structured day overlap data" if schedule_score is None else f"Available on {len(requested_days & available_days)} of {len(requested_days)} requested days",
+        "experience": f"{experience:g} years of experience; preference: {parent.preferred_experience}",
+    }
+    return {
+        "overall_score": overall_score,
+        "score_breakdown": {
+            key: {
+                "score": round(value, 1) if value is not None else None,
+                "weight": SCORE_WEIGHTS[key],
+                "explanation": explanations[key],
+            }
+            for key, value in scores.items()
+        },
+    }
 
 
 GRADE_STAGE_MAP = {
@@ -218,6 +331,7 @@ async def get_tiered_matches(
             "is_base_location": is_base_subcity,
             "match_score": len(matched_subjects_norm) * 10 + (2 if is_base_subcity else 0),
             "match_reasons": match_reasons,
+            **_factor_scores(parent, tutor, len(matched_subjects_norm)),
         }
 
         # Check Tier 1: Perfect Fit

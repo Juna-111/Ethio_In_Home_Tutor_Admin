@@ -2,6 +2,7 @@ import html
 import logging
 import re
 from typing import Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -205,6 +206,17 @@ def get_clean_chat_id(chat_id: int | str) -> str:
     return raw
 
 
+def get_admin_review_url(start_param: str) -> Optional[str]:
+    """Build a Telegram Mini App deep link from the configured bot app URL."""
+    mini_app_url = settings.MINI_APP_URL
+    if not mini_app_url or not mini_app_url.startswith("https://t.me/"):
+        return None
+    parsed = urlsplit(mini_app_url)
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "startapp"]
+    query.append(("startapp", start_param))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
 async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession] = None) -> Optional[int]:
     """
     Sends parent request notification cards to ADMIN_GROUP_ID:
@@ -246,10 +258,15 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
 
         card_text = format_parent_card(parent_req)
         keyboard = InlineKeyboardMarkup([
+            *(
+                [[InlineKeyboardButton("Review in App", url=review_url)]]
+                if (review_url := get_admin_review_url(f"request_{parent_req.id}"))
+                else []
+            ),
             [
                 InlineKeyboardButton("🔍 Match Radar", callback_data=f"match_parent:{parent_req.id}"),
-                InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{parent_req.id}")
-            ]
+                InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{parent_req.id}"),
+            ],
         ])
 
         parent_index_topic_id = get_parent_topic_id()
@@ -269,9 +286,11 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
             topic_url = f"https://t.me/c/{clean_id}/{topic.message_thread_id}"
 
             index_text = format_parent_directory_badge(parent_req)
-            index_keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Open Workspace", url=topic_url)]
-            ])
+            index_buttons = [InlineKeyboardButton("🔗 Open Workspace", url=topic_url)]
+            review_url = get_admin_review_url(f"request_{parent_req.id}")
+            if review_url:
+                index_buttons.append(InlineKeyboardButton("Review in App", url=review_url))
+            index_keyboard = InlineKeyboardMarkup([index_buttons])
 
             index_kwargs = {
                 "chat_id": settings.ADMIN_GROUP_ID,
@@ -320,6 +339,9 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
         buttons = []
         if tutor.id_document_url and "/uploads/" in tutor.id_document_url:
             buttons.append([InlineKeyboardButton("📎 View Document", callback_data=f"view_doc:{tutor.id}")])
+        review_url = get_admin_review_url(f"tutor_{tutor.id}")
+        if review_url:
+            buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
         buttons.append([
             InlineKeyboardButton("✅ Approve", callback_data=f"approve_tutor:{tutor.id}"),
             InlineKeyboardButton("❌ Reject", callback_data=f"reject_tutor:{tutor.id}")

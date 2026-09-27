@@ -110,3 +110,36 @@ async def get_current_telegram_user(
         )
 
     return None
+
+
+async def get_optional_telegram_user(
+    authorization: Optional[str] = Header(None),
+) -> Optional[int]:
+    """Resolve Telegram identity when supplied, while allowing public web intake."""
+    if not authorization:
+        return None
+    if not authorization.lower().startswith("tma "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Telegram WebApp authentication credentials.",
+        )
+
+    raw_init_data = authorization[4:].strip()
+    bot_token = (settings.BOT_TOKEN or "").strip().strip("'\"")
+    parsed = validate_telegram_init_data(raw_init_data, bot_token)
+    if parsed is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired Telegram WebApp authentication credentials.",
+        )
+
+    user_data = parsed.get("user")
+    if not isinstance(user_data, dict) or user_data.get("id") is None:
+        return None
+    try:
+        return int(user_data["id"])
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Telegram WebApp user identity.",
+        )

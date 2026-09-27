@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, ArrowUpRight, ClipboardList, GraduationCap, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowUpRight, BarChart3, ClipboardList, GraduationCap, LayoutDashboard, RefreshCw, ShieldCheck, UsersRound } from 'lucide-react';
 import { getAdminDashboard } from '../services/api';
+import CoverageBoard from './CoverageBoard.jsx';
+import IdleTutors from './IdleTutors.jsx';
+import RequestWorkbench from './RequestWorkbench.jsx';
 
 function parseStartParam(value) {
   const match = /^(tutor|request)_(\d+)$/.exec(value || '');
@@ -16,12 +19,15 @@ export default function AdminApp() {
   const [view, setView] = useState({ status: 'loading', message: '' });
   const [startTarget, setStartTarget] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activeSection, setActiveSection] = useState('overview');
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready();
     webApp?.expand();
-    setStartTarget(parseStartParam(webApp?.initDataUnsafe?.start_param));
+    const target = parseStartParam(webApp?.initDataUnsafe?.start_param);
+    setStartTarget(target);
+    if (target?.type === 'request') setActiveSection('requests');
 
     let active = true;
     getAdminDashboard()
@@ -51,6 +57,13 @@ export default function AdminApp() {
     { label: 'Requests today', value: dashboard.requests_today, icon: ArrowUpRight, tone: 'blue' },
   ] : [];
 
+  const navItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'requests', label: 'Requests', icon: ClipboardList },
+    { id: 'coverage', label: 'Coverage gaps', icon: BarChart3 },
+    { id: 'idle', label: 'Idle tutors', icon: UsersRound },
+  ];
+
   return (
     <div className="admin-app">
       <header className="admin-topbar">
@@ -66,7 +79,22 @@ export default function AdminApp() {
       </header>
 
       <main className="admin-main">
-        <div className="page-heading">
+        {view.status === 'ready' && (
+          <nav className="admin-nav" aria-label="Admin sections" role="tablist">
+            {navItems.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={activeSection === id}
+                className={activeSection === id ? 'admin-nav-item active' : 'admin-nav-item'}
+                onClick={() => setActiveSection(id)}
+              ><Icon size={16} /><span>{label}</span></button>
+            ))}
+          </nav>
+        )}
+
+        {activeSection === 'overview' && <div className="page-heading">
           <div>
             <p className="eyebrow">ADMINISTRATION <span> / </span> OVERVIEW</p>
             <h1>Operations overview</h1>
@@ -85,14 +113,14 @@ export default function AdminApp() {
           >
             <RefreshCw size={17} className={view.status === 'loading' ? 'spin' : ''} />
           </button>
-        </div>
+        </div>}
 
-        {startTarget && (
+        {startTarget?.type === 'tutor' && activeSection === 'idle' && (
           <aside className="deep-link-notice">
             <span className="notice-icon"><ArrowUpRight size={18} /></span>
             <span>
-              <strong>{startTarget.type === 'tutor' ? 'Tutor' : 'Request'} #{startTarget.id}</strong>
-              <small>Deep link received. Its review screen will be available in a later phase.</small>
+              <strong>Tutor #{startTarget.id}</strong>
+              <small>Tutor detail and verification actions will be available in Phase 3.</small>
             </span>
           </aside>
         )}
@@ -116,53 +144,62 @@ export default function AdminApp() {
           </section>
         ) : (
           <>
-            {view.status === 'loading' ? (
+            {view.status === 'loading' && activeSection === 'overview' ? (
               <div className="metrics-grid" aria-label="Loading dashboard metrics">
                 {Array.from({ length: 4 }, (_, index) => <div className="metric-skeleton" key={index} />)}
               </div>
-            ) : (
-              <section className="metrics-grid" aria-label="Platform metrics">
-                {metrics.map(({ label, value, icon: Icon, tone }, index) => (
-                  <article className={`metric metric-${tone}`} key={label} style={{ '--stagger': `${index * 70}ms` }}>
-                    <div className="metric-topline">
-                      <span>{label}</span>
-                      <Icon size={18} strokeWidth={1.8} />
+            ) : null}
+
+            {view.status === 'ready' && activeSection === 'overview' && (
+              <>
+                <section className="metrics-grid" aria-label="Platform metrics">
+                  {metrics.map(({ label, value, icon: Icon, tone }, index) => (
+                    <article className={`metric metric-${tone}`} key={label} style={{ '--stagger': `${index * 70}ms` }}>
+                      <div className="metric-topline">
+                        <span>{label}</span>
+                        <Icon size={18} strokeWidth={1.8} />
+                      </div>
+                      <strong>{formatCount(value)}</strong>
+                      <span className="metric-rule" />
+                    </article>
+                  ))}
+                </section>
+                <section className="queue-section">
+                  <div className="section-title-row">
+                    <div>
+                      <p className="eyebrow">WORK QUEUE</p>
+                      <h2>Needs attention</h2>
                     </div>
-                    <strong>{formatCount(value)}</strong>
-                    <span className="metric-rule" />
-                  </article>
-                ))}
-              </section>
+                    <span className="queue-total">
+                      {formatCount((dashboard?.pending_tutors || 0) + (dashboard?.pending_requests || 0))} OPEN
+                    </span>
+                  </div>
+                  <div className="queue-list">
+                    <div className="queue-item">
+                      <span className="queue-icon queue-icon-coral"><GraduationCap size={18} /></span>
+                      <span className="queue-label"><strong>Tutor verification</strong><small>Profiles awaiting review</small></span>
+                      <strong className="queue-count">{formatCount(dashboard.pending_tutors)}</strong>
+                    </div>
+                    <div className="queue-item">
+                      <span className="queue-icon queue-icon-green"><ClipboardList size={18} /></span>
+                      <span className="queue-label"><strong>Parent requests</strong><small>Students waiting for a match</small></span>
+                      <strong className="queue-count">{formatCount(dashboard.pending_requests)}</strong>
+                    </div>
+                  </div>
+                </section>
+              </>
             )}
 
-            <section className="queue-section">
-              <div className="section-title-row">
-                <div>
-                  <p className="eyebrow">WORK QUEUE</p>
-                  <h2>Needs attention</h2>
-                </div>
-                <span className="queue-total">
-                  {formatCount((dashboard?.pending_tutors || 0) + (dashboard?.pending_requests || 0))} OPEN
-                </span>
-              </div>
-              <div className="queue-list">
-                <div className="queue-item">
-                  <span className="queue-icon queue-icon-coral"><GraduationCap size={18} /></span>
-                  <span className="queue-label"><strong>Tutor verification</strong><small>Profiles awaiting review</small></span>
-                  <strong className="queue-count">{view.status === 'ready' ? formatCount(dashboard.pending_tutors) : '—'}</strong>
-                </div>
-                <div className="queue-item">
-                  <span className="queue-icon queue-icon-green"><ClipboardList size={18} /></span>
-                  <span className="queue-label"><strong>Parent requests</strong><small>Students waiting for a match</small></span>
-                  <strong className="queue-count">{view.status === 'ready' ? formatCount(dashboard.pending_requests) : '—'}</strong>
-                </div>
-              </div>
-            </section>
+            {view.status === 'ready' && activeSection === 'requests' && (
+              <RequestWorkbench initialRequestId={startTarget?.type === 'request' ? startTarget.id : null} />
+            )}
+            {view.status === 'ready' && activeSection === 'coverage' && <CoverageBoard />}
+            {view.status === 'ready' && activeSection === 'idle' && <IdleTutors />}
 
-            <footer className="admin-footer">
+            {view.status === 'ready' && <footer className="admin-footer">
               <span><span className="status-dot" /> DATA CONNECTED</span>
-              <span>MENTORLINK ADMIN <i>·</i> PHASE 1</span>
-            </footer>
+              <span>MENTORLINK ADMIN <i>·</i> PHASE 2</span>
+            </footer>}
           </>
         )}
       </main>

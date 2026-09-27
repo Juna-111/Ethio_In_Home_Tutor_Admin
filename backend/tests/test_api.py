@@ -148,6 +148,35 @@ async def test_register_tutor_ignores_client_telegram_id(async_client: AsyncClie
 
 
 @pytest.mark.asyncio
+async def test_unauthenticated_tutor_registration_allowed_in_production(async_client: AsyncClient, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+
+    payload = {
+        "telegram_user_id": 987654321,
+        "full_name": "Browser Tutor",
+        "gender": "Female",
+        "phone_number": "0911223344",
+        "university": "AAU",
+        "department": "Mathematics",
+        "education_year": "3rd Year",
+        "subjects_qualified": ["Maths"],
+        "grades_qualified": ["Grade 8"],
+        "years_of_experience": 2,
+        "expected_fee_etb": 300,
+        "base_subcity": "Bole",
+        "coverage_areas": ["Bole"],
+        "availability_schedule": "Weekends",
+    }
+
+    response = await async_client.post("/api/v1/tutors/register", json=payload)
+
+    assert response.status_code == 201
+    assert response.json()["telegram_user_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_register_tutor_validation_failure(async_client: AsyncClient):
     """Verifies validation failure on invalid tutor data (e.g. empty coverage areas, negative fee)."""
     invalid_payload = {
@@ -209,6 +238,7 @@ async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, mo
 
     monkeypatch.setattr(bot_inst, "bot_app", mock_app)
     monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/admin")
 
     payload = {
         "parent_name": "Tigist Alemu",
@@ -240,11 +270,13 @@ async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, mo
 
     # Verify compact inline buttons
     reply_markup = call_kwargs["reply_markup"]
-    buttons = reply_markup.inline_keyboard[0]
+    buttons = next(row for row in reply_markup.inline_keyboard if any(button.callback_data for button in row))
     assert buttons[0].text in ("🔍 Match Radar", "🔍 Match Tutors")
     assert buttons[0].callback_data == f"match_parent:{created_id}"
     assert buttons[1].text in ("❌ Close Request", "❌ Close")
     assert buttons[1].callback_data == f"close_parent:{created_id}"
+    review_button = next(button for row in reply_markup.inline_keyboard for button in row if button.text == "Review in App")
+    assert review_button.url == f"https://t.me/MentorLinkBot/admin?startapp=request_{created_id}"
 
 
 @pytest.mark.asyncio
@@ -264,6 +296,7 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
     monkeypatch.setattr(bot_inst, "bot_app", mock_app)
     monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001999999999)
     monkeypatch.setattr(settings, "TUTOR_REGISTRATION_TOPIC_ID", None)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/admin")
 
     payload = {
         "telegram_user_id": 554433221,
@@ -301,11 +334,13 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
 
     # Verify compact inline buttons
     reply_markup = call_kwargs["reply_markup"]
-    buttons = reply_markup.inline_keyboard[0]
+    buttons = next(row for row in reply_markup.inline_keyboard if any(button.callback_data and button.callback_data.startswith("approve_tutor:") for button in row))
     assert buttons[0].text == "✅ Approve"
     assert buttons[0].callback_data == f"approve_tutor:{created_id}"
     assert buttons[1].text == "❌ Reject"
     assert buttons[1].callback_data == f"reject_tutor:{created_id}"
+    review_button = next(button for row in reply_markup.inline_keyboard for button in row if button.text == "Review in App")
+    assert review_button.url == f"https://t.me/MentorLinkBot/admin?startapp=tutor_{created_id}"
 
 
 @pytest.mark.asyncio
@@ -415,8 +450,11 @@ def test_settings_topic_id_parsing():
 
 
 @pytest.mark.asyncio
-async def test_upload_tutor_document_success(async_client: AsyncClient):
-    """Verifies that uploading a PDF/image document succeeds and returns file_url."""
+async def test_upload_tutor_document_success(async_client: AsyncClient, monkeypatch):
+    """Public browser tutor intake can upload a credential without Telegram initData."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
     file_content = b"%PDF-1.4 Mock PDF Document Content"
     files = {"file": ("student_id.pdf", file_content, "application/pdf")}
     resp = await async_client.post("/api/v1/tutors/upload-document", files=files)
@@ -467,6 +505,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     monkeypatch.setattr(bot_inst, "bot_app", mock_app)
     monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1002345678901)
     monkeypatch.setattr(settings, "PARENT_REQUESTS_TOPIC_ID", 101)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/admin")
 
     payload = {
         "parent_name": "Hiwot Tadesse",
@@ -504,7 +543,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     assert "PARENT REQUEST | Pending" in call1_kwargs["text"]
     assert "<blockquote>" in call1_kwargs["text"]
     assert "Hiwot Tadesse" in call1_kwargs["text"]
-    call1_buttons = call1_kwargs["reply_markup"].inline_keyboard[0]
+    call1_buttons = next(row for row in call1_kwargs["reply_markup"].inline_keyboard if any(button.callback_data for button in row))
     assert call1_buttons[0].text == "🔍 Match Radar"
     assert call1_buttons[0].callback_data == f"match_parent:{created_id}"
     assert call1_buttons[1].text == "❌ Close Request"
@@ -520,13 +559,13 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     call2_buttons = call2_kwargs["reply_markup"].inline_keyboard[0]
     assert call2_buttons[0].text == "🔗 Open Workspace"
     assert call2_buttons[0].url == "https://t.me/c/2345678901/7788"
+    assert call2_buttons[1].url == f"https://t.me/MentorLinkBot/admin?startapp=request_{created_id}"
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_request_rejected_in_production_when_preview_disabled(async_client: AsyncClient, monkeypatch):
+async def test_unauthenticated_parent_request_allowed_in_production(async_client: AsyncClient, monkeypatch):
     """
-    Verifies that when ENVIRONMENT="production" and ALLOW_UNVERIFIED_WEB_PREVIEW=False,
-    unauthenticated requests without Telegram initData Authorization header return 401 Unauthorized.
+    Public browser intake works in production without Telegram initData and never trusts a client-supplied Telegram ID.
     """
     from app.config import settings
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
@@ -546,8 +585,35 @@ async def test_unauthenticated_request_rejected_in_production_when_preview_disab
         "budget_etb": 350.0
     }
     resp = await async_client.post("/api/v1/parents/request", json=payload)
-    assert resp.status_code == 401
-    assert "Telegram WebApp authentication credentials" in resp.json()["detail"]
+    assert resp.status_code == 201
+    assert resp.json()["telegram_user_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_invalid_telegram_credentials_still_rejected_for_public_intake(async_client: AsyncClient, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "BOT_TOKEN", "123456:invalid-test-token")
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+    response = await async_client.post(
+        "/api/v1/parents/request",
+        json={
+            "parent_name": "Signed Session Test",
+            "phone_number": "0911223344",
+            "student_level": "Grade 8",
+            "subjects": ["Maths"],
+            "preferred_experience": "University Student",
+            "location_subcity": "Bole",
+            "schedule_days": ["Mon"],
+            "time_slot": "4 PM",
+            "session_duration": "1 hr",
+            "budget_etb": 300,
+        },
+        headers={"Authorization": "tma invalid-init-data"},
+    )
+
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

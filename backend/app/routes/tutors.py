@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_telegram_user
+from app.auth import get_optional_telegram_user
 from app.bot.bot_instance import send_tutor_registration_card
 from app.config import UPLOAD_DIR
 from app.database import get_db
@@ -43,7 +43,7 @@ def _validate_magic_bytes(header: bytes) -> bool:
 async def upload_tutor_document(
     request: Request,
     file: UploadFile = File(...),
-    verified_user_id: Optional[int] = Depends(get_current_telegram_user)
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user)
 ):
     """
     Accepts file upload (ID, Certificate, CV) and saves it to the local uploads directory.
@@ -123,7 +123,7 @@ async def upload_tutor_document(
 async def register_tutor(
     payload: TutorCreate,
     db: AsyncSession = Depends(get_db),
-    verified_user_id: Optional[int] = Depends(get_current_telegram_user),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
 ):
     """
     Validates and stores a tutor registration in PostgreSQL.

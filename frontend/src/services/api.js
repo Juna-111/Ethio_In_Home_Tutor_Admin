@@ -121,9 +121,6 @@ async function request(path, options = {}) {
             .join("\n");
         } else if (typeof errorData.detail === "string") {
           errorMessage = errorData.detail;
-          if (errorMessage.includes("Telegram WebApp authentication")) {
-            errorMessage = "Please open this application inside Telegram using the official bot button (@MentorLinkBot) to register.";
-          }
         } else {
           errorMessage = JSON.stringify(errorData.detail);
         }
@@ -180,4 +177,55 @@ export async function uploadTutorDocument(file) {
 
 export async function getAdminDashboard() {
   return request("/api/v1/admin/dashboard");
+}
+
+export async function getAdminRequests(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return request(`/api/v1/admin/requests${suffix}`);
+}
+
+export async function getAdminRequest(requestId) {
+  return request(`/api/v1/admin/requests/${encodeURIComponent(requestId)}`);
+}
+
+export async function getAdminCandidates(requestId) {
+  return request(`/api/v1/admin/requests/${encodeURIComponent(requestId)}/candidates`);
+}
+
+export async function pingAdminCandidates(requestId, tutorIds) {
+  return request(`/api/v1/admin/requests/${encodeURIComponent(requestId)}/ping`, {
+    method: 'POST',
+    body: JSON.stringify({ tutor_ids: tutorIds }),
+  });
+}
+
+export async function assignAdminTutor(requestId, tutorId) {
+  return request(`/api/v1/admin/requests/${encodeURIComponent(requestId)}/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ tutor_id: tutorId }),
+  });
+}
+
+export async function closeAdminRequest(requestId) {
+  return request(`/api/v1/admin/requests/${encodeURIComponent(requestId)}/close`, { method: 'POST' });
+}
+
+export async function waitlistAdminRequest(requestId) {
+  return request(`/api/v1/admin/requests/${encodeURIComponent(requestId)}/waitlist`, { method: 'POST' });
+}
+
+export async function getAdminCoverageGaps() {
+  return request('/api/v1/admin/analytics/coverage-gaps');
+}
+
+export async function getAdminIdleTutors(days = 14) {
+  return request(`/api/v1/admin/tutors/idle?days=${encodeURIComponent(days)}`);
+}
+
+export async function nudgeAdminTutor(tutorId) {
+  return request(`/api/v1/admin/tutors/${encodeURIComponent(tutorId)}/reactivate-nudge`, { method: 'POST' });
 }
