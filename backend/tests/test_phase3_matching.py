@@ -464,7 +464,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     assert "Selamawit Tefera" in parent_dm_call.kwargs["text"]
     assert "AAU" in parent_dm_call.kwargs["text"]
     assert "+251911887766" in parent_dm_call.kwargs["text"]
-    assert "trusting MentorLink" in parent_dm_call.kwargs["text"]
+    assert "Thank you for trusting Us." in parent_dm_call.kwargs["text"]
 
     # Tutor DM verification
     tutor_dm_call = next(c for c in sent_calls if c.kwargs["chat_id"] == 888999000)

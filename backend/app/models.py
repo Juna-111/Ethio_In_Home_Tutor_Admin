@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, List, Optional
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, Numeric, String, Text, JSON, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, JSON, UniqueConstraint, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -53,6 +53,8 @@ class Tutor(Base):
     id_document_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     entrance_result_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     entrance_result: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Canonical values: pending, verified, probation, rejected. `verified` is
+    # checklist-approved and match-eligible; pause is tracked by is_paused.
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
     is_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -76,6 +78,33 @@ class AdminUser(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="admin", index=True)
     added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TutorVerification(Base):
+    __tablename__ = "tutor_verifications"
+
+    tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), primary_key=True)
+    id_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    entrance_result_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    phone_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    claims_plausible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    last_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    actor_telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    target_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="miniapp", server_default="miniapp")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

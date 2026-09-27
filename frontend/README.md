@@ -24,6 +24,12 @@ npm run dev
 ```
 Open **`http://localhost:3000`** in your browser.
 
+## Admin Mini App
+
+The admin console is a separate Vite entry at **`/admin.html`** (locally, `http://localhost:3000/admin.html`). Deploy the frontend as usual; the production build includes both the public intake page and the admin page. Configure the standalone admin bot's Telegram Mini App URL to the hosted `/admin.html` URL.
+
+The console requires signed Telegram Mini App `initData` and an active `AdminUser` record (or the configured bootstrap `SUPER_ADMIN_ID`). Opening it in a regular browser without Telegram authentication intentionally shows the access-required screen. Supported Telegram `startapp` parameters are `tutor_{id}` and `request_{id}`; Phase 1 acknowledges the target while detail screens are added in Phase 2.
+
 ---
 
 ## 🌐 Deploy to Vercel

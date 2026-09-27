@@ -13,28 +13,16 @@ from app.config import settings, UPLOAD_DIR
 from app.database import engine, Base, AsyncSessionLocal
 import app.models  # noqa: F401
 from app.routes.health import router as health_router
+from app.routes.admin import router as admin_router
 from app.routes.parents import router as parents_router
 from app.routes.tutors import router as tutors_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Auto-provision database schema on startup (works seamlessly on Render, Neon, etc.)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE parent_requests ADD COLUMN IF NOT EXISTS telegram_topic_id BIGINT;"))
-        except Exception:
-            try:
-                await conn.execute(text("ALTER TABLE parent_requests ADD COLUMN telegram_topic_id BIGINT;"))
-            except Exception:
-                pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE system_settings ALTER COLUMN value TYPE TEXT;"))
-        except Exception:
-            pass
+    if settings.ENVIRONMENT.lower() == "development":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     
     # Initialize Telegram Bot Application & background listeners
     await bot_instance.init_bot_app()
@@ -141,6 +129,7 @@ app.add_middleware(
 
 # Mount API v1 Routers
 app.include_router(health_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(parents_router, prefix="/api/v1")
 app.include_router(tutors_router, prefix="/api/v1")
 

@@ -38,7 +38,7 @@ async def test_public_user_start_renders_public_keyboard_with_https_url(monkeypa
     keyboard = reply_markup.keyboard
     assert len(keyboard) == 2
     # Row 1: WebApp button
-    assert keyboard[0][0].text == "🚀 Open MentorLink"
+    assert keyboard[0][0].text == "Register"
     assert keyboard[0][0].web_app.url == "https://t.me/MentorLinkBot/app"
     # Row 2: Customer buttons
     assert keyboard[1][0].text == "ℹ️ About Us"
@@ -226,7 +226,7 @@ async def test_non_admin_blocked_from_admin_actions(monkeypatch):
     mock_update.callback_query = mock_query
 
     await bot_handlers.handle_callback_query(mock_update, mock_context)
-    mock_query.answer.assert_called_with("⛔ Access denied.", show_alert=True)
+    mock_query.answer.assert_called_with("⛔ Access denied. ", show_alert=True)
 
 
 @pytest.mark.asyncio

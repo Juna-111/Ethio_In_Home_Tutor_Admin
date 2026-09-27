@@ -39,6 +39,7 @@ class ParentStatus(str, Enum):
 class TutorStatus(str, Enum):
     PENDING = "pending"
     VERIFIED = "verified"
+    PROBATION = "probation"
     REJECTED = "rejected"
 
 
@@ -138,3 +139,12 @@ class TutorResponse(TutorCreate):
 class HealthResponse(BaseModel):
     status: str
     database: str
+
+
+class AdminDashboardResponse(BaseModel):
+    admin_telegram_id: int
+    admin_role: str
+    pending_tutors: int
+    pending_requests: int
+    active_assignments: int
+    requests_today: int

@@ -296,7 +296,7 @@ async def test_tutor_registration_forwards_to_telegram(async_client: AsyncClient
     assert "Dawit Bekele" in call_kwargs["text"]
     assert "Kirkos" in call_kwargs["text"]
     assert "<blockquote>" in call_kwargs["text"]
-    assert "https://example.com/id/dawit.pdf" in call_kwargs["text"]
+    assert "https://example.com/id/dawit.pdf" not in call_kwargs["text"]
     assert "Entrance result: 88" in call_kwargs["text"]
 
     # Verify compact inline buttons
@@ -441,9 +441,9 @@ async def test_upload_tutor_document_invalid_extension(async_client: AsyncClient
 async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: AsyncClient, monkeypatch):
     """
     Verifies that creating a parent request:
-    1. Dynamically creates dedicated forum topic `REQ-{id:04d} — Parent Name (Subcity)`
+    1. Dynamically creates dedicated forum topic `PAR-{id:04d} — Parent Name`
     2. Sends full management card with [ 🔍 Match Radar ] & [ ❌ Close Request ] into dedicated topic
-    3. Posts ticket card with deep link [ 🔗 Open Ticket ] into parent requests directory topic
+    3. Posts ticket card with deep link [ 🔗 Open Workspace ] into parent requests directory topic
     4. Saves telegram_topic_id in the database record.
     """
     from unittest.mock import AsyncMock, MagicMock
@@ -492,7 +492,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     assert mock_create_topic.called
     topic_kwargs = mock_create_topic.call_args.kwargs
     assert topic_kwargs["chat_id"] == -1002345678901
-    assert f"REQ-{created_id:04d} — Hiwot Tadesse (Bole)" == topic_kwargs["name"]
+    assert f"PAR-{created_id:04d} — Hiwot Tadesse" == topic_kwargs["name"]
 
     # 2. Verify 2 messages sent
     assert mock_send_message.call_count == 2
@@ -501,7 +501,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     call1_kwargs = mock_send_message.call_args_list[0].kwargs
     assert call1_kwargs["chat_id"] == -1002345678901
     assert call1_kwargs["message_thread_id"] == 7788
-    assert "PARENT REQUEST #" in call1_kwargs["text"]
+    assert "PARENT REQUEST | Pending" in call1_kwargs["text"]
     assert "<blockquote>" in call1_kwargs["text"]
     assert "Hiwot Tadesse" in call1_kwargs["text"]
     call1_buttons = call1_kwargs["reply_markup"].inline_keyboard[0]
@@ -518,7 +518,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
     assert "Hiwot Tadesse" in call2_kwargs["text"]
     assert "Bole" in call2_kwargs["text"]
     call2_buttons = call2_kwargs["reply_markup"].inline_keyboard[0]
-    assert call2_buttons[0].text == "🔗 Open Workspace / Ticket ↗️"
+    assert call2_buttons[0].text == "🔗 Open Workspace"
     assert call2_buttons[0].url == "https://t.me/c/2345678901/7788"
 
 

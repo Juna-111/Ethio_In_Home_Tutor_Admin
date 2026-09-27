@@ -128,7 +128,9 @@ async function request(path, options = {}) {
           errorMessage = JSON.stringify(errorData.detail);
         }
       }
-      throw new Error(errorMessage);
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
     }
 
     return await response.json();
@@ -174,4 +176,8 @@ export async function uploadTutorDocument(file) {
     : `${baseUrl}${result.file_url}`;
 
   return { ...result, full_url: fullUrl };
+}
+
+export async function getAdminDashboard() {
+  return request("/api/v1/admin/dashboard");
 }
