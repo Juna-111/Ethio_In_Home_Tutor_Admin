@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     MINI_APP_URL: Optional[str] = None
     ENVIRONMENT: str = "development"
     ALLOW_UNVERIFIED_WEB_PREVIEW: bool = False
+    CRON_SECRET: Optional[str] = "mentorlink_cron_secret"
 
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
