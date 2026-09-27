@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileSpreadsheet, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
+import { Download, FileSpreadsheet, ShieldCheck, Loader2 } from 'lucide-react';
 import { getExportUrl, getAuthHeaders } from '../services/api';
 
 export default function ExportCenter() {

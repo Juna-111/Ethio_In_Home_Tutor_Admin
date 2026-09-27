@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, UserPlus, Trash2, History, AlertCircle, Loader2 } from 'lucide-react';
+import { UserPlus, Trash2, Loader2 } from 'lucide-react';
 import { getAdminUsers, createAdminUser, deleteAdminUser, getAdminAuditLog } from '../services/api';
 
 export default function AdminManagement() {
@@ -102,6 +102,7 @@ export default function AdminManagement() {
             </button>
           </form>
 
+          <div className="table-scroll">
           <table className="admin-table">
             <thead>
               <tr>
@@ -130,8 +131,10 @@ export default function AdminManagement() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
+        <div className="table-scroll">
         <table className="admin-table">
           <thead>
             <tr>
@@ -158,6 +161,7 @@ export default function AdminManagement() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

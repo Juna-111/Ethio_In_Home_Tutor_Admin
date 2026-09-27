@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ShieldAlert, CheckCircle, RefreshCw, Play, Loader2 } from 'lucide-react';
+import { Play, Loader2 } from 'lucide-react';
 import { getAdminFlags, getAdminIncidents, updateAdminIncident, runAdminCron } from '../services/api';
 
 export default function OpsQueue({ onSelectTutor }) {
@@ -101,6 +101,7 @@ export default function OpsQueue({ onSelectTutor }) {
         flags.length === 0 ? (
           <div className="empty-state">No active red flags detected across tutor profiles!</div>
         ) : (
+          <div className="table-scroll">
           <table className="admin-table">
             <thead>
               <tr>
@@ -112,8 +113,8 @@ export default function OpsQueue({ onSelectTutor }) {
               </tr>
             </thead>
             <tbody>
-              {flags.map((f, idx) => (
-                <tr key={idx}>
+              {flags.map((f) => (
+                <tr key={`${f.tutor_id}-${f.flag_type}`}>
                   <td>
                     <span className={`flag-badge flag-${f.severity}`}>
                       {f.severity.toUpperCase()}
@@ -131,10 +132,12 @@ export default function OpsQueue({ onSelectTutor }) {
               ))}
             </tbody>
           </table>
+          </div>
         )
       ) : incidents.length === 0 ? (
         <div className="empty-state">No incidents logged.</div>
       ) : (
+        <div className="table-scroll">
         <table className="admin-table">
           <thead>
             <tr>
@@ -179,6 +182,7 @@ export default function OpsQueue({ onSelectTutor }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

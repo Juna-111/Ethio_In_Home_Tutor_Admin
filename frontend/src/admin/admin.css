@@ -322,6 +322,21 @@ button, a { font: inherit; }
    Phase 3, 4, 5 UI Styles: Tables, Modals, Badges, Funnel
    ======================================================== */
 
+.tutors-table-wrapper,
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.tutors-table-wrapper .admin-table,
+.table-scroll .admin-table {
+  border: none;
+  border-radius: 0;
+}
+
 .filter-bar {
   display: flex;
   align-items: center;
@@ -728,3 +743,52 @@ button, a { font: inherit; }
 .role-tag { background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
 .delete-btn { border: none; background: transparent; color: #dc2626; cursor: pointer; padding: 4px; }
 .delete-btn:hover { background: #fee2e2; border-radius: 4px; }
+
+/* ========================================================
+   Mobile fixes for Phase 3, 4, 5 screens (Tutors, Verification
+   modal, Ops Queue, Analytics, Export Center, Admin Management).
+   The block above this one shipped with no responsive rules at
+   all, so every table and multi-column layout in these screens
+   ran off the edge of a phone viewport with no way to scroll it
+   into view.
+   ======================================================== */
+@media (max-width: 700px) {
+  .ops-header,
+  .card-header,
+  .filter-bar {
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .status-pill-group { width: 100%; }
+
+  .admin-table { font-size: 12px; }
+  .admin-table th, .admin-table td { padding: 9px 10px; white-space: nowrap; }
+
+  .modal-card { padding: 18px; border-radius: 10px; }
+  .modal-header h2 { font-size: 18px; }
+
+  .tutor-stats-bar { flex-wrap: wrap; gap: 10px 16px; }
+  .detail-grid { grid-template-columns: 1fr 1fr; }
+
+  .add-admin-form { flex-wrap: wrap; }
+  .add-admin-form input, .add-admin-form select { flex: 1 1 140px; min-width: 0; }
+  .add-admin-form button { flex: 1 1 100%; justify-content: center; }
+
+  .funnel-steps { grid-template-columns: 1fr; gap: 12px; }
+  .conversion-stats, .card-totals { flex-wrap: wrap; gap: 8px 16px; }
+
+  .export-cards-grid { grid-template-columns: 1fr; gap: 14px; }
+  .export-card { padding: 18px; }
+
+  .checklist-actions { flex-direction: column; align-items: stretch; }
+  .checklist-actions .btn-primary,
+  .checklist-actions .btn-danger-outline,
+  .checklist-actions .btn-subtle { justify-content: center; }
+}
+
+@media (max-width: 400px) {
+  .detail-grid { grid-template-columns: 1fr; }
+  .modal-backdrop { padding: 10px; }
+  .modal-card { padding: 14px; }
+}

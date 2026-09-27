@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Filter, GraduationCap, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
+import { ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 import { getAdminTutors } from '../services/api';
 
 export default function TutorList({ onSelectTutor }) {

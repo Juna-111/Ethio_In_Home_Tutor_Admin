@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BellRing, CircleAlert, RefreshCw } from 'lucide-react';
+import { BellRing, CircleAlert } from 'lucide-react';
 import { getAdminIdleTutors, nudgeAdminTutor } from '../services/api';
 
 export default function IdleTutors() {

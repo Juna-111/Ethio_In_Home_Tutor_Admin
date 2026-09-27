@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, TrendingUp, Users, Clock, AlertTriangle, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { getAdminFunnelAnalytics, getAdminAvailabilityMismatch } from '../services/api';
 
 export default function AnalyticsBoard() {
@@ -96,6 +96,7 @@ export default function AnalyticsBoard() {
             </div>
           </div>
 
+          <div className="table-scroll">
           <table className="admin-table">
             <thead>
               <tr>
@@ -132,6 +133,7 @@ export default function AnalyticsBoard() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
     </div>

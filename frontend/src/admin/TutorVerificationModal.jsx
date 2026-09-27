@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, CheckCircle, AlertCircle, FileText, Star, Shield, ThumbsDown, Check, Loader2 } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, FileText, Star, ThumbsDown, Loader2 } from 'lucide-react';
 import { getAdminTutorDetail, getAdminTutorScorecard, updateAdminTutorVerification, rejectAdminTutor } from '../services/api';
 
 export default function TutorVerificationModal({ tutorId, onClose, onUpdated }) {
