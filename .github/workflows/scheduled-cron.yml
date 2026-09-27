@@ -1,0 +1,35 @@
+name: Scheduled Admin Cron
+
+# Drives the backend's durable/idempotent scheduler (feedback reminders,
+# red-flag checks, re-verification and probation reminders, notification
+# outbox draining). The scheduler itself is safe to call redundantly or
+# from multiple instances - see app/services/scheduler.py's claim_event()
+# - so this workflow only needs to fire reliably, not exactly once.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   BACKEND_CRON_URL  e.g. https://<your-backend-host>/api/v1/admin/cron/run
+#   CRON_SECRET        must match the backend's CRON_SECRET env var
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger backend cron endpoint
+        run: |
+          http_status=$(curl -s -o /tmp/cron_response.json -w "%{http_code}" \
+            -X POST "${{ secrets.BACKEND_CRON_URL }}" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+
+          echo "HTTP status: $http_status"
+          cat /tmp/cron_response.json || true
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "Cron trigger failed with status $http_status"
+            exit 1
+          fi
