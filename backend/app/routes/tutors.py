@@ -12,8 +12,8 @@ from app.auth import get_optional_telegram_user
 from app.bot.bot_instance import send_tutor_registration_card
 from app.config import UPLOAD_DIR
 from app.database import get_db
-from app.models import Tutor
-from app.schemas import TutorCreate, TutorResponse
+from app.models import RegistrationFunnelEvent, Tutor
+from app.schemas import FunnelStartRequest, FunnelStartResponse, TutorCreate, TutorResponse
 
 router = APIRouter(prefix="/tutors", tags=["Tutors"])
 
@@ -168,7 +168,39 @@ async def register_tutor(
     await db.commit()
     await db.refresh(tutor)
 
+    # Record registration funnel submitted event
+    try:
+        funnel_event = RegistrationFunnelEvent(
+            session_id=f"tutor_{tutor.id}_{tutor.phone_number}",
+            stage="submitted",
+            tutor_id=tutor.id,
+        )
+        db.add(funnel_event)
+        await db.commit()
+    except Exception:
+        pass
+
     # Broadcast verification card to Telegram Admin Group
     await send_tutor_registration_card(tutor)
 
     return tutor
+
+
+@router.post(
+    "/funnel/start",
+    response_model=FunnelStartResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record Tutor Registration Funnel Start"
+)
+async def start_funnel_event(
+    payload: FunnelStartRequest,
+    db: AsyncSession = Depends(get_db),
+) -> FunnelStartResponse:
+    event = RegistrationFunnelEvent(
+        session_id=payload.session_id,
+        stage="started",
+    )
+    db.add(event)
+    await db.commit()
+    return FunnelStartResponse(ok=True, session_id=payload.session_id)
+

@@ -229,3 +229,112 @@ export async function getAdminIdleTutors(days = 14) {
 export async function nudgeAdminTutor(tutorId) {
   return request(`/api/v1/admin/tutors/${encodeURIComponent(tutorId)}/reactivate-nudge`, { method: 'POST' });
 }
+
+export async function pingFunnelStart(sessionId) {
+  return request("/api/v1/tutors/funnel/start", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+export async function getAdminTutors(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return request(`/api/v1/admin/tutors${suffix}`);
+}
+
+export async function getAdminTutorDetail(tutorId) {
+  return request(`/api/v1/admin/tutors/${encodeURIComponent(tutorId)}`);
+}
+
+export async function updateAdminTutorVerification(tutorId, patch) {
+  return request(`/api/v1/admin/tutors/${encodeURIComponent(tutorId)}/verification`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function rejectAdminTutor(tutorId, reason) {
+  return request(`/api/v1/admin/tutors/${encodeURIComponent(tutorId)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function getAdminTutorScorecard(tutorId) {
+  return request(`/api/v1/admin/tutors/${encodeURIComponent(tutorId)}/scorecard`);
+}
+
+export async function getAdminFlags() {
+  return request('/api/v1/admin/flags');
+}
+
+export async function getAdminIncidents(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return request(`/api/v1/admin/incidents${suffix}`);
+}
+
+export async function createAdminIncident(data) {
+  return request('/api/v1/admin/incidents', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAdminIncident(incidentId, patch) {
+  return request(`/api/v1/admin/incidents/${encodeURIComponent(incidentId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function getAdminUsers() {
+  return request('/api/v1/admin/admins');
+}
+
+export async function createAdminUser(data) {
+  return request('/api/v1/admin/admins', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminUser(telegramId) {
+  return request(`/api/v1/admin/admins/${encodeURIComponent(telegramId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getAdminAuditLog(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return request(`/api/v1/admin/audit${suffix}`);
+}
+
+export async function getAdminFunnelAnalytics() {
+  return request('/api/v1/admin/analytics/funnel');
+}
+
+export async function getAdminAvailabilityMismatch() {
+  return request('/api/v1/admin/analytics/availability-mismatch');
+}
+
+export async function runAdminCron() {
+  return request('/api/v1/admin/cron/run', { method: 'POST' });
+}
+
+export function getExportUrl(type = 'tutors') {
+  const baseUrl = getBaseUrl();
+  return `${baseUrl}/api/v1/admin/export?type=${encodeURIComponent(type)}`;
+}
+

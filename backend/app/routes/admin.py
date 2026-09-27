@@ -1,53 +1,73 @@
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta, timezone
 import html
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import String, cast, func, select, update
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import String, cast, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
 from app.admin_auth import AdminPrincipal, require_admin, require_role
+from app.auth import get_optional_telegram_user
 from app.bot import bot_instance
+from app.config import settings, UPLOAD_DIR
 from app.database import get_db
+from app.models import (
+    AdminUser,
+    Assignment,
+    AuditLog,
+    MatchInvite,
+    NotificationOutbox,
+    ParentRequest,
+    RegistrationFunnelEvent,
+    ScheduledEventClaim,
+    SessionFeedback,
+    Tutor,
+    TutorIncident,
+    TutorVerification,
+)
 from app.schemas import (
     AdminActionResponse,
     AdminAssignRequest,
+    AdminAvailabilityMismatchItem,
+    AdminAvailabilityMismatchResponse,
     AdminCandidateResponse,
     AdminCandidatesResponse,
     AdminCoverageGapResponse,
+    AdminCronRunResponse,
     AdminDashboardResponse,
+    AdminFlagResponse,
+    AdminFunnelResponse,
     AdminIdleTutorResponse,
+    AdminIncidentCreate,
+    AdminIncidentListResponse,
+    AdminIncidentPatch,
+    AdminIncidentResponse,
     AdminPingRequest,
+    AdminRejectRequest,
     AdminRequestListItem,
     AdminRequestListResponse,
-    ParentRequestResponse,
-    AdminVerificationPatch,
-    AdminVerificationResponse,
     AdminTutorDetailResponse,
     AdminTutorListItem,
     AdminTutorListResponse,
-    AdminRejectRequest,
     AdminTutorScorecardResponse,
-    AdminIncidentCreate,
-    AdminIncidentPatch,
-    AdminIncidentResponse,
-    AdminIncidentListResponse,
-    AdminFlagResponse,
     AdminUserCreate,
-    AdminUserResponse,
     AdminUserListResponse,
+    AdminUserResponse,
     AdminAuditLogItem,
     AdminAuditLogResponse,
+    AdminVerificationPatch,
+    AdminVerificationResponse,
+    ParentRequestResponse,
 )
-from fastapi.responses import FileResponse
-from app.config import UPLOAD_DIR
-from app.models import Assignment, MatchInvite, ParentRequest, Tutor, TutorVerification, SessionFeedback, TutorIncident, AuditLog, AdminUser
 from app.services.audit import log_action
+from app.services.export_service import generate_parents_csv, generate_tutors_csv
 from app.services.matcher import get_tiered_matches
+from app.services.scheduler import claim_event, run_all_scheduled_tasks
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -498,6 +518,37 @@ async def nudge_idle_admin_tutor(
     return AdminActionResponse(ok=True, message="Tutor nudge sent.")
 
 
+async def check_waitlist_matches_for_tutor(db: AsyncSession, tutor: Tutor) -> None:
+    """Checks waitlisted parent requests for subject matches with a newly approved tutor."""
+    result = await db.execute(
+        select(ParentRequest).where(ParentRequest.status == "waitlisted")
+    )
+    waitlisted = result.scalars().all()
+    tutor_subjs = {s.lower().strip() for s in (tutor.subjects_qualified or [])}
+    matches = [req for req in waitlisted if {s.lower().strip() for s in (req.subjects or [])} & tutor_subjs]
+    if matches:
+        count = len(matches)
+        event_key = f"waitlist_backfill:tutor:{tutor.id}:count_{count}"
+        claimed = await claim_event(db, event_key, "waitlist_backfill", "tutor", tutor.id)
+        if claimed:
+            from app.bot.topics import get_parent_topic_id
+            msg = (
+                f"🎯 <b>Waitlist Match Found!</b>\n\n"
+                f"Newly approved tutor <b>{tutor.full_name}</b> (ID: {tutor.id}) matches "
+                f"<b>{count}</b> waitlisted request(s).\n"
+                f"Review and assign candidates in the Matching Workbench."
+            )
+            outbox = NotificationOutbox(
+                event_key=event_key,
+                target_type="admin_group",
+                topic_id=get_parent_topic_id(),
+                message_text=msg,
+                status="pending",
+            )
+            db.add(outbox)
+            log_action(db, 0, "waitlist_backfill_alert", "tutor", tutor.id, reason=f"Matched {count} waitlisted requests")
+
+
 @router.patch("/tutors/{tutor_id}/verification", response_model=AdminVerificationResponse, summary="Update tutor verification flags")
 async def update_admin_tutor_verification(
     tutor_id: int,
@@ -533,8 +584,11 @@ async def update_admin_tutor_verification(
         verification.claims_plausible
     )
 
+    was_verified = (tutor.status == "verified")
     if all_complete:
         tutor.status = "verified"
+        if not was_verified:
+            await check_waitlist_matches_for_tutor(db, tutor)
     elif tutor.status == "verified":
         tutor.status = "pending"
 
@@ -910,3 +964,195 @@ async def list_admin_audit_log(
     )
     items = [AdminAuditLogItem.model_validate(a) for a in result.scalars().all()]
     return AdminAuditLogResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+# ==========================================
+# Phase 5 — Strategic Analytics & Ops
+# ==========================================
+
+@router.get("/analytics/funnel", response_model=AdminFunnelResponse, summary="Tutor registration funnel analytics")
+async def get_admin_funnel_analytics(
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminFunnelResponse:
+    started_events = await db.scalar(
+        select(func.count(distinct(RegistrationFunnelEvent.session_id)))
+        .where(RegistrationFunnelEvent.stage == "started")
+    ) or 0
+
+    submitted_events = await db.scalar(
+        select(func.count(distinct(RegistrationFunnelEvent.session_id)))
+        .where(RegistrationFunnelEvent.stage == "submitted")
+    ) or 0
+
+    total_tutors = await db.scalar(select(func.count(Tutor.id))) or 0
+    submitted = max(submitted_events, total_tutors)
+    # Ensure monotonic funnel consistency: submitted <= started
+    started = max(started_events, submitted)
+
+    approved = await db.scalar(
+        select(func.count(Tutor.id)).where(Tutor.status == "verified")
+    ) or 0
+
+    # Ensure monotonic funnel consistency: approved <= submitted
+    approved = min(approved, submitted)
+
+    sub_rate = round(submitted / started, 4) if started > 0 else 0.0
+    app_rate = round(approved / submitted, 4) if submitted > 0 else 0.0
+
+    return AdminFunnelResponse(
+        started=started,
+        submitted=submitted,
+        approved=approved,
+        submission_rate=sub_rate,
+        approval_rate=app_rate,
+    )
+
+
+@router.get(
+    "/analytics/availability-mismatch",
+    response_model=AdminAvailabilityMismatchResponse,
+    summary="Schedule availability mismatch cross-tabulation",
+)
+async def get_admin_availability_mismatch(
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminAvailabilityMismatchResponse:
+    # Query pending/active parent requests
+    req_res = await db.execute(
+        select(ParentRequest).where(
+            ParentRequest.status.in_(["pending", "waitlisted", "active"])
+        )
+    )
+    requests = req_res.scalars().all()
+
+    # Query verified and pending tutors
+    tutor_res = await db.execute(
+        select(Tutor).where(Tutor.status.in_(["pending", "verified"]))
+    )
+    tutors = tutor_res.scalars().all()
+
+    # Standard slot buckets
+    slots = ["Morning", "Afternoon", "Evening", "Weekend", "Flexible"]
+    demand_counts = {slot: 0 for slot in slots}
+    supply_counts = {slot: 0 for slot in slots}
+
+    for req in requests:
+        slot_text = (req.time_slot or "").lower()
+        matched = False
+        for slot in slots:
+            if slot.lower() in slot_text:
+                demand_counts[slot] += 1
+                matched = True
+        if not matched:
+            demand_counts["Flexible"] += 1
+
+    for t in tutors:
+        sched = t.availability_schedule
+        sched_text = str(sched).lower() if sched else ""
+        matched = False
+        for slot in slots:
+            if slot.lower() in sched_text:
+                supply_counts[slot] += 1
+                matched = True
+        if not matched:
+            supply_counts["Flexible"] += 1
+
+    items: list[AdminAvailabilityMismatchItem] = []
+    total_demand = sum(demand_counts.values())
+    total_supply = sum(supply_counts.values())
+
+    for slot in slots:
+        d = demand_counts[slot]
+        s = supply_counts[slot]
+        gap = max(0, d - s)
+        ratio = round(gap / d, 4) if d > 0 else 0.0
+        items.append(
+            AdminAvailabilityMismatchItem(
+                slot=slot,
+                demand=d,
+                supply=s,
+                gap=gap,
+                mismatch_ratio=ratio,
+            )
+        )
+
+    return AdminAvailabilityMismatchResponse(
+        total_demand=total_demand,
+        total_supply=total_supply,
+        items=items,
+    )
+
+
+@router.get("/export", summary="Export production records as CSV")
+async def get_admin_export(
+    export_type: str = Query("tutors", alias="type", pattern=r"^(tutors|parents)$"),
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if export_type == "tutors":
+        buffer, _ = await generate_tutors_csv(db)
+        filename = "tutors_export.csv"
+    else:
+        buffer, _ = await generate_parents_csv(db)
+        filename = "parents_export.csv"
+
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@router.post(
+    "/cron/run",
+    response_model=AdminCronRunResponse,
+    summary="Trigger scheduled background checks and drain outbox",
+)
+async def run_cron_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
+    authorization: Optional[str] = Header(None),
+) -> AdminCronRunResponse:
+    is_authenticated = False
+    expected_secret = settings.CRON_SECRET
+
+    if expected_secret:
+        if x_cron_secret == expected_secret:
+            is_authenticated = True
+        elif authorization:
+            parts = authorization.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1] == expected_secret:
+                is_authenticated = True
+
+    if not is_authenticated:
+        # Fallback to Mini App admin auth if available
+        try:
+            user_id = await get_optional_telegram_user(request)
+            if user_id:
+                admin_user = await db.get(AdminUser, user_id)
+                if (admin_user and admin_user.is_active) or (
+                    settings.SUPER_ADMIN_ID and user_id == settings.SUPER_ADMIN_ID
+                ):
+                    is_authenticated = True
+        except Exception:
+            pass
+
+    if not is_authenticated:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized cron execution. Valid CRON_SECRET or Admin authentication required.",
+        )
+
+    bot_app = bot_instance.bot_app.bot if bot_instance.bot_app else None
+    result = await run_all_scheduled_tasks(db, bot=bot_app)
+
+    return AdminCronRunResponse(
+        ok=True,
+        message="Scheduled checks and outbox drained successfully.",
+        result=result,
+    )

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Loader2, AlertCircle, Check, Upload, FileText, X } from 'lucide-react';
 import {
   SUBCITIES,
@@ -7,7 +7,7 @@ import {
   EDUCATION_YEARS
 } from '../constants/options';
 import { TRANSLATIONS } from '../constants/translations';
-import { submitTutorRegistration, uploadTutorDocument } from '../services/api';
+import { submitTutorRegistration, uploadTutorDocument, pingFunnelStart } from '../services/api';
 import { normalizeEthiopianPhone } from '../utils/phone';
 
 export default function TutorForm({ user, lang, onSuccess }) {
@@ -15,6 +15,13 @@ export default function TutorForm({ user, lang, onSuccess }) {
   const formT = t.tutorForm;
   const tVal = t.validation;
   const choices = t.choices || {};
+
+  useEffect(() => {
+    const sessionId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    pingFunnelStart(sessionId).catch(() => {});
+  }, []);
 
   const [formData, setFormData] = useState({
     full_name: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '',

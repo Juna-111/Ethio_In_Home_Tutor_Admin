@@ -361,3 +361,45 @@ class AdminAuditLogResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ==========================================
+# Phase 5 — Analytics & Ops Schemas
+# ==========================================
+
+class FunnelStartRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=100)
+
+
+class FunnelStartResponse(BaseModel):
+    ok: bool
+    session_id: str
+
+
+class AdminFunnelResponse(BaseModel):
+    started: int
+    submitted: int
+    approved: int
+    submission_rate: float
+    approval_rate: float
+
+
+class AdminAvailabilityMismatchItem(BaseModel):
+    slot: str
+    demand: int
+    supply: int
+    gap: int
+    mismatch_ratio: float
+
+
+class AdminAvailabilityMismatchResponse(BaseModel):
+    total_demand: int
+    total_supply: int
+    items: List[AdminAvailabilityMismatchItem]
+
+
+class AdminCronRunResponse(BaseModel):
+    ok: bool
+    message: str
+    result: dict[str, Any]
+

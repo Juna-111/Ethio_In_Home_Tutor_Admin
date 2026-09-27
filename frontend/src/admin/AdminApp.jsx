@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, ArrowUpRight, BarChart3, ClipboardList, GraduationCap, LayoutDashboard, RefreshCw, ShieldCheck, UsersRound } from 'lucide-react';
+import {
+  Activity, AlertTriangle, ArrowUpRight, BarChart3, ClipboardList,
+  GraduationCap, LayoutDashboard, RefreshCw, ShieldCheck, UsersRound,
+  ShieldAlert, Download, Settings
+} from 'lucide-react';
 import { getAdminDashboard } from '../services/api';
 import CoverageBoard from './CoverageBoard.jsx';
 import IdleTutors from './IdleTutors.jsx';
 import RequestWorkbench from './RequestWorkbench.jsx';
+import TutorList from './TutorList.jsx';
+import TutorVerificationModal from './TutorVerificationModal.jsx';
+import OpsQueue from './OpsQueue.jsx';
+import AnalyticsBoard from './AnalyticsBoard.jsx';
+import ExportCenter from './ExportCenter.jsx';
+import AdminManagement from './AdminManagement.jsx';
 
 function parseStartParam(value) {
   const match = /^(tutor|request)_(\d+)$/.exec(value || '');
@@ -20,6 +30,7 @@ export default function AdminApp() {
   const [startTarget, setStartTarget] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeSection, setActiveSection] = useState('overview');
+  const [selectedTutorId, setSelectedTutorId] = useState(null);
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
@@ -28,6 +39,10 @@ export default function AdminApp() {
     const target = parseStartParam(webApp?.initDataUnsafe?.start_param);
     setStartTarget(target);
     if (target?.type === 'request') setActiveSection('requests');
+    if (target?.type === 'tutor') {
+      setActiveSection('tutors');
+      setSelectedTutorId(target.id);
+    }
 
     let active = true;
     getAdminDashboard()
@@ -60,8 +75,14 @@ export default function AdminApp() {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'requests', label: 'Requests', icon: ClipboardList },
-    { id: 'coverage', label: 'Coverage gaps', icon: BarChart3 },
-    { id: 'idle', label: 'Idle tutors', icon: UsersRound },
+    { id: 'tutors', label: 'Tutors', icon: GraduationCap },
+    { id: 'ops', label: 'Ops Queue', icon: ShieldAlert },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'coverage', label: 'Coverage', icon: UsersRound },
+    { id: 'export', label: 'Export', icon: Download },
+    ...(dashboard?.admin_role === 'super_admin' ? [
+      { id: 'admins', label: 'Settings', icon: Settings }
+    ] : []),
   ];
 
   return (
@@ -94,35 +115,27 @@ export default function AdminApp() {
           </nav>
         )}
 
-        {activeSection === 'overview' && <div className="page-heading">
-          <div>
-            <p className="eyebrow">ADMINISTRATION <span> / </span> OVERVIEW</p>
-            <h1>Operations overview</h1>
-            <p className="heading-copy">A live read on tutor supply and active demand.</p>
+        {activeSection === 'overview' && (
+          <div className="page-heading">
+            <div>
+              <p className="eyebrow">ADMINISTRATION <span> / </span> OVERVIEW</p>
+              <h1>Operations overview</h1>
+              <p className="heading-copy">A live read on tutor supply, quality verification, and active demand.</p>
+            </div>
+            <button
+              className="refresh-button"
+              type="button"
+              onClick={() => {
+                setView({ status: 'loading', message: '' });
+                setRefreshKey((key) => key + 1);
+              }}
+              disabled={view.status === 'loading'}
+              aria-label="Refresh dashboard"
+              title="Refresh dashboard"
+            >
+              <RefreshCw size={17} className={view.status === 'loading' ? 'spin' : ''} />
+            </button>
           </div>
-          <button
-            className="refresh-button"
-            type="button"
-            onClick={() => {
-              setView({ status: 'loading', message: '' });
-              setRefreshKey((key) => key + 1);
-            }}
-            disabled={view.status === 'loading'}
-            aria-label="Refresh dashboard"
-            title="Refresh dashboard"
-          >
-            <RefreshCw size={17} className={view.status === 'loading' ? 'spin' : ''} />
-          </button>
-        </div>}
-
-        {startTarget?.type === 'tutor' && activeSection === 'idle' && (
-          <aside className="deep-link-notice">
-            <span className="notice-icon"><ArrowUpRight size={18} /></span>
-            <span>
-              <strong>Tutor #{startTarget.id}</strong>
-              <small>Tutor detail and verification actions will be available in Phase 3.</small>
-            </span>
-          </aside>
         )}
 
         {view.status === 'unauthorized' ? (
@@ -175,14 +188,14 @@ export default function AdminApp() {
                     </span>
                   </div>
                   <div className="queue-list">
-                    <div className="queue-item">
+                    <div className="queue-item clickable" onClick={() => setActiveSection('tutors')}>
                       <span className="queue-icon queue-icon-coral"><GraduationCap size={18} /></span>
-                      <span className="queue-label"><strong>Tutor verification</strong><small>Profiles awaiting review</small></span>
+                      <span className="queue-label"><strong>Tutor verification</strong><small>Profiles awaiting checklist review</small></span>
                       <strong className="queue-count">{formatCount(dashboard.pending_tutors)}</strong>
                     </div>
-                    <div className="queue-item">
+                    <div className="queue-item clickable" onClick={() => setActiveSection('requests')}>
                       <span className="queue-icon queue-icon-green"><ClipboardList size={18} /></span>
-                      <span className="queue-label"><strong>Parent requests</strong><small>Students waiting for a match</small></span>
+                      <span className="queue-label"><strong>Parent requests</strong><small>Students waiting for workbench matching</small></span>
                       <strong className="queue-count">{formatCount(dashboard.pending_requests)}</strong>
                     </div>
                   </div>
@@ -193,16 +206,39 @@ export default function AdminApp() {
             {view.status === 'ready' && activeSection === 'requests' && (
               <RequestWorkbench initialRequestId={startTarget?.type === 'request' ? startTarget.id : null} />
             )}
-            {view.status === 'ready' && activeSection === 'coverage' && <CoverageBoard />}
-            {view.status === 'ready' && activeSection === 'idle' && <IdleTutors />}
+            {view.status === 'ready' && activeSection === 'tutors' && (
+              <TutorList onSelectTutor={(id) => setSelectedTutorId(id)} />
+            )}
+            {view.status === 'ready' && activeSection === 'ops' && (
+              <OpsQueue onSelectTutor={(id) => setSelectedTutorId(id)} />
+            )}
+            {view.status === 'ready' && activeSection === 'analytics' && <AnalyticsBoard />}
+            {view.status === 'ready' && activeSection === 'coverage' && (
+              <>
+                <CoverageBoard />
+                <div style={{ marginTop: '30px' }}><IdleTutors /></div>
+              </>
+            )}
+            {view.status === 'ready' && activeSection === 'export' && <ExportCenter />}
+            {view.status === 'ready' && activeSection === 'admins' && <AdminManagement />}
 
-            {view.status === 'ready' && <footer className="admin-footer">
-              <span><span className="status-dot" /> DATA CONNECTED</span>
-              <span>MENTORLINK ADMIN <i>·</i> PHASE 2</span>
-            </footer>}
+            {view.status === 'ready' && (
+              <footer className="admin-footer">
+                <span><span className="status-dot" /> LIVE DATA CONNECTED</span>
+                <span>MENTORLINK ADMIN <i>·</i> PHASE 5 (FULL CAPABILITIES)</span>
+              </footer>
+            )}
           </>
         )}
       </main>
+
+      {selectedTutorId && (
+        <TutorVerificationModal
+          tutorId={selectedTutorId}
+          onClose={() => setSelectedTutorId(null)}
+          onUpdated={() => setRefreshKey((k) => k + 1)}
+        />
+      )}
     </div>
   );
 }
