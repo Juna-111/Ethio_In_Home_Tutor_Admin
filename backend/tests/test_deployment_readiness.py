@@ -270,3 +270,99 @@ async def test_old_public_default_cron_secret_is_rejected(async_client: AsyncCli
     )
 
     assert response.status_code == 401
+
+
+# --------------------------------------------------------------------------
+# Review buttons: direct link + always-working bot fallback
+# --------------------------------------------------------------------------
+
+def _fake_bot(monkeypatch, username="MentorLinkTestBot"):
+    import app.bot.bot_instance as bot_instance
+
+    fake_app = MagicMock()
+    fake_app.bot.username = username
+    monkeypatch.setattr(bot_instance, "bot_app", fake_app)
+    return bot_instance
+
+
+def test_review_buttons_both_mode_gives_direct_and_bot_links(monkeypatch):
+    bi = _fake_bot(monkeypatch)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkTestBot/admin")
+    monkeypatch.setattr(settings, "ADMIN_REVIEW_LINK_MODE", "both")
+
+    buttons = bi.get_admin_review_buttons("tutor_5")
+
+    assert [b.text for b in buttons] == ["Review in App", "Open via bot"]
+    assert buttons[0].url == "https://t.me/MentorLinkTestBot/admin?startapp=tutor_5"
+    assert buttons[1].url == "https://t.me/MentorLinkTestBot?start=review_tutor_5"
+
+
+def test_review_buttons_bot_mode_only_uses_bot_link(monkeypatch):
+    bi = _fake_bot(monkeypatch)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkTestBot/admin")
+    monkeypatch.setattr(settings, "ADMIN_REVIEW_LINK_MODE", "bot")
+
+    buttons = bi.get_admin_review_buttons("request_7")
+
+    assert [b.text for b in buttons] == ["Review in App"]
+    assert buttons[0].url == "https://t.me/MentorLinkTestBot?start=review_request_7"
+
+
+def test_review_buttons_fall_back_to_bot_link_when_direct_link_unavailable(monkeypatch):
+    bi = _fake_bot(monkeypatch)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://my-app.vercel.app")
+    monkeypatch.setattr(settings, "ADMIN_MINI_APP_SHORT_NAME", None)
+    monkeypatch.setattr(settings, "ADMIN_REVIEW_LINK_MODE", "direct")
+
+    buttons = bi.get_admin_review_buttons("tutor_1")
+
+    assert [b.text for b in buttons] == ["Review in App"]
+    assert buttons[0].url.startswith("https://t.me/MentorLinkTestBot?start=review_")
+
+
+def test_review_buttons_ignore_uninitialised_bot(monkeypatch):
+    import app.bot.bot_instance as bi
+
+    monkeypatch.setattr(bi, "bot_app", None)
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkTestBot/admin")
+    monkeypatch.setattr(settings, "ADMIN_REVIEW_LINK_MODE", "both")
+
+    assert [b.text for b in bi.get_admin_review_buttons("tutor_2")] == ["Review in App"]
+
+
+@pytest.mark.asyncio
+async def test_start_review_payload_gives_admin_a_web_app_button(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.bot import handlers as bh
+
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", 4242)
+    monkeypatch.setattr(settings, "WEBAPP_URL", "https://admin-app.vercel.app")
+    update = MagicMock()
+    update.effective_user.id = 4242
+    update.message.reply_text = AsyncMock()
+
+    assert await bh._handle_review_deeplink(update, "tutor_12") is True
+
+    markup = update.message.reply_text.await_args.kwargs["reply_markup"]
+    button = markup.inline_keyboard[0][0]
+    assert button.web_app.url == "https://admin-app.vercel.app/admin.html?start=tutor_12"
+
+
+@pytest.mark.asyncio
+async def test_start_review_payload_refuses_non_admins_and_bad_payloads(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.bot import handlers as bh
+
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", 4242)
+    monkeypatch.setattr(settings, "WEBAPP_URL", "https://admin-app.vercel.app")
+    update = MagicMock()
+    update.effective_user.id = 999
+    update.message.reply_text = AsyncMock()
+
+    assert await bh._handle_review_deeplink(update, "tutor_12") is True
+    assert "only for MentorLink admins" in update.message.reply_text.await_args.args[0]
+    assert "reply_markup" not in update.message.reply_text.await_args.kwargs
+
+    update.message.reply_text.reset_mock()
+    assert await bh._handle_review_deeplink(update, "tutor_1;drop") is False
+    update.message.reply_text.assert_not_awaited()

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     WEBAPP_URL: Optional[str] = None
     MINI_APP_URL: Optional[str] = None
     ADMIN_MINI_APP_SHORT_NAME: Optional[str] = None
+    # How "Review in App" buttons open the admin app: "direct" (t.me/<bot>/<app>?startapp=),
+    # "bot" (t.me/<bot>?start=review_..., the bot replies with a Mini App button; always works),
+    # or "both" (two buttons; default). Direct links can be resolved by Telegram to the bot chat.
+    ADMIN_REVIEW_LINK_MODE: str = "both"
     CORS_EXTRA_ORIGINS: Optional[str] = None
     ENVIRONMENT: str = "development"
     ALLOW_UNVERIFIED_WEB_PREVIEW: bool = False

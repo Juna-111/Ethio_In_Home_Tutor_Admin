@@ -270,6 +270,28 @@ def get_clean_chat_id(chat_id: int | str) -> str:
 _review_url_warning_logged = False
 
 
+def _bot_username() -> Optional[str]:
+    """Username of the running bot, or None if it is not initialised."""
+    if bot_app is None:
+        return None
+    try:
+        username = bot_app.bot.username
+    except Exception:
+        return None
+    return username.lstrip("@") if isinstance(username, str) and username else None
+
+
+REVIEW_PAYLOAD_PREFIX = "review_"
+
+
+def get_admin_review_bot_url(start_param: str) -> Optional[str]:
+    """Bot deep link (t.me/<bot>?start=review_<param>). Needs no BotFather app registration."""
+    username = _bot_username()
+    if not username:
+        return None
+    return f"https://t.me/{username}?start={REVIEW_PAYLOAD_PREFIX}{start_param}"
+
+
 def _resolve_mini_app_base_url() -> Optional[str]:
     """Return the ``https://t.me/<bot>/<short_name>`` base for Mini App deep links.
 
@@ -284,12 +306,7 @@ def _resolve_mini_app_base_url() -> Optional[str]:
         return mini_app_url
 
     short_name = (settings.ADMIN_MINI_APP_SHORT_NAME or "").strip().strip("/")
-    username = None
-    if bot_app is not None:
-        try:
-            username = (bot_app.bot.username or "").lstrip("@")
-        except Exception:
-            username = None
+    username = _bot_username()
     if username and short_name:
         return f"https://t.me/{username}/{short_name}"
     return None
@@ -313,6 +330,23 @@ def get_admin_review_url(start_param: str) -> Optional[str]:
     query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "startapp"]
     query.append(("startapp", start_param))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
+def get_admin_review_buttons(start_param: str) -> list:
+    """Buttons that open the admin app for a record, per ADMIN_REVIEW_LINK_MODE.
+
+    A direct Mini App link can be resolved by Telegram to the bot chat instead of the app, so by
+    default a second button goes through the bot, which replies with a real Mini App button.
+    """
+    mode = (settings.ADMIN_REVIEW_LINK_MODE or "both").strip().lower()
+    direct = get_admin_review_url(start_param) if mode in ("direct", "both") else None
+    via_bot = get_admin_review_bot_url(start_param) if (mode in ("bot", "both") or not direct) else None
+    buttons = []
+    if direct:
+        buttons.append(InlineKeyboardButton("Review in App", url=direct))
+    if via_bot:
+        buttons.append(InlineKeyboardButton("Open via bot" if direct else "Review in App", url=via_bot))
+    return buttons
 
 
 def check_review_link_config() -> None:
@@ -346,9 +380,9 @@ def check_review_link_config() -> None:
 def build_parent_request_keyboard(request_id: int) -> InlineKeyboardMarkup:
     """Builds inline keyboard for dedicated parent request management topic."""
     buttons = []
-    review_url = get_admin_review_url(f"request_{request_id}")
-    if review_url:
-        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    review_buttons = get_admin_review_buttons(f"request_{request_id}")
+    if review_buttons:
+        buttons.append(review_buttons)
     buttons.append([
         InlineKeyboardButton("🔍 Match Radar", callback_data=f"match_parent:{request_id}"),
         InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{request_id}"),
@@ -361,9 +395,7 @@ def build_parent_index_keyboard(request_id: int, topic_url: Optional[str] = None
     row = []
     if topic_url:
         row.append(InlineKeyboardButton("🔗 Open Workspace", url=topic_url))
-    review_url = get_admin_review_url(f"request_{request_id}")
-    if review_url:
-        row.append(InlineKeyboardButton("Review in App", url=review_url))
+    row.extend(get_admin_review_buttons(f"request_{request_id}"))
     return InlineKeyboardMarkup([row] if row else [])
 
 
@@ -372,9 +404,9 @@ def build_tutor_registration_keyboard(tutor_id: int, has_doc: bool = False) -> I
     buttons = []
     if has_doc:
         buttons.append([InlineKeyboardButton("📎 View Document", callback_data=f"view_doc:{tutor_id}")])
-    review_url = get_admin_review_url(f"tutor_{tutor_id}")
-    if review_url:
-        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    review_buttons = get_admin_review_buttons(f"tutor_{tutor_id}")
+    if review_buttons:
+        buttons.append(review_buttons)
     return InlineKeyboardMarkup(buttons)
 
 

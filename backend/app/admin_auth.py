@@ -26,6 +26,17 @@ class AdminPrincipal:
     role: str
 
 
+async def resolve_admin_role(db: AsyncSession, telegram_user_id: int) -> Optional[str]:
+    """Single source of truth for who may use the admin Mini App (API and bot deep links)."""
+    # The configured bootstrap owner exists before a database admin record can.
+    if settings.SUPER_ADMIN_ID is not None and telegram_user_id == settings.SUPER_ADMIN_ID:
+        return SUPER_ADMIN_ROLE
+    admin_user = await db.get(AdminUser, telegram_user_id)
+    if admin_user and admin_user.is_active:
+        return _normalize_role(admin_user.role)
+    return None
+
+
 async def require_admin(
     telegram_user_id: Optional[int] = Depends(get_current_telegram_user),
     db: AsyncSession = Depends(get_db),
@@ -36,14 +47,10 @@ async def require_admin(
             detail="Telegram Mini App authentication is required.",
         )
 
-    if settings.SUPER_ADMIN_ID is not None and telegram_user_id == settings.SUPER_ADMIN_ID:
-        return AdminPrincipal(telegram_id=telegram_user_id, role=SUPER_ADMIN_ROLE)
-
-    admin_user = await db.get(AdminUser, telegram_user_id)
-    if not admin_user or not admin_user.is_active:
+    role = await resolve_admin_role(db, telegram_user_id)
+    if role is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
 
-    role = _normalize_role(admin_user.role)
     return AdminPrincipal(telegram_id=telegram_user_id, role=role)
 
 

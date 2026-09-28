@@ -171,8 +171,9 @@ Configure these environment variables in your deployment dashboard:
 | `PARENT_REQUESTS_TOPIC_ID` | No | Auto | Forum topic thread ID for parent requests. Leave empty for automatic creation. | `2` |
 | `TUTOR_REGISTRATION_TOPIC_ID` | No | Auto | Forum topic thread ID for tutor profiles. Leave empty for automatic creation. | `4` |
 | `WEBAPP_URL` | **Yes** | — | Public HTTPS URL of the hosted frontend (Vercel). Used for validating Telegram `initData`. | `https://mentorlink-app.vercel.app` |
-| `MINI_APP_URL` | **Yes** | — | Direct Telegram link to the main bot Mini App. | `https://t.me/MentorLinkProdBot/app` |
-| `ENVIRONMENT` | **Yes** | `production` | Environment mode (`production` enforces strict security & disables preview auth bypass). | `production` |
+| `MINI_APP_URL` | **Yes** | — | Direct Telegram link to the **Admin** Mini App you registered in step 2.2-B (same short name). "Review in App" buttons are built from it. Do **not** use the intake app's link or the Vercel URL. | `https://t.me/MentorLinkProdBot/admin` |
+| `ADMIN_REVIEW_LINK_MODE` | No | `both` | `direct`, `bot` or `both`. `both` adds an **Open via bot** button next to **Review in App**; it goes through the bot chat and always opens the app, even if Telegram resolves the direct link to the bot. | `both` |
+| `ENVIRONMENT` | **Yes** | `development` | Environment mode. **The code default is `development`, so set it to `production` explicitly.** In `development` the app creates tables itself at startup (`create_all`), which conflicts with Alembic migrations, and allows localhost origins. | `production` |
 | `ALLOW_UNVERIFIED_WEB_PREVIEW` | **Yes** | `false` | Must be `false` in production. Setting to `true` is blocked by validation when `ENVIRONMENT=production`. | `false` |
 | `CRON_SECRET` | **Yes** | — | Secret token required to authenticate external triggers to `POST /api/v1/admin/cron/run`. | `cron_ml_prod_9876543210_secret` |
 

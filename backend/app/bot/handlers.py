@@ -304,10 +304,50 @@ def _replace_card_header(text: str, new_header_html: str) -> str:
     return new_header_html + "\n" + "\n".join(remaining_lines)
 
 
+async def _handle_review_deeplink(update: Update, param: str) -> bool:
+    """Handle /start review_<tutor|request>_<id> by replying with a real Mini App button.
+
+    Fallback for direct-link Mini Apps, which Telegram can resolve to the bot chat instead of the
+    app. An inline web_app button in a private chat always launches the app.
+    """
+    import re as _re
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    from app.admin_auth import resolve_admin_role
+
+    message = update.message or update.effective_message
+    user = update.effective_user
+    match = _re.fullmatch(r"(tutor|request)_(\d{1,12})", param or "")
+    if not message or not user or not match:
+        return False
+    async with AsyncSessionLocal() as session:
+        role = await resolve_admin_role(session, user.id)
+    if role is None:
+        await message.reply_text("This review link is only for MentorLink admins.")
+        return True
+    base = _get_webapp_url()
+    if not base:
+        await message.reply_text("The admin app is not configured yet (WEBAPP_URL is missing).")
+        return True
+    kind, ident = match.group(1), match.group(2)
+    url = f"{base.rstrip('/')}/admin.html?start={kind}_{ident}"
+    await message.reply_text(
+        f"Open {kind} #{ident} in the admin console:",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔍 Open in Admin App", web_app=WebAppInfo(url=url))]]
+        ),
+    )
+    return True
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Replies to /start command with role-appropriate keyboard."""
     message = update.message or update.effective_message
     if not message:
+        return
+
+    args = getattr(context, "args", None) if context is not None else None
+    payload = args[0] if isinstance(args, list) and args and isinstance(args[0], str) else None
+    if payload and payload.startswith("review_") and await _handle_review_deeplink(update, payload[len("review_"):]):
         return
 
     # Super Admin private console

@@ -38,7 +38,9 @@ export default function AdminApp() {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready();
     webApp?.expand();
-    const target = parseStartParam(webApp?.initDataUnsafe?.start_param);
+    const target = parseStartParam(
+      webApp?.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('start')
+    );
     setStartTarget(target);
     if (target?.type === 'request') setActiveSection('requests');
     if (target?.type === 'tutor') {
