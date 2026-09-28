@@ -1,26 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Trash2, Loader2 } from 'lucide-react';
+import { UserPlus, Trash2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAdminUsers, createAdminUser, deleteAdminUser, getAdminAuditLog } from '../services/api';
+
+const AUDIT_PAGE_SIZE = 20;
 
 export default function AdminManagement() {
   const [admins, setAdmins] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPage, setAuditPage] = useState(1);
   const [activeTab, setActiveTab] = useState('admins');
   const [newTelegramId, setNewTelegramId] = useState('');
   const [newRole, setNewRole] = useState('verifier');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = () => {
+  const loadData = (page = auditPage) => {
     setLoading(true);
     setError(null);
     Promise.all([
       getAdminUsers().catch((err) => ({ items: [], error: err })),
-      getAdminAuditLog({ page: 1, page_size: 50 }).catch((err) => ({ items: [], error: err })),
+      getAdminAuditLog({ page, page_size: AUDIT_PAGE_SIZE }).catch((err) => ({ items: [], total: 0, error: err })),
     ])
       .then(([adminsData, auditData]) => {
         setAdmins(adminsData.items || []);
         setAuditLogs(auditData.items || []);
+        setAuditTotal(auditData.total || 0);
         setLoading(false);
       })
       .catch((err) => {
@@ -30,8 +35,14 @@ export default function AdminManagement() {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(1);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'audit') loadData(auditPage);
+  }, [auditPage]);
+
+  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
 
   const handleAddAdmin = async (e) => {
     e.preventDefault();
@@ -71,7 +82,7 @@ export default function AdminManagement() {
             className={activeTab === 'audit' ? 'pill-active' : 'pill'}
             onClick={() => setActiveTab('audit')}
           >
-            Audit Trail ({auditLogs.length})
+            Audit Trail ({auditTotal})
           </button>
         </div>
       </div>
@@ -134,6 +145,7 @@ export default function AdminManagement() {
           </div>
         </div>
       ) : (
+        <>
         <div className="table-scroll">
         <table className="admin-table">
           <thead>
@@ -162,6 +174,15 @@ export default function AdminManagement() {
           </tbody>
         </table>
         </div>
+        <div className="pagination-row">
+          <span>{auditTotal ? `${(auditPage - 1) * AUDIT_PAGE_SIZE + 1}–${Math.min(auditPage * AUDIT_PAGE_SIZE, auditTotal)} of ${auditTotal}` : '0 entries'}</span>
+          <div>
+            <button className="icon-button" type="button" aria-label="Previous page" disabled={auditPage <= 1} onClick={() => setAuditPage((p) => p - 1)}><ChevronLeft size={16} /></button>
+            <span>Page {auditPage} / {auditTotalPages}</span>
+            <button className="icon-button" type="button" aria-label="Next page" disabled={auditPage >= auditTotalPages} onClick={() => setAuditPage((p) => p + 1)}><ChevronRight size={16} /></button>
+          </div>
+        </div>
+        </>
       )}
     </div>
   );

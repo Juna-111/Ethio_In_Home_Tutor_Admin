@@ -268,6 +268,119 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
 
 
 @pytest.mark.asyncio
+async def test_admin_assignment_notifies_parent_and_tutor(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """Regression test: assign() must DM both sides with each other's contact info."""
+    bot_token = "123456:admin-test-token"
+    admin_id = 700107
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+    import app.bot.bot_instance as bot_instance
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    monkeypatch.setattr(bot_instance, "bot_app", MagicMock(bot=mock_bot))
+
+    parent = _parent_request("Notify Parent")
+    parent.telegram_user_id = 900001
+    tutor = _tutor("Notify Tutor", status="verified")
+    tutor.telegram_user_id = 900002
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
+    await db_session.flush()
+    db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    await db_session.commit()
+
+    response = await async_client.post(
+        f"/api/v1/admin/requests/{parent.id}/assign",
+        json={"tutor_id": tutor.id},
+        headers=_telegram_auth_header(admin_id, bot_token),
+    )
+
+    assert response.status_code == 200
+    assert mock_bot.send_message.await_count == 2
+    calls = mock_bot.send_message.await_args_list
+    recipients = {c.kwargs["chat_id"] for c in calls}
+    assert recipients == {parent.telegram_user_id, tutor.telegram_user_id}
+
+    parent_call = next(c for c in calls if c.kwargs["chat_id"] == parent.telegram_user_id)
+    tutor_call = next(c for c in calls if c.kwargs["chat_id"] == tutor.telegram_user_id)
+    assert "Notify Tutor" in parent_call.kwargs["text"]
+    assert tutor.phone_number in parent_call.kwargs["text"]
+    assert "Notify Parent" in tutor_call.kwargs["text"]
+    assert parent.phone_number in tutor_call.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_admin_assignment_notification_failure_does_not_break_assignment(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """If the Telegram DM fails (e.g. user blocked the bot), the assignment itself must still succeed."""
+    bot_token = "123456:admin-test-token"
+    admin_id = 700108
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+    import app.bot.bot_instance as bot_instance
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock(side_effect=Exception("Forbidden: bot was blocked by the user"))
+    monkeypatch.setattr(bot_instance, "bot_app", MagicMock(bot=mock_bot))
+
+    parent = _parent_request("Blocked Parent")
+    parent.telegram_user_id = 900003
+    tutor = _tutor("Blocked Tutor", status="verified")
+    tutor.telegram_user_id = 900004
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
+    await db_session.flush()
+    db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    await db_session.commit()
+
+    response = await async_client.post(
+        f"/api/v1/admin/requests/{parent.id}/assign",
+        json={"tutor_id": tutor.id},
+        headers=_telegram_auth_header(admin_id, bot_token),
+    )
+
+    assert response.status_code == 200
+    assignments = (await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))).scalars().all()
+    assert len(assignments) == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_tutor_search_matches_name_and_phone(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    bot_token = "123456:admin-test-token"
+    admin_id = 700110
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+    target = _tutor("Bethlehem Girma", status="verified")
+    target.phone_number = "+251911223344"
+    other = _tutor("Samuel Wolde", status="verified")
+    other.phone_number = "+251955667788"
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="admin", is_active=True), target, other])
+    await db_session.commit()
+    headers = _telegram_auth_header(admin_id, bot_token)
+
+    by_name = await async_client.get("/api/v1/admin/tutors?search=bethlehem", headers=headers)
+    assert by_name.status_code == 200
+    names = [item["full_name"] for item in by_name.json()["items"]]
+    assert names == ["Bethlehem Girma"]
+
+    by_phone = await async_client.get("/api/v1/admin/tutors?search=955667788", headers=headers)
+    assert by_phone.status_code == 200
+    names = [item["full_name"] for item in by_phone.json()["items"]]
+    assert names == ["Samuel Wolde"]
+
+
+@pytest.mark.asyncio
 async def test_admin_coverage_gap_ratio_matches_seeded_counts(
     async_client: AsyncClient,
     db_session: AsyncSession,

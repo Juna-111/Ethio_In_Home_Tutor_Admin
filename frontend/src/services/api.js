@@ -85,7 +85,42 @@ export function getAuthHeaders() {
   return headers;
 }
 
+function describeApiHost(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch (_) {
+    return baseUrl;
+  }
+}
+
+function currentOrigin() {
+  try {
+    return window.location.origin;
+  } catch (_) {
+    return "";
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Public request helper. Idempotent reads (GET) get one automatic retry on a
+ * network-level failure, which smooths over cold starts and brief connection drops.
+ * Writes are never retried automatically, to avoid double-submitting an action.
+ */
 async function request(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  try {
+    return await requestOnce(path, options);
+  } catch (err) {
+    const retryable = method === "GET" && (err.code === "NETWORK" || err.code === "TIMEOUT");
+    if (!retryable) throw err;
+    await sleep(1500);
+    return requestOnce(path, options);
+  }
+}
+
+async function requestOnce(path, options = {}) {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}${path}`;
 
@@ -134,10 +169,24 @@ async function request(path, options = {}) {
   } catch (err) {
     clearTimeout(timer);
     if (err.name === "AbortError") {
-      throw new Error("Request timed out (15s). Please check your internet connection and try again.");
+      const timeoutError = new Error(
+        "The MentorLink server took too long to respond (15s). It may be waking up - please try again in a moment."
+      );
+      timeoutError.code = "TIMEOUT";
+      throw timeoutError;
     }
-    if (err.message && err.message.includes("Failed to fetch")) {
-      throw new Error("Network connection error. Could not connect to the MentorLink server.");
+    // fetch() rejects with a TypeError for every network-level failure, but the message
+    // differs per browser ("Failed to fetch" / "Load failed" / "NetworkError ..."), so
+    // match on the error type rather than its wording. A CORS rejection looks identical.
+    if (err instanceof TypeError) {
+      const networkError = new Error(
+        `Could not reach the MentorLink server (${describeApiHost(baseUrl)}). ` +
+        "It may be starting up - try again in a few seconds. If this keeps happening, " +
+        `the server may be down or not allowing this app's address (${currentOrigin() || "unknown origin"}).`
+      );
+      networkError.code = "NETWORK";
+      networkError.apiHost = describeApiHost(baseUrl);
+      throw networkError;
     }
     throw err;
   }

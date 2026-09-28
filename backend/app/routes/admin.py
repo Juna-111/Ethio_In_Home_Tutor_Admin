@@ -1,6 +1,8 @@
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta, timezone
+import hmac
 import html
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -70,6 +72,7 @@ from app.services.matcher import get_tiered_matches
 from app.services.scheduler import claim_event, run_all_scheduled_tasks
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+logger = logging.getLogger("mentorlink.routes.admin")
 
 
 @router.get("/dashboard", response_model=AdminDashboardResponse, summary="Admin dashboard counts")
@@ -365,8 +368,11 @@ async def assign_admin_request(
                           f"Contact: {html.escape(tutor.phone_number)}"),
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to DM parent %s on assignment for request #%s: %s",
+                    parent.telegram_user_id, request_id, exc,
+                )
         if tutor.telegram_user_id:
             try:
                 await bot.send_message(
@@ -375,8 +381,16 @@ async def assign_admin_request(
                           f"Contact: {html.escape(parent.phone_number)}"),
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to DM tutor %s on assignment for request #%s: %s",
+                    tutor.telegram_user_id, request_id, exc,
+                )
+    else:
+        logger.warning(
+            "Bot app not running; assignment notifications skipped for request #%s (tutor #%s).",
+            request_id, tutor_id,
+        )
     return AdminActionResponse(ok=True, message="Tutor assigned successfully.")
 
 
@@ -681,6 +695,7 @@ async def get_admin_tutor_scorecard(
 @router.get("/tutors", response_model=AdminTutorListResponse, summary="List tutors")
 async def list_admin_tutors(
     tutor_status: Optional[str] = Query(None, alias="status", max_length=50),
+    search: Optional[str] = Query(None, max_length=100, description="Match against tutor name or phone number"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _admin: AdminPrincipal = Depends(require_admin),
@@ -691,6 +706,11 @@ async def list_admin_tutors(
     filters = []
     if tutor_status:
         filters.append(Tutor.status == tutor_status)
+    if search:
+        needle = f"%{search.strip()}%"
+        filters.append(
+            (Tutor.full_name.ilike(needle)) | (Tutor.phone_number.ilike(needle))
+        )
     if filters:
         query = query.where(*filters)
         count_query = count_query.where(*filters)
@@ -1122,11 +1142,15 @@ async def run_cron_endpoint(
     expected_secret = settings.CRON_SECRET
 
     if expected_secret:
-        if x_cron_secret == expected_secret:
+        if x_cron_secret and hmac.compare_digest(x_cron_secret, expected_secret):
             is_authenticated = True
         elif authorization:
             parts = authorization.split()
-            if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1] == expected_secret:
+            if (
+                len(parts) == 2
+                and parts[0].lower() == "bearer"
+                and hmac.compare_digest(parts[1], expected_secret)
+            ):
                 is_authenticated = True
 
     if not is_authenticated:

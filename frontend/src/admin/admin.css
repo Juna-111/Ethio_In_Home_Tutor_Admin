@@ -344,6 +344,29 @@ button, a { font: inherit; }
   margin-bottom: 20px;
 }
 
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  min-width: 220px;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  background: transparent;
+}
+.search-field input::placeholder { color: var(--muted); }
+
 .status-pill-group {
   display: flex;
   gap: 8px;
@@ -744,6 +767,42 @@ button, a { font: inherit; }
 .delete-btn { border: none; background: transparent; color: #dc2626; cursor: pointer; padding: 4px; }
 .delete-btn:hover { background: #fee2e2; border-radius: 4px; }
 
+.pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding: 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+}
+.pagination-row > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+}
+.icon-button {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--pine);
+  cursor: pointer;
+}
+.icon-button:disabled {
+  color: #a9b4ad;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.icon-button:not(:disabled):hover {
+  background: #e8f0e9;
+}
+
 /* ========================================================
    Mobile fixes for Phase 3, 4, 5 screens (Tutors, Verification
    modal, Ops Queue, Analytics, Export Center, Admin Management).
@@ -761,6 +820,7 @@ button, a { font: inherit; }
     align-items: flex-start;
   }
   .status-pill-group { width: 100%; }
+  .search-field { width: 100%; min-width: 0; }
 
   .admin-table { font-size: 12px; }
   .admin-table th, .admin-table td { padding: 9px 10px; white-space: nowrap; }

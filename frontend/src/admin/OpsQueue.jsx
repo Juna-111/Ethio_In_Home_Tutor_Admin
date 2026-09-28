@@ -1,26 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Loader2 } from 'lucide-react';
+import { Play, Loader2, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { getAdminFlags, getAdminIncidents, updateAdminIncident, runAdminCron } from '../services/api';
+
+const INCIDENT_PAGE_SIZE = 20;
 
 export default function OpsQueue({ onSelectTutor }) {
   const [flags, setFlags] = useState([]);
   const [incidents, setIncidents] = useState([]);
+  const [incidentTotal, setIncidentTotal] = useState(0);
+  const [incidentPage, setIncidentPage] = useState(1);
   const [activeTab, setActiveTab] = useState('flags');
   const [loading, setLoading] = useState(true);
   const [cronRunning, setCronRunning] = useState(false);
   const [cronResult, setCronResult] = useState(null);
   const [error, setError] = useState(null);
 
-  const loadData = () => {
+  const loadData = (page = incidentPage) => {
     setLoading(true);
     setError(null);
+    // Surface real failures instead of silently rendering "nothing found":
+    // an empty list caused by a network/auth error looks identical to a
+    // genuinely empty queue, which hides problems from the admin.
     Promise.all([
-      getAdminFlags().catch(() => []),
-      getAdminIncidents({ page: 1, page_size: 50 }).catch(() => ({ items: [] })),
+      getAdminFlags(),
+      getAdminIncidents({ page, page_size: INCIDENT_PAGE_SIZE }),
     ])
       .then(([flagsData, incidentsData]) => {
         setFlags(flagsData || []);
         setIncidents(incidentsData.items || []);
+        setIncidentTotal(incidentsData.total || 0);
         setLoading(false);
       })
       .catch((err) => {
@@ -30,8 +38,14 @@ export default function OpsQueue({ onSelectTutor }) {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(1);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'incidents') loadData(incidentPage);
+  }, [incidentPage]);
+
+  const incidentTotalPages = Math.max(1, Math.ceil(incidentTotal / INCIDENT_PAGE_SIZE));
 
   const handleResolveIncident = async (incidentId) => {
     try {
@@ -74,7 +88,7 @@ export default function OpsQueue({ onSelectTutor }) {
             className={activeTab === 'incidents' ? 'pill-active' : 'pill'}
             onClick={() => setActiveTab('incidents')}
           >
-            Incidents ({incidents.length})
+            Incidents ({incidentTotal})
           </button>
         </div>
 
@@ -97,6 +111,8 @@ export default function OpsQueue({ onSelectTutor }) {
 
       {loading ? (
         <div className="loading-state"><Loader2 className="spin" size={24} /><span>Loading operations queue...</span></div>
+      ) : error ? (
+        <div className="error-state"><AlertCircle size={20} /><span>{error}</span></div>
       ) : activeTab === 'flags' ? (
         flags.length === 0 ? (
           <div className="empty-state">No active red flags detected across tutor profiles!</div>
@@ -137,6 +153,7 @@ export default function OpsQueue({ onSelectTutor }) {
       ) : incidents.length === 0 ? (
         <div className="empty-state">No incidents logged.</div>
       ) : (
+        <>
         <div className="table-scroll">
         <table className="admin-table">
           <thead>
@@ -183,6 +200,15 @@ export default function OpsQueue({ onSelectTutor }) {
           </tbody>
         </table>
         </div>
+        <div className="pagination-row">
+          <span>{incidentTotal ? `${(incidentPage - 1) * INCIDENT_PAGE_SIZE + 1}–${Math.min(incidentPage * INCIDENT_PAGE_SIZE, incidentTotal)} of ${incidentTotal}` : '0 incidents'}</span>
+          <div>
+            <button className="icon-button" type="button" aria-label="Previous page" disabled={incidentPage <= 1} onClick={() => setIncidentPage((p) => p - 1)}><ChevronLeft size={16} /></button>
+            <span>Page {incidentPage} / {incidentTotalPages}</span>
+            <button className="icon-button" type="button" aria-label="Next page" disabled={incidentPage >= incidentTotalPages} onClick={() => setIncidentPage((p) => p + 1)}><ChevronRight size={16} /></button>
+          </div>
+        </div>
+        </>
       )}
     </div>
   );
