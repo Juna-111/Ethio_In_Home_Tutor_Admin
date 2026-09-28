@@ -5,7 +5,9 @@ export const TRANSLATIONS = {
     webPreview: "Web Preview",
     tabs: {
       findTutor: "Find a Tutor",
+      myRequests: "My Requests",
       becomeTutor: "Become a Tutor",
+      myAssignments: "My Assignments",
     },
     parentForm: {
       sectionContact: "Contact Details",
@@ -126,7 +128,9 @@ export const TRANSLATIONS = {
     webPreview: "ገጽ",
     tabs: {
       findTutor: "አስጠኚ ፈልግ",
+      myRequests: "የእኔ ጥያቄዎች",
       becomeTutor: "አስጠኚ ሁን",
+      myAssignments: "የማስተምራቸው",
     },
     parentForm: {
       sectionContact: "የግንኙነት መረጃ",

@@ -11,7 +11,7 @@ export default function AdminManagement() {
   const [auditPage, setAuditPage] = useState(1);
   const [activeTab, setActiveTab] = useState('admins');
   const [newTelegramId, setNewTelegramId] = useState('');
-  const [newRole, setNewRole] = useState('verifier');
+  const [newRole, setNewRole] = useState('admin');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -102,9 +102,7 @@ export default function AdminManagement() {
               required
             />
             <select value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-              <option value="verifier">Verifier</option>
-              <option value="matcher">Matcher</option>
-              <option value="admin">General Admin</option>
+              <option value="admin">Admin</option>
               <option value="super_admin">Super Admin</option>
             </select>
             <button className="btn-primary" type="submit">

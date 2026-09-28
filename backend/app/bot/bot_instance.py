@@ -191,6 +191,67 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
     )
 
 
+def format_assignment_card_tutor(parent_req, tutor, assignment_id: Optional[int] = None) -> str:
+    """Renders the Blockquote Terminal Data Card for tutor assignment notification."""
+    asmt_tag = f" | ASMT-{assignment_id:04d}" if assignment_id else ""
+    req_tag = f"REQ-{parent_req.id:04d}"
+    landmark_part = f" ({html.escape(parent_req.location_landmark)})" if getattr(parent_req, "location_landmark", None) else ""
+    schedule_days_str = format_schedule(parent_req.schedule_days)
+    time_slot_str = html.escape(str(parent_req.time_slot))
+    duration_str = html.escape(str(parent_req.session_duration))
+    timing_str = f"{schedule_days_str} | {time_slot_str} ({duration_str})"
+    subjects_str = format_subjects(parent_req.subjects)
+    review_url = get_admin_review_url(f"request_{parent_req.id}") or ""
+    review_link_html = f'\n\n<a href="{review_url}">Review in App</a>' if review_url else ""
+
+    return (
+        f"<b>TUTORING ASSIGNMENT{asmt_tag}</b>\n\n"
+        f"<b>STUDENT & PARENT DETAILS</b> ({req_tag})\n"
+        f"<blockquote><b>Parent:</b> {html.escape(parent_req.parent_name)}\n"
+        f"<b>Student Level:</b> {html.escape(parent_req.student_level)}\n"
+        f"<b>Phone:</b> <code>{html.escape(parent_req.phone_number)}</code></blockquote>\n\n"
+        "<b>REQUIREMENTS</b>\n"
+        f"<blockquote><b>Subjects:</b> {subjects_str}\n"
+        f"<b>Location:</b> {html.escape(parent_req.location_subcity)}{landmark_part}</blockquote>\n\n"
+        "<b>SCHEDULE & BUDGET</b>\n"
+        f"<blockquote><b>Schedule:</b> {timing_str}\n"
+        f"<b>Budget:</b> {parent_req.budget_etb:,.2f} ETB/hr</blockquote>"
+        f"{review_link_html}"
+    )
+
+
+def format_assignment_card_parent(parent_req, tutor, assignment_id: Optional[int] = None) -> str:
+    """Renders the Blockquote Terminal Data Card for parent assignment notification."""
+    asmt_tag = f" | ASMT-{assignment_id:04d}" if assignment_id else ""
+    req_tag = f"REQ-{parent_req.id:04d}"
+    subjects_str = format_subjects(tutor.subjects_qualified)
+    years_exp = f"{tutor.years_of_experience:g}"
+    review_url = get_admin_review_url(f"request_{parent_req.id}") or ""
+    review_link_html = f'\n\n<a href="{review_url}">Review in App</a>' if review_url else ""
+
+    coverage_areas = tutor.coverage_areas if isinstance(tutor.coverage_areas, list) else [str(tutor.coverage_areas)]
+    if len(coverage_areas) > 2:
+        coverage_summary = f"+{len(coverage_areas) - 1} Sub-cities"
+    else:
+        coverage_summary = ", ".join(html.escape(str(c)) for c in coverage_areas)
+
+    return (
+        f"<b>ASSIGNED MENTOR DETAILS{asmt_tag}</b>\n\n"
+        f"<b>MENTOR PROFILE</b> ({req_tag})\n"
+        f"<blockquote><b>Name:</b> {html.escape(tutor.full_name)}\n"
+        f"<b>Phone:</b> <code>{html.escape(tutor.phone_number)}</code>\n"
+        f"<b>Experience:</b> {years_exp} years</blockquote>\n\n"
+        "<b>ACADEMIC BACKGROUND</b>\n"
+        f"<blockquote><b>University:</b> {html.escape(tutor.university)}\n"
+        f"<b>Department:</b> {html.escape(tutor.department)}\n"
+        f"<b>Education:</b> {html.escape(tutor.education_year)}</blockquote>\n\n"
+        "<b>TEACHING & LOCATION</b>\n"
+        f"<blockquote><b>Subjects:</b> {subjects_str}\n"
+        f"<b>Base Subcity:</b> {html.escape(tutor.base_subcity)} ({coverage_summary})</blockquote>"
+        f"{review_link_html}"
+    )
+
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.models import ParentRequest
@@ -263,22 +324,76 @@ def check_review_link_config() -> None:
     """
     sample = get_admin_review_url("tutor_1")
     if not sample:
+        logger.warning("[TMA WARNING] Admin review URL could not be generated. Check MINI_APP_URL.")
         return  # get_admin_review_url already logged why
     segments = [part for part in urlsplit(sample).path.split("/") if part]
-    logger.info("'Review in App' links will look like: %s", sample)
     if len(segments) < 2:
         logger.warning(
-            "MINI_APP_URL has no Mini App short name (%s). Such a link only opens an app if the bot's "
+            "[TMA WARNING] MINI_APP_URL has no Mini App short name (%s). Such a link only opens an app if the bot's "
             "*Main* Mini App is configured; otherwise it opens the bot chat. Use the direct link of the "
             "admin app from @BotFather -> /myapps, e.g. https://t.me/<bot>/admin",
             sample,
         )
     else:
+        logger.info("[TMA READY] 'Review in App' links will look like: %s", sample)
         logger.info(
-            "Check in @BotFather -> /myapps that '%s' is the short name of the ADMIN app and that its "
+            "[TMA READY] Check in @BotFather -> /myapps that '%s' is the short name of the ADMIN app and that its "
             "Web App URL ends with /admin.html (otherwise the button opens the bot chat or the wrong app).",
             segments[1],
         )
+
+
+def build_parent_request_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Builds inline keyboard for dedicated parent request management topic."""
+    buttons = []
+    review_url = get_admin_review_url(f"request_{request_id}")
+    if review_url:
+        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    buttons.append([
+        InlineKeyboardButton("🔍 Match Radar", callback_data=f"match_parent:{request_id}"),
+        InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{request_id}"),
+    ])
+    return InlineKeyboardMarkup(buttons)
+
+
+def build_parent_index_keyboard(request_id: int, topic_url: Optional[str] = None) -> InlineKeyboardMarkup:
+    """Builds inline keyboard for parent directory index badge."""
+    row = []
+    if topic_url:
+        row.append(InlineKeyboardButton("🔗 Open Workspace", url=topic_url))
+    review_url = get_admin_review_url(f"request_{request_id}")
+    if review_url:
+        row.append(InlineKeyboardButton("Review in App", url=review_url))
+    return InlineKeyboardMarkup([row] if row else [])
+
+
+def build_tutor_registration_keyboard(tutor_id: int, has_doc: bool = False) -> InlineKeyboardMarkup:
+    """Builds inline keyboard for tutor verification card."""
+    buttons = []
+    if has_doc:
+        buttons.append([InlineKeyboardButton("📎 View Document", callback_data=f"view_doc:{tutor_id}")])
+    review_url = get_admin_review_url(f"tutor_{tutor_id}")
+    if review_url:
+        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    return InlineKeyboardMarkup(buttons)
+
+
+def build_tutor_assignment_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Builds inline keyboard for tutor assignment DM notification."""
+    buttons = []
+    review_url = get_admin_review_url(f"request_{request_id}")
+    if review_url:
+        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    return InlineKeyboardMarkup(buttons)
+
+
+def build_parent_assignment_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Builds inline keyboard for parent assignment DM notification."""
+    buttons = []
+    review_url = get_admin_review_url(f"request_{request_id}")
+    if review_url:
+        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    return InlineKeyboardMarkup(buttons)
 
 
 async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession] = None) -> Optional[int]:
@@ -321,17 +436,7 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
                 topic = None
 
         card_text = format_parent_card(parent_req)
-        keyboard = InlineKeyboardMarkup([
-            *(
-                [[InlineKeyboardButton("Review in App", url=review_url)]]
-                if (review_url := get_admin_review_url(f"request_{parent_req.id}"))
-                else []
-            ),
-            [
-                InlineKeyboardButton("🔍 Match Radar", callback_data=f"match_parent:{parent_req.id}"),
-                InlineKeyboardButton("❌ Close Request", callback_data=f"close_parent:{parent_req.id}"),
-            ],
-        ])
+        keyboard = build_parent_request_keyboard(parent_req.id)
 
         parent_index_topic_id = get_parent_topic_id()
 
@@ -350,11 +455,7 @@ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession
             topic_url = f"https://t.me/c/{clean_id}/{topic.message_thread_id}"
 
             index_text = format_parent_directory_badge(parent_req)
-            index_buttons = [InlineKeyboardButton("🔗 Open Workspace", url=topic_url)]
-            review_url = get_admin_review_url(f"request_{parent_req.id}")
-            if review_url:
-                index_buttons.append(InlineKeyboardButton("Review in App", url=review_url))
-            index_keyboard = InlineKeyboardMarkup([index_buttons])
+            index_keyboard = build_parent_index_keyboard(parent_req.id, topic_url=topic_url)
 
             index_kwargs = {
                 "chat_id": settings.ADMIN_GROUP_ID,
@@ -400,14 +501,8 @@ async def send_tutor_registration_card(tutor) -> Optional[int]:
 
     try:
         card_text = format_tutor_card(tutor)
-
-        buttons = []
-        if tutor.id_document_url and "/uploads/" in tutor.id_document_url:
-            buttons.append([InlineKeyboardButton("📎 View Document", callback_data=f"view_doc:{tutor.id}")])
-        review_url = get_admin_review_url(f"tutor_{tutor.id}")
-        if review_url:
-            buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
-        keyboard = InlineKeyboardMarkup(buttons)
+        has_doc = bool(tutor.id_document_url and "/uploads/" in tutor.id_document_url)
+        keyboard = build_tutor_registration_keyboard(tutor.id, has_doc=has_doc)
 
         send_kwargs = {
             "chat_id": settings.ADMIN_GROUP_ID,

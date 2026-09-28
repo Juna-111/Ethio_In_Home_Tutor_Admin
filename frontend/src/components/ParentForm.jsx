@@ -178,7 +178,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
               errors.parent_name
                 ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
-                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
             }`}
           />
           {errors.parent_name && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.parent_name}</p>}
@@ -199,7 +199,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
               errors.phone_number
                 ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
-                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
             }`}
           />
           {errors.phone_number && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.phone_number}</p>}
@@ -223,7 +223,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
               errors.student_level
                 ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
-                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-gray-800'
+                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10 text-ink'
             }`}
           >
             <option value="">{t.parentForm.selectGradePlaceholder}</option>
@@ -239,7 +239,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             <label className="text-xs font-semibold text-gray-700">
               {t.parentForm.subjectsNeeded} <span className="text-red-500">*</span>
             </label>
-            <span className="text-[11px] text-blue-600 font-semibold">{formData.subjects.length} {t.parentForm.subjectsSelected}</span>
+            <span className="text-[11px] text-pine font-semibold">{formData.subjects.length} {t.parentForm.subjectsSelected}</span>
           </div>
           <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border transition ${
             errors.subjects ? 'border-red-300 bg-red-50/10' : 'border-transparent'
@@ -253,7 +253,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   onClick={() => toggleSubject(subject)}
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                      ? 'bg-pine text-paper shadow-sm font-semibold'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -284,7 +284,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
               errors.location_subcity
                 ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
-                : 'border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-gray-800'
+                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10 text-ink'
             }`}
           >
             <option value="">{t.parentForm.selectSubcityPlaceholder}</option>
@@ -302,7 +302,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             placeholder={t.parentForm.landmarkPlaceholder}
             value={formData.location_landmark}
             onChange={(e) => setFormData({ ...formData, location_landmark: e.target.value })}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 transition"
+            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-line focus:outline-none focus:border-pine transition"
           />
         </div>
       </div>
@@ -325,7 +325,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   onClick={() => toggleDay(day)}
                   className={`py-2 rounded-xl text-xs font-semibold transition ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-sm'
+                      ? 'bg-pine text-paper shadow-sm'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -353,7 +353,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3 py-2 rounded-xl border transition focus:outline-none ${
                 errors.time_slot
                   ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
-                  : 'border-gray-200 focus:border-blue-500'
+                  : 'border-line focus:border-pine'
               }`}
             />
             {errors.time_slot && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.time_slot}</p>}
@@ -372,7 +372,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3 py-2 rounded-xl border transition focus:outline-none bg-white font-medium ${
                 errors.session_duration
                   ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
-                  : 'border-gray-200 focus:border-blue-500 text-gray-800'
+                  : 'border-line focus:border-pine text-ink'
               }`}
             >
               <option value="">{t.parentForm.selectDurationPlaceholder}</option>
@@ -403,7 +403,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none font-semibold ${
                 errors.budget_etb
                   ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
-                  : 'border-gray-200 focus:border-blue-500'
+                  : 'border-line focus:border-pine'
               }`}
             />
             <span className="absolute right-3.5 top-2.5 text-xs text-gray-400 font-medium">{t.parentForm.perHour}</span>
@@ -411,11 +411,11 @@ export default function ParentForm({ user, lang, onSuccess }) {
           {errors.budget_etb && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.budget_etb}</p>}
 
           {/* Dynamic Monthly Cost Card */}
-          <div className="mt-2.5 p-3 rounded-xl bg-blue-50/70 border border-blue-100 flex items-start space-x-2.5">
-            <Calculator className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <div className="mt-2.5 p-3 rounded-xl bg-pine/5 border border-pine/15 flex items-start space-x-2.5">
+            <Calculator className="w-4 h-4 text-pine shrink-0 mt-0.5" />
             <div className="text-xs">
               <span className="text-gray-600">{t.parentForm.estimatedMonthly}: </span>
-              <span className="font-bold text-blue-700">
+              <span className="font-bold text-pine">
                 {hourlyRate > 0 ? `≈ ${estimatedMonthly.toLocaleString()} ${t.parentForm.perMonth}` : `— ${t.parentForm.perMonth}`}
               </span>
               <p className="text-[10px] text-gray-400 mt-0.5">{t.parentForm.formulaNote}</p>
@@ -442,7 +442,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                 onClick={() => setFormData({ ...formData, preferred_gender: val })}
                 className={`py-2 px-1 text-[11px] rounded-xl font-medium border transition text-center ${
                   formData.preferred_gender === val
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+                    ? 'border-pine bg-pine/10 text-pine font-semibold'
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -467,7 +467,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                 }}
                 className={`py-2 px-1 text-[10px] sm:text-[11px] rounded-xl font-medium border transition text-center leading-tight ${
                   formData.preferred_experience === exp
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+                    ? 'border-pine bg-pine/10 text-pine font-semibold'
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -483,7 +483,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-lg shadow-blue-500/25 transition disabled:opacity-60 flex items-center justify-center space-x-2 cursor-pointer"
+        className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-pine hover:bg-ink active:scale-[0.99] text-paper shadow-lg shadow-pine/20 transition disabled:opacity-60 flex items-center justify-center space-x-2 cursor-pointer"
       >
         {loading ? (
           <>

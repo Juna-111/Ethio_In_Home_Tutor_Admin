@@ -160,3 +160,84 @@ async def generate_parents_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, in
     buffer = io.BytesIO(csv_bytes)
     buffer.seek(0)
     return buffer, len(requests)
+
+
+async def generate_assignments_csv(db_session: AsyncSession) -> Tuple[io.BytesIO, int]:
+    """
+    Fetches all assignment records joined with parent and tutor info
+    and serializes them into an in-memory CSV buffer encoded with UTF-8-SIG.
+    Returns (BytesIO, record_count).
+    """
+    from app.models import AuditLog
+
+    result = await db_session.execute(select(Assignment).order_by(Assignment.id.asc()))
+    assignments = result.scalars().all()
+
+    requests_res = await db_session.execute(select(ParentRequest))
+    requests_map = {r.id: r for r in requests_res.scalars().all()}
+
+    tutors_res = await db_session.execute(select(Tutor))
+    tutors_map = {t.id: t for t in tutors_res.scalars().all()}
+
+    # Query audit logs for close events to find closed_date
+    audit_res = await db_session.execute(
+        select(AuditLog).where(
+            AuditLog.action.in_(["close_request", "close_assignment"]),
+            AuditLog.target_type.in_(["parent_request", "assignment"])
+        ).order_by(AuditLog.id.desc())
+    )
+    closed_audit_map = {}
+    for a in audit_res.scalars().all():
+        if a.target_id not in closed_audit_map:
+            closed_audit_map[a.target_id] = a.created_at
+
+    output = io.StringIO()
+    writer = csv.writer(output, dialect="excel")
+
+    headers = [
+        "Assignment ID",
+        "Parent",
+        "Tutor",
+        "Subjects",
+        "Status",
+        "Created At",
+        "Assigned Date",
+        "Closed Date",
+    ]
+    writer.writerow(headers)
+
+    for asmt in assignments:
+        req = requests_map.get(asmt.request_id)
+        tutor = tutors_map.get(asmt.tutor_id)
+
+        parent_name = req.parent_name if req else f"Req #{asmt.request_id}"
+        tutor_name = tutor.full_name if tutor else f"Tutor #{asmt.tutor_id}"
+        subjects = _format_list_or_str(req.subjects) if req else ""
+        status_val = asmt.status
+        if req and req.status == "closed":
+            status_val = "closed"
+
+        created_str = req.created_at.strftime("%Y-%m-%d %H:%M:%S") if req and req.created_at else ""
+        assigned_str = asmt.assigned_at.strftime("%Y-%m-%d %H:%M:%S") if asmt.assigned_at else ""
+
+        closed_dt = closed_audit_map.get(asmt.request_id) or closed_audit_map.get(asmt.id)
+        if not closed_dt and status_val == "closed":
+            closed_dt = asmt.assigned_at
+        closed_str = closed_dt.strftime("%Y-%m-%d %H:%M:%S") if (closed_dt and status_val == "closed") else ""
+
+        writer.writerow([
+            asmt.id,
+            _sanitize_cell(parent_name),
+            _sanitize_cell(tutor_name),
+            subjects,
+            _sanitize_cell(status_val),
+            created_str,
+            assigned_str,
+            closed_str,
+        ])
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    buffer = io.BytesIO(csv_bytes)
+    buffer.seek(0)
+    return buffer, len(assignments)
+

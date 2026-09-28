@@ -152,6 +152,9 @@ class AdminDashboardResponse(BaseModel):
     pending_requests: int
     active_assignments: int
     requests_today: int
+    conversion_rate_pct: float = Field(0.0, description="Percentage of requests converted to assignments")
+    avg_days_to_assign: float = Field(0.0, description="Average days from request creation to assignment")
+    tutor_verification_funnel_pct: float = Field(0.0, description="Percentage of registered tutors who were verified")
 
 
 class AdminRequestListItem(BaseModel):
@@ -331,7 +334,7 @@ class AdminFlagResponse(BaseModel):
 
 class AdminUserCreate(BaseModel):
     telegram_id: int = Field(..., gt=0)
-    role: str = Field("admin", pattern=r"^(admin|verifier|matcher|super_admin)$")
+    role: str = Field("admin", pattern=r"^(admin|super_admin)$")
 
 
 class AdminUserResponse(BaseModel):
@@ -406,4 +409,130 @@ class AdminCronRunResponse(BaseModel):
     ok: bool
     message: str
     result: dict[str, Any]
+
+
+# ==========================================
+# CRM & Assignment Pipeline Schemas
+# ==========================================
+
+class AdminParentRequestHistoryItem(BaseModel):
+    id: int
+    student_level: str
+    subjects: List[str]
+    location_subcity: str
+    location_landmark: Optional[str] = None
+    budget_etb: float
+    status: str
+    created_at: datetime
+    assignment_id: Optional[int] = None
+    assigned_tutor_id: Optional[int] = None
+    assigned_tutor_name: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+
+
+class AdminParentCRMItem(BaseModel):
+    phone_number: str
+    parent_name: str
+    telegram_user_id: Optional[int] = None
+    location_subcity: str
+    total_requests: int
+    active_requests: int
+    completed_assignments: int
+    latest_request_date: Optional[datetime] = None
+    requests: List[AdminParentRequestHistoryItem] = []
+
+
+class AdminParentCRMResponse(BaseModel):
+    items: List[AdminParentCRMItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminPipelineOldestItem(BaseModel):
+    id: int
+    parent_name: str
+    phone_number: str
+    student_level: str
+    location_subcity: str
+    budget_etb: float
+    status: str
+    created_at: datetime
+    age_days: float
+
+
+class AdminAssignmentPipelineResponse(BaseModel):
+    status_counts: dict[str, int]
+    median_age_days: dict[str, float]
+    oldest_per_status: dict[str, List[AdminPipelineOldestItem]]
+
+
+# ==========================================
+# Tutor & Parent Self-Service Portals
+# ==========================================
+
+class TutorAssignmentItem(BaseModel):
+    assignment_id: int
+    request_id: int
+    student_name_context: str
+    subjects: List[str]
+    location: str
+    schedule: str
+    hourly_rate_etb: float
+    status: str
+    assigned_at: datetime
+    sessions_completed: int = 0
+    avg_rating: Optional[float] = None
+    estimated_earnings_etb: float = 0.0
+    parent_phone: str
+
+
+class TutorMyAssignmentsResponse(BaseModel):
+    tutor_id: int
+    full_name: str
+    active_count: int
+    total_earnings_estimate: float
+    assignments: List[TutorAssignmentItem]
+
+
+class ParentRequestItem(BaseModel):
+    id: int
+    student_level: str
+    subjects: List[str]
+    location_subcity: str
+    location_landmark: Optional[str] = None
+    schedule_days: Any
+    time_slot: str
+    session_duration: str
+    budget_etb: float
+    status: str
+    created_at: datetime
+    assignment_id: Optional[int] = None
+    tutor_id: Optional[int] = None
+    tutor_name: Optional[str] = None
+    tutor_phone: Optional[str] = None
+    tutor_university: Optional[str] = None
+    tutor_department: Optional[str] = None
+    tutor_experience_years: Optional[float] = None
+    sessions_completed: int = 0
+    has_feedback: bool = False
+    feedback_rating: Optional[int] = None
+
+
+class ParentMyRequestsResponse(BaseModel):
+    requests: List[ParentRequestItem]
+
+
+class ParentFeedbackCreate(BaseModel):
+    assignment_id: Optional[int] = None
+    request_id: Optional[int] = None
+    rating: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=1000)
+    review_notes: Optional[str] = Field(None, max_length=1000)
+
+
+class ParentContactAdminCreate(BaseModel):
+    request_id: int
+    message: str = Field(..., min_length=2, max_length=1000)
+
 

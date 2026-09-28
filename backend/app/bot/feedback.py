@@ -26,8 +26,8 @@ async def get_feedback_delay_days(session: AsyncSession) -> int:
     if setting:
         try:
             return max(1, int(setting.value))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            logger.warning("Invalid feedback_delay_days setting '%s': %s", setting.value, exc)
     return DEFAULT_FEEDBACK_DELAY_DAYS
 
 

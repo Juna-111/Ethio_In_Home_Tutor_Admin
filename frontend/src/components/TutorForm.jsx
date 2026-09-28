@@ -251,7 +251,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.full_name
                 ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
-                : 'border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                : 'border-line focus:outline-none focus:border-pine focus:ring-2 focus:ring-pine/10'
             }`}
           />
           {errors.full_name && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.full_name}</p>}
@@ -273,7 +273,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                     onClick={() => handleFieldChange('gender', genderOption)}
                     className={`py-2 px-2 text-xs rounded-xl font-medium border text-center transition cursor-pointer ${
                       selected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+                        ? 'border-pine bg-pine/10 text-pine font-semibold'
                         : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                     }`}
                   >
@@ -297,7 +297,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
                 errors.phone_number
                   ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
-                  : 'border-gray-200 focus:outline-none focus:border-blue-500'
+                  : 'border-line focus:outline-none focus:border-pine'
               }`}
             />
             {errors.phone_number && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.phone_number}</p>}
@@ -321,7 +321,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.university
                 ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
-                : 'border-gray-200 focus:outline-none focus:border-blue-500'
+                : 'border-line focus:outline-none focus:border-pine'
             }`}
           />
           {errors.university && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.university}</p>}
@@ -340,7 +340,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3 py-2.5 rounded-xl border transition ${
                 errors.department
                   ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
-                  : 'border-gray-200 focus:outline-none focus:border-blue-500'
+                  : 'border-line focus:outline-none focus:border-pine'
               }`}
             />
             {errors.department && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.department}</p>}
@@ -356,7 +356,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3 py-2.5 rounded-xl border bg-white transition cursor-pointer ${
                 errors.education_year
                   ? 'border-red-500 bg-red-50/20 text-red-900 focus:ring-1 focus:ring-red-500'
-                  : 'border-gray-200 focus:outline-none focus:border-blue-500 text-gray-700'
+                  : 'border-line focus:outline-none focus:border-pine text-ink'
               }`}
             >
               <option value="">{formT.selectYearPlaceholder}</option>
@@ -381,7 +381,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             inputMode="decimal"
             value={formData.entrance_result}
             onChange={(e) => handleFieldChange('entrance_result', e.target.value)}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
+            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-line focus:outline-none focus:border-pine"
           />
         </div>
 
@@ -396,7 +396,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             <label className="text-xs font-semibold text-gray-700">
               {formT.subjectsQualified} <span className="text-red-500">*</span>
             </label>
-            <span className="text-[11px] text-blue-600 font-medium">
+            <span className="text-[11px] text-pine font-medium">
               {formData.subjects_qualified.length} {formT.subjectsSelected}
             </span>
           </div>
@@ -412,7 +412,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   onClick={() => toggleSubject(subject)}
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 cursor-pointer ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-sm'
+                      ? 'bg-pine text-paper shadow-sm'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -432,7 +432,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             <label className="text-xs font-semibold text-gray-700">
               {formT.targetGrades} <span className="text-red-500">*</span>
             </label>
-            <span className="text-[11px] text-blue-600 font-medium">
+            <span className="text-[11px] text-pine font-medium">
               {formData.grades_qualified.length} {formT.gradesSelected}
             </span>
           </div>
@@ -448,7 +448,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   onClick={() => toggleGrade(level)}
                   className={`py-2 px-2.5 rounded-xl text-xs font-medium border text-left transition cursor-pointer ${
                     selected
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+                      ? 'border-pine bg-pine/10 text-pine font-semibold'
                       : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -477,7 +477,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3 py-2.5 rounded-xl border transition ${
                 errors.years_of_experience
                   ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
-                  : 'border-gray-200 focus:outline-none focus:border-blue-500'
+                  : 'border-line focus:outline-none focus:border-pine'
               }`}
             />
             {errors.years_of_experience && (
@@ -499,7 +499,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               className={`w-full text-xs px-3 py-2.5 rounded-xl border font-semibold transition ${
                 errors.expected_fee_etb
                   ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500 text-red-900'
-                  : 'border-gray-200 focus:outline-none focus:border-blue-500 text-gray-900'
+                  : 'border-line focus:outline-none focus:border-pine text-ink'
               }`}
             />
             {errors.expected_fee_etb && (
@@ -523,7 +523,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border bg-white transition cursor-pointer font-medium ${
               errors.base_subcity
                 ? 'border-red-500 bg-red-50/20 text-red-900 focus:ring-1 focus:ring-red-500'
-                : 'border-gray-200 focus:outline-none focus:border-blue-500 text-gray-700'
+                : 'border-line focus:outline-none focus:border-pine text-ink'
             }`}
           >
             <option value="">{formT.selectBaseSubcityPlaceholder}</option>
@@ -539,7 +539,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             <label className="text-xs font-semibold text-gray-700">
               {formT.coverageAreas} <span className="text-red-500">*</span>
             </label>
-            <span className="text-[11px] text-blue-600 font-medium">
+            <span className="text-[11px] text-pine font-medium">
               {formData.coverage_areas.length} {formT.coverageSelected}
             </span>
           </div>
@@ -555,7 +555,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   onClick={() => toggleCoverage(subcity)}
                   className={`py-1.5 px-2.5 rounded-xl text-[11px] font-medium transition cursor-pointer ${
                     selected
-                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                      ? 'bg-pine text-paper shadow-sm font-semibold'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -581,7 +581,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.availability_schedule
                 ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
-                : 'border-gray-200 focus:outline-none focus:border-blue-500'
+                : 'border-line focus:outline-none focus:border-pine'
             }`}
           />
           {errors.availability_schedule && (
@@ -613,25 +613,25 @@ export default function TutorForm({ user, lang, onSuccess }) {
           {!selectedFile ? (
             <label
               htmlFor="tutor-doc-file"
-              className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 hover:border-blue-400 rounded-2xl cursor-pointer bg-gray-50/50 hover:bg-blue-50/30 transition group"
+              className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 hover:border-pine rounded-2xl cursor-pointer bg-paper hover:bg-pine/5 transition group"
             >
-              <Upload className="w-6 h-6 text-gray-400 group-hover:text-blue-500 mb-1.5 transition" />
-              <span className="text-xs font-semibold text-blue-600 group-hover:text-blue-700">
+              <Upload className="w-6 h-6 text-gray-400 group-hover:text-pine mb-1.5 transition" />
+              <span className="text-xs font-semibold text-pine group-hover:text-ink">
                 {formT.chooseFile}
               </span>
             </label>
           ) : (
-            <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
+            <div className="flex items-center justify-between p-3 bg-pine/5 border border-pine/20 rounded-xl">
               <div className="flex items-center space-x-2 truncate">
-                <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                <span className="text-xs text-blue-900 font-medium truncate">
+                <FileText className="w-4 h-4 text-pine shrink-0" />
+                <span className="text-xs text-pine font-medium truncate">
                   {selectedFile.name} ({(selectedFile.size / 1024).toFixed(0)} KB)
                 </span>
               </div>
               <button
                 type="button"
                 onClick={removeSelectedFile}
-                className="p-1 hover:bg-blue-200/60 rounded-lg text-blue-700 transition"
+                className="p-1 hover:bg-pine/20 rounded-lg text-pine transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -649,7 +649,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
             placeholder={formT.documentUrlPlaceholder}
             value={formData.id_document_url}
             onChange={(e) => handleFieldChange('id_document_url', e.target.value)}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500"
+            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-line focus:outline-none focus:border-pine"
           />
         </div>
 
@@ -659,7 +659,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white shadow-lg shadow-blue-500/25 transition disabled:opacity-60 flex items-center justify-center space-x-2 cursor-pointer"
+        className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-pine hover:bg-ink active:scale-[0.99] text-paper shadow-lg shadow-pine/20 transition disabled:opacity-60 flex items-center justify-center space-x-2 cursor-pointer"
       >
         {loading ? (
           <>

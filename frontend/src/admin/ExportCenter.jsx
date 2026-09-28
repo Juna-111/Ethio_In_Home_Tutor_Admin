@@ -76,6 +76,24 @@ export default function ExportCenter() {
             <span>Export Parent Requests CSV</span>
           </button>
         </div>
+
+        <div className="export-card">
+          <div className="card-topline">
+            <span className="export-icon"><FileSpreadsheet size={24} /></span>
+            <span className="parity-badge"><ShieldCheck size={14} /> Bot Parity Verified</span>
+          </div>
+          <h3>Assignments Pipeline Dataset</h3>
+          <p>Complete historical log of tutor-parent pairings, matching turnaround dates, and assignment statuses.</p>
+          <button
+            className="btn-primary"
+            type="button"
+            onClick={() => handleDownload('assignments')}
+            disabled={downloading === 'assignments'}
+          >
+            {downloading === 'assignments' ? <Loader2 className="spin" size={16} /> : <Download size={16} />}
+            <span>Export Assignments CSV</span>
+          </button>
+        </div>
       </div>
     </div>
   );

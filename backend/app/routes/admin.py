@@ -64,10 +64,15 @@ from app.schemas import (
     AdminAuditLogResponse,
     AdminVerificationPatch,
     AdminVerificationResponse,
+    AdminAssignmentPipelineResponse,
+    AdminParentCRMItem,
+    AdminParentCRMResponse,
+    AdminParentRequestHistoryItem,
+    AdminPipelineOldestItem,
     ParentRequestResponse,
 )
 from app.services.audit import log_action
-from app.services.export_service import generate_parents_csv, generate_tutors_csv
+from app.services.export_service import generate_assignments_csv, generate_parents_csv, generate_tutors_csv
 from app.services.matcher import get_tiered_matches
 from app.services.scheduler import claim_event, run_all_scheduled_tasks
 
@@ -94,6 +99,32 @@ async def get_admin_dashboard(
         select(func.count(ParentRequest.id)).where(ParentRequest.created_at >= today_start)
     )
 
+    # Expanded metrics
+    total_requests = await db.scalar(select(func.count(ParentRequest.id))) or 0
+    assigned_requests = await db.scalar(select(func.count(Assignment.id))) or 0
+    conversion_rate_pct = round((assigned_requests / total_requests) * 100, 2) if total_requests > 0 else 0.0
+
+    # Avg time to assign in days
+    time_diffs_stmt = select(Assignment.assigned_at, ParentRequest.created_at).join(
+        ParentRequest, Assignment.request_id == ParentRequest.id
+    )
+    diffs_res = await db.execute(time_diffs_stmt)
+    diff_days = []
+    for asmt_at, req_at in diffs_res.all():
+        if asmt_at and req_at:
+            if asmt_at.tzinfo is None:
+                asmt_at = asmt_at.replace(tzinfo=timezone.utc)
+            if req_at.tzinfo is None:
+                req_at = req_at.replace(tzinfo=timezone.utc)
+            delta = (asmt_at - req_at).total_seconds() / 86400.0
+            if delta >= 0:
+                diff_days.append(delta)
+    avg_days_to_assign = round(sum(diff_days) / len(diff_days), 2) if diff_days else 0.0
+
+    total_tutors = await db.scalar(select(func.count(Tutor.id))) or 0
+    verified_tutors = await db.scalar(select(func.count(Tutor.id)).where(Tutor.status == "verified")) or 0
+    tutor_verification_funnel_pct = round((verified_tutors / total_tutors) * 100, 2) if total_tutors > 0 else 0.0
+
     return AdminDashboardResponse(
         admin_telegram_id=_admin.telegram_id,
         admin_role=_admin.role,
@@ -101,6 +132,161 @@ async def get_admin_dashboard(
         pending_requests=pending_requests or 0,
         active_assignments=active_assignments or 0,
         requests_today=requests_today or 0,
+        conversion_rate_pct=conversion_rate_pct,
+        avg_days_to_assign=avg_days_to_assign,
+        tutor_verification_funnel_pct=tutor_verification_funnel_pct,
+    )
+
+
+@router.get("/parents", response_model=AdminParentCRMResponse, summary="Customer CRM: Search parents and view request history")
+async def list_admin_parents(
+    search: Optional[str] = Query(None, max_length=100),
+    request_status: Optional[str] = Query(None, alias="status", max_length=50),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminParentCRMResponse:
+    query = select(ParentRequest).order_by(ParentRequest.created_at.desc())
+    filters = []
+    if request_status and request_status.strip().lower() != "all":
+        filters.append(ParentRequest.status == request_status.strip())
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        filters.append(
+            func.lower(ParentRequest.parent_name).like(term)
+            | func.lower(ParentRequest.phone_number).like(term)
+            | func.lower(ParentRequest.location_subcity).like(term)
+        )
+    if filters:
+        query = query.where(*filters)
+
+    result = await db.execute(query)
+    all_matching_requests = result.scalars().all()
+
+    req_ids = [r.id for r in all_matching_requests]
+    assignments_map = {}
+    tutors_map = {}
+    if req_ids:
+        asmts_res = await db.execute(select(Assignment).where(Assignment.request_id.in_(req_ids)))
+        asmts = asmts_res.scalars().all()
+        assignments_map = {a.request_id: a for a in asmts}
+        tutor_ids = [a.tutor_id for a in asmts]
+        if tutor_ids:
+            tutors_res = await db.execute(select(Tutor).where(Tutor.id.in_(tutor_ids)))
+            tutors_map = {t.id: t for t in tutors_res.scalars().all()}
+
+    parents_grouped: dict[str, list[ParentRequest]] = defaultdict(list)
+    for r in all_matching_requests:
+        parents_grouped[r.phone_number].append(r)
+
+    total_parents = len(parents_grouped)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paged_phones = list(parents_grouped.keys())[start_idx:end_idx]
+
+    items = []
+    for phone in paged_phones:
+        reqs = parents_grouped[phone]
+        latest_req = reqs[0]
+        active_cnt = sum(1 for r in reqs if r.status in ("pending", "matched", "waitlisted"))
+        completed_cnt = sum(1 for r in reqs if assignments_map.get(r.id) and assignments_map[r.id].status == "active")
+
+        history_items = []
+        for r in reqs:
+            asmt = assignments_map.get(r.id)
+            tut = tutors_map.get(asmt.tutor_id) if asmt else None
+            history_items.append(
+                AdminParentRequestHistoryItem(
+                    id=r.id,
+                    student_level=r.student_level,
+                    subjects=r.subjects if isinstance(r.subjects, list) else [str(r.subjects)],
+                    location_subcity=r.location_subcity,
+                    location_landmark=r.location_landmark,
+                    budget_etb=r.budget_etb,
+                    status=r.status,
+                    created_at=r.created_at,
+                    assignment_id=asmt.id if asmt else None,
+                    assigned_tutor_id=tut.id if tut else None,
+                    assigned_tutor_name=tut.full_name if tut else None,
+                    assigned_at=asmt.assigned_at if asmt else None,
+                )
+            )
+
+        items.append(
+            AdminParentCRMItem(
+                phone_number=phone,
+                parent_name=latest_req.parent_name,
+                telegram_user_id=latest_req.telegram_user_id,
+                location_subcity=latest_req.location_subcity,
+                total_requests=len(reqs),
+                active_requests=active_cnt,
+                completed_assignments=completed_cnt,
+                latest_request_date=latest_req.created_at,
+                requests=history_items,
+            )
+        )
+
+    return AdminParentCRMResponse(
+        items=items,
+        total=total_parents,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/assignments/pipeline", response_model=AdminAssignmentPipelineResponse, summary="Assignment pipeline operational overview")
+async def get_admin_assignment_pipeline(
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminAssignmentPipelineResponse:
+    now = datetime.now(timezone.utc)
+    all_requests_res = await db.execute(select(ParentRequest).order_by(ParentRequest.created_at.asc()))
+    all_requests = all_requests_res.scalars().all()
+
+    status_counts: dict[str, int] = defaultdict(int)
+    status_ages: dict[str, list[float]] = defaultdict(list)
+    oldest_per_status_lists: dict[str, list[AdminPipelineOldestItem]] = defaultdict(list)
+
+    for req in all_requests:
+        st = req.status or "pending"
+        status_counts[st] += 1
+        req_dt = req.created_at
+        if req_dt.tzinfo is None:
+            req_dt = req_dt.replace(tzinfo=timezone.utc)
+        age = max(0.0, round((now - req_dt).total_seconds() / 86400.0, 2))
+        status_ages[st].append(age)
+        if len(oldest_per_status_lists[st]) < 10:
+            oldest_per_status_lists[st].append(
+                AdminPipelineOldestItem(
+                    id=req.id,
+                    parent_name=req.parent_name,
+                    phone_number=req.phone_number,
+                    student_level=req.student_level,
+                    location_subcity=req.location_subcity,
+                    budget_etb=req.budget_etb,
+                    status=st,
+                    created_at=req.created_at,
+                    age_days=age,
+                )
+            )
+
+    median_age_days: dict[str, float] = {}
+    for st, ages in status_ages.items():
+        if not ages:
+            median_age_days[st] = 0.0
+        else:
+            sorted_ages = sorted(ages)
+            mid = len(sorted_ages) // 2
+            if len(sorted_ages) % 2 == 1:
+                median_age_days[st] = round(sorted_ages[mid], 2)
+            else:
+                median_age_days[st] = round((sorted_ages[mid - 1] + sorted_ages[mid]) / 2.0, 2)
+
+    return AdminAssignmentPipelineResponse(
+        status_counts=dict(status_counts),
+        median_age_days=median_age_days,
+        oldest_per_status=dict(oldest_per_status_lists),
     )
 
 
@@ -220,7 +406,7 @@ async def get_admin_request_candidates(
 async def ping_admin_request_candidates(
     request_id: int,
     payload: AdminPingRequest,
-    admin: AdminPrincipal = Depends(require_role("matcher", "super_admin")),
+    admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminActionResponse:
     parent, tiered = await get_tiered_matches(request_id, db)
@@ -321,7 +507,7 @@ async def ping_admin_request_candidates(
 async def assign_admin_request(
     request_id: int,
     payload: AdminAssignRequest,
-    admin: AdminPrincipal = Depends(require_role("matcher", "super_admin")),
+    admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminActionResponse:
     tutor_id = payload.tutor_id
@@ -360,30 +546,34 @@ async def assign_admin_request(
 
     if bot_instance.bot_app:
         bot = bot_instance.bot_app.bot
+        parent_card = bot_instance.format_assignment_card_parent(parent, tutor, assignment.id)
+        parent_keyboard = bot_instance.build_parent_assignment_keyboard(request_id)
         if parent.telegram_user_id:
             try:
                 await bot.send_message(
                     chat_id=parent.telegram_user_id,
-                    text=(f"A verified mentor has been assigned to your request: {html.escape(tutor.full_name)}. "
-                          f"Contact: {html.escape(tutor.phone_number)}"),
+                    text=parent_card,
                     parse_mode=ParseMode.HTML,
+                    reply_markup=parent_keyboard,
                 )
             except Exception as exc:
                 logger.warning(
-                    "Failed to DM parent %s on assignment for request #%s: %s",
+                    "Failed to DM parent %s on assignment for request #%s (role=parent): %s",
                     parent.telegram_user_id, request_id, exc,
                 )
+        tutor_card = bot_instance.format_assignment_card_tutor(parent, tutor, assignment.id)
+        tutor_keyboard = bot_instance.build_tutor_assignment_keyboard(request_id)
         if tutor.telegram_user_id:
             try:
                 await bot.send_message(
                     chat_id=tutor.telegram_user_id,
-                    text=(f"You have been assigned to a tutoring request from {html.escape(parent.parent_name)}. "
-                          f"Contact: {html.escape(parent.phone_number)}"),
+                    text=tutor_card,
                     parse_mode=ParseMode.HTML,
+                    reply_markup=tutor_keyboard,
                 )
             except Exception as exc:
                 logger.warning(
-                    "Failed to DM tutor %s on assignment for request #%s: %s",
+                    "Failed to DM tutor %s on assignment for request #%s (role=tutor): %s",
                     tutor.telegram_user_id, request_id, exc,
                 )
     else:
@@ -567,7 +757,7 @@ async def check_waitlist_matches_for_tutor(db: AsyncSession, tutor: Tutor) -> No
 async def update_admin_tutor_verification(
     tutor_id: int,
     payload: AdminVerificationPatch,
-    admin: AdminPrincipal = Depends(require_role("verifier", "super_admin")),
+    admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminVerificationResponse:
     tutor = await db.get(Tutor, tutor_id)
@@ -624,7 +814,7 @@ async def update_admin_tutor_verification(
 async def reject_admin_tutor(
     tutor_id: int,
     payload: AdminRejectRequest,
-    admin: AdminPrincipal = Depends(require_role("verifier", "super_admin")),
+    admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminActionResponse:
     tutor = await db.get(Tutor, tutor_id)
@@ -1106,13 +1296,16 @@ async def get_admin_availability_mismatch(
 
 @router.get("/export", summary="Export production records as CSV")
 async def get_admin_export(
-    export_type: str = Query("tutors", alias="type", pattern=r"^(tutors|parents)$"),
+    export_type: str = Query("tutors", alias="type", pattern=r"^(tutors|parents|assignments)$"),
     _admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     if export_type == "tutors":
         buffer, _ = await generate_tutors_csv(db)
         filename = "tutors_export.csv"
+    elif export_type == "assignments":
+        buffer, _ = await generate_assignments_csv(db)
+        filename = "assignments_export.csv"
     else:
         buffer, _ = await generate_parents_csv(db)
         filename = "parents_export.csv"
@@ -1163,8 +1356,8 @@ async def run_cron_endpoint(
                     settings.SUPER_ADMIN_ID and user_id == settings.SUPER_ADMIN_ID
                 ):
                     is_authenticated = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Optional telegram user lookup failed in cron: %s", exc)
 
     if not is_authenticated:
         raise HTTPException(
@@ -1179,4 +1372,4 @@ async def run_cron_endpoint(
         ok=True,
         message="Scheduled checks and outbox drained successfully.",
         result=result,
-    )
+    )

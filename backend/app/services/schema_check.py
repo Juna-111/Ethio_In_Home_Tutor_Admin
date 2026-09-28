@@ -57,8 +57,8 @@ async def get_schema_status(db: AsyncSession) -> dict[str, Any]:
         # A failed statement can leave the session/transaction unusable on Postgres.
         try:
             await db.rollback()
-        except Exception:  # pragma: no cover - defensive
-            pass
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Failed to rollback db in schema check: %s", exc)
 
     if head is None:
         state = "unknown"

@@ -9,6 +9,16 @@ from app.config import settings
 from app.database import get_db
 from app.models import AdminUser
 
+LEGACY_ADMIN_ROLES = frozenset({"matcher", "verifier"})
+STANDARD_ADMIN_ROLE = "admin"
+SUPER_ADMIN_ROLE = "super_admin"
+
+
+def _normalize_role(raw_role: str) -> str:
+    if raw_role in LEGACY_ADMIN_ROLES:
+        return STANDARD_ADMIN_ROLE
+    return raw_role
+
 
 @dataclass(frozen=True)
 class AdminPrincipal:
@@ -26,19 +36,19 @@ async def require_admin(
             detail="Telegram Mini App authentication is required.",
         )
 
-    # The configured bootstrap owner exists before a database admin record can.
     if settings.SUPER_ADMIN_ID is not None and telegram_user_id == settings.SUPER_ADMIN_ID:
-        return AdminPrincipal(telegram_id=telegram_user_id, role="super_admin")
+        return AdminPrincipal(telegram_id=telegram_user_id, role=SUPER_ADMIN_ROLE)
 
     admin_user = await db.get(AdminUser, telegram_user_id)
     if not admin_user or not admin_user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
 
-    return AdminPrincipal(telegram_id=telegram_user_id, role=admin_user.role)
+    role = _normalize_role(admin_user.role)
+    return AdminPrincipal(telegram_id=telegram_user_id, role=role)
 
 
 def require_role(*roles: str):
-    allowed_roles = frozenset(roles)
+    allowed_roles = frozenset(_normalize_role(r) for r in roles)
 
     async def role_dependency(
         principal: AdminPrincipal = Depends(require_admin),

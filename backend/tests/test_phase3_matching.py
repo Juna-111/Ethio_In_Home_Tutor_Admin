@@ -443,15 +443,14 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
 
     # Parent DM verification
     parent_dm_call = next(c for c in sent_calls if c.kwargs["chat_id"] == 777666555)
-    assert "Great news, Rahel Tadesse!" in parent_dm_call.kwargs["text"]
+    assert "ASSIGNED MENTOR DETAILS" in parent_dm_call.kwargs["text"]
     assert "Selamawit Tefera" in parent_dm_call.kwargs["text"]
     assert "AAU" in parent_dm_call.kwargs["text"]
     assert "+251911887766" in parent_dm_call.kwargs["text"]
-    assert "Thank you for trusting Us." in parent_dm_call.kwargs["text"]
 
     # Tutor DM verification
     tutor_dm_call = next(c for c in sent_calls if c.kwargs["chat_id"] == 888999000)
-    assert "New Tutoring Opportunity Assigned" in tutor_dm_call.kwargs["text"]
+    assert "TUTORING ASSIGNMENT" in tutor_dm_call.kwargs["text"]
     assert "Rahel Tadesse" in tutor_dm_call.kwargs["text"]
     assert "Kolfe" in tutor_dm_call.kwargs["text"]
 

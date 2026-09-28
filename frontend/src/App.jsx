@@ -3,6 +3,8 @@ import Header from './components/Header';
 import TabNavigation from './components/TabNavigation';
 import ParentForm from './components/ParentForm';
 import TutorForm from './components/TutorForm';
+import ParentPortal from './components/ParentPortal';
+import TutorPortal from './components/TutorPortal';
 import SuccessModal from './components/SuccessModal';
 import { getTelegramInitData } from './services/api';
 import { TRANSLATIONS } from './constants/translations';
@@ -76,7 +78,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden">
+    <div className="min-h-screen bg-[#f1f3ef] flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans text-ink">
       {/* Brand Header */}
       <Header user={user} lang={lang} onToggleLang={toggleLanguage} />
 
@@ -85,10 +87,17 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1">
-        {activeTab === 'parent' ? (
+        {activeTab === 'parent' && (
           <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />
-        ) : (
+        )}
+        {activeTab === 'parent_portal' && (
+          <ParentPortal user={user} lang={lang} />
+        )}
+        {activeTab === 'tutor' && (
           <TutorForm user={user} lang={lang} onSuccess={handleSuccess} />
+        )}
+        {activeTab === 'tutor_portal' && (
+          <TutorPortal user={user} lang={lang} />
         )}
       </main>
 
