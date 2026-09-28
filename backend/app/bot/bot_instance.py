@@ -206,15 +206,79 @@ def get_clean_chat_id(chat_id: int | str) -> str:
     return raw
 
 
+_review_url_warning_logged = False
+
+
+def _resolve_mini_app_base_url() -> Optional[str]:
+    """Return the ``https://t.me/<bot>/<short_name>`` base for Mini App deep links.
+
+    Preference order:
+      1. ``MINI_APP_URL`` when it is already a t.me direct link (the documented setting).
+      2. ``https://t.me/<running bot's username>/<ADMIN_MINI_APP_SHORT_NAME>`` as a
+         fallback, so setting MINI_APP_URL to the raw web URL (an easy mistake) no longer
+         silently removes the "Review in App" buttons from every admin card.
+    """
+    mini_app_url = settings.MINI_APP_URL
+    if mini_app_url and mini_app_url.startswith("https://t.me/"):
+        return mini_app_url
+
+    short_name = (settings.ADMIN_MINI_APP_SHORT_NAME or "").strip().strip("/")
+    username = None
+    if bot_app is not None:
+        try:
+            username = (bot_app.bot.username or "").lstrip("@")
+        except Exception:
+            username = None
+    if username and short_name:
+        return f"https://t.me/{username}/{short_name}"
+    return None
+
+
 def get_admin_review_url(start_param: str) -> Optional[str]:
     """Build a Telegram Mini App deep link from the configured bot app URL."""
-    mini_app_url = settings.MINI_APP_URL
-    if not mini_app_url or not mini_app_url.startswith("https://t.me/"):
+    global _review_url_warning_logged
+    mini_app_url = _resolve_mini_app_base_url()
+    if not mini_app_url:
+        if not _review_url_warning_logged:
+            _review_url_warning_logged = True
+            logger.warning(
+                "Cannot build 'Review in App' links, so admin cards will have no such button. "
+                "Set MINI_APP_URL to your BotFather direct link (https://t.me/<bot>/<short_name>) "
+                "- NOT the Vercel URL - or make sure the bot is running and "
+                "ADMIN_MINI_APP_SHORT_NAME matches the app you registered with /newapp."
+            )
         return None
     parsed = urlsplit(mini_app_url)
     query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "startapp"]
     query.append(("startapp", start_param))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
+def check_review_link_config() -> None:
+    """Log what "Review in App" links will look like, so a wrong short name is visible at boot.
+
+    A link like https://t.me/<bot>/<short_name>?startapp=... only opens the Mini App when
+    <short_name> is registered (BotFather -> /newapp) on the SAME bot. Otherwise Telegram
+    silently opens the bot chat instead, which is easy to mistake for an app bug.
+    """
+    sample = get_admin_review_url("tutor_1")
+    if not sample:
+        return  # get_admin_review_url already logged why
+    segments = [part for part in urlsplit(sample).path.split("/") if part]
+    logger.info("'Review in App' links will look like: %s", sample)
+    if len(segments) < 2:
+        logger.warning(
+            "MINI_APP_URL has no Mini App short name (%s). Such a link only opens an app if the bot's "
+            "*Main* Mini App is configured; otherwise it opens the bot chat. Use the direct link of the "
+            "admin app from @BotFather -> /myapps, e.g. https://t.me/<bot>/admin",
+            sample,
+        )
+    else:
+        logger.info(
+            "Check in @BotFather -> /myapps that '%s' is the short name of the ADMIN app and that its "
+            "Web App URL ends with /admin.html (otherwise the button opens the bot chat or the wrong app).",
+            segments[1],
+        )
 
 
 async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession] = None) -> Optional[int]:

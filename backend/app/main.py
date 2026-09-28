@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from telegram import Update
 
 from app.bot import bot_instance
@@ -16,6 +17,7 @@ from app.routes.health import router as health_router
 from app.routes.admin import router as admin_router
 from app.routes.parents import router as parents_router
 from app.routes.tutors import router as tutors_router
+from app.services.schema_check import get_schema_status
 
 
 @asynccontextmanager
@@ -24,8 +26,26 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     
+    # Surface "code is newer than the database" at boot instead of letting it show up
+    # later as opaque 500s (which browsers report as a generic network error).
+    try:
+        async with AsyncSessionLocal() as session:
+            schema = await get_schema_status(session)
+        if schema["state"] == "behind":
+            logger.error(
+                "DATABASE SCHEMA IS BEHIND THE DEPLOYED CODE (db=%s, code=%s). "
+                "Run `alembic upgrade head` from backend/ - admin actions that touch new "
+                "tables will fail until you do.",
+                schema["current"], schema["head"],
+            )
+        else:
+            logger.info("Database schema state: %s (revision=%s)", schema["state"], schema["current"])
+    except Exception:
+        logger.exception("Startup schema check failed (continuing)")
+
     # Initialize Telegram Bot Application & background listeners
     await bot_instance.init_bot_app()
+    bot_instance.check_review_link_config()
 
     # Automatically verify, create, and cache dedicated forum topics if enabled
     if bot_instance.bot_app and bot_instance.bot_app.bot:
@@ -111,6 +131,17 @@ if settings.MINI_APP_URL and not settings.MINI_APP_URL.startswith("https://t.me/
     if clean_mini_app_url not in cors_origins:
         cors_origins.append(clean_mini_app_url)
 
+if settings.CORS_EXTRA_ORIGINS:
+    for raw_origin in settings.CORS_EXTRA_ORIGINS.split(","):
+        raw_origin = raw_origin.strip()
+        if not raw_origin:
+            continue
+        parsed_extra = urlsplit(raw_origin)
+        if parsed_extra.scheme and parsed_extra.netloc:
+            clean_extra = f"{parsed_extra.scheme}://{parsed_extra.netloc}"
+            if clean_extra not in cors_origins:
+                cors_origins.append(clean_extra)
+
 if settings.ENVIRONMENT == "development":
     cors_origins.extend([
         "http://localhost:3000",
@@ -119,13 +150,50 @@ if settings.ENVIRONMENT == "development":
         "http://127.0.0.1:5173",
     ])
 
+if not settings.WEBAPP_URL and not settings.CORS_EXTRA_ORIGINS and settings.ENVIRONMENT != "development":
+    logging.getLogger("mentorlink.api").warning(
+        "Neither WEBAPP_URL nor CORS_EXTRA_ORIGINS is set: browsers will block every request "
+        "from your Mini App frontend (CORS). Set WEBAPP_URL to your frontend's https origin."
+    )
+logging.getLogger("mentorlink.api").info("CORS allowed origins: %s", cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    # The admin Mini App uses PATCH (verification checklist, resolving incidents)
+    # and DELETE (removing admins). Browsers preflight those cross-origin calls and
+    # refuse to send them unless they are listed here, which surfaces to the user as a
+    # generic "network connection error".
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Return unexpected failures as JSON *with* CORS headers.
+
+    Starlette runs this handler outside CORSMiddleware, so without adding the headers
+    here the browser sees a CORS failure and reports a generic network error instead of
+    the real 500. The client can now show a reference id that matches the server log.
+    """
+    request_id = getattr(request.state, "request_id", None) or uuid4().hex
+    logger.exception(
+        "unhandled_exception method=%s path=%s request_id=%s",
+        request.method, request.url.path, request_id,
+    )
+    headers = {"X-Request-ID": request_id}
+    origin = request.headers.get("origin")
+    if origin and origin in cors_origins:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error. Reference: {request_id}"},
+        headers=headers,
+    )
 
 # Mount API v1 Routers
 app.include_router(health_router, prefix="/api/v1")

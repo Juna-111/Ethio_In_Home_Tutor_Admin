@@ -1,0 +1,1630 @@
+From 77a708d953a7667155729983909a382d309acb42 Mon Sep 17 00:00:00 2001
+From: MentorLink Admin Agent <admin-agent@mentorlink.local>
+Date: Mon, 28 Sep 2026 04:46:00 +0000
+Subject: [PATCH 1/2] Fix "Network connection error" causes, missing card
+ buttons, and list pagination
+
+Root causes found for the admin Mini App failing on every click:
+
+- CORS only allowed GET/POST/OPTIONS, but the admin app uses PATCH (verification
+  checklist, resolving incidents) and DELETE (removing admins). Browsers reject those
+  at the preflight, which surfaces as a generic network error. Tests could not see
+  this because they call the API directly. Now allows PUT/PATCH/DELETE.
+- Unhandled server errors were returned by Starlette's outermost handler with no CORS
+  headers, so a real 500 (e.g. migrations not applied) also looked like a network
+  error. Added a global handler returning JSON + CORS headers + a reference id that
+  matches the server log.
+- Production does not create tables, and /health only ran SELECT 1, so a database
+  behind the deployed migrations reported "healthy". /health now reports
+  schema_state (current/behind/untracked) and the app logs an ERROR at startup when
+  behind.
+- Added CORS_EXTRA_ORIGINS so a frontend on a different domain can be allowed.
+
+"Review in App" buttons silently missing:
+- get_admin_review_url required MINI_APP_URL to be a t.me link and returned None
+  without any log otherwise. It now falls back to https://t.me/<bot>/<short name>
+  (ADMIN_MINI_APP_SHORT_NAME) and logs a one-time warning when it cannot build a link.
+
+Security:
+- CRON_SECRET no longer has a hardcoded default (the old value was public in this
+  repo). Comparison is now constant-time.
+
+Assignment notifications:
+- Assigning already DMs parent and tutor; it was untested and swallowed failures
+  silently. Added tests (both DMs sent; a failed DM does not break the assignment)
+  and warning logs instead of bare except/pass.
+
+Pagination/search:
+- TutorList: server-side search by name/phone (debounced) + pager (was capped at 50
+  with no way to see more). New `search` param on GET /admin/tutors.
+- Audit log and Incidents: pagers added. OpsQueue no longer hides load failures behind
+  an empty "nothing found" state.
+
+Frontend api client:
+- Network failures are recognised by error type instead of Chrome's exact wording
+  ("Load failed" on iOS Telegram and Firefox's message previously leaked through),
+  the message now names the API host and the app's origin, and idempotent GETs retry
+  once (writes are never auto-retried).
+
+Docs: .env.example and RUNBOOK corrected (MINI_APP_URL is the t.me link), release
+checklist with alembic upgrade head, and a network-error troubleshooting guide.
+
+Tests: 88 -> 107. New tests fail against the old behaviour (verified).
+---
+ backend/.env.example                       |  21 +-
+ backend/app/bot/bot_instance.py            |  41 +++-
+ backend/app/config.py                      |  12 +-
+ backend/app/main.py                        |  69 ++++++-
+ backend/app/routes/admin.py                |  36 +++-
+ backend/app/routes/health.py               |  22 +-
+ backend/app/schemas.py                     |   5 +
+ backend/app/services/schema_check.py       |  72 +++++++
+ backend/tests/test_admin_api.py            | 113 ++++++++++
+ backend/tests/test_deployment_readiness.py | 230 +++++++++++++++++++++
+ docs/RUNBOOK.md                            |  25 +++
+ frontend/src/admin/AdminManagement.jsx     |  31 ++-
+ frontend/src/admin/OpsQueue.jsx            |  38 +++-
+ frontend/src/admin/TutorList.jsx           | 124 +++++++----
+ frontend/src/admin/admin.css               |  24 +++
+ frontend/src/services/api.js               |  55 ++++-
+ 16 files changed, 845 insertions(+), 73 deletions(-)
+ create mode 100644 backend/app/services/schema_check.py
+ create mode 100644 backend/tests/test_deployment_readiness.py
+
+diff --git a/backend/.env.example b/backend/.env.example
+index dfaa689..ba3616d 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -21,11 +21,24 @@ SUPER_ADMIN_ID=123456789
+ ADMIN_IDS=
+ 
+ # WebApp URLs:
+-# WEBAPP_URL: Direct HTTPS web hosting URL (e.g. Vercel or Render).
+-#             Required for Telegram WebAppInfo so initData authentication is passed correctly.
++# WEBAPP_URL: HTTPS origin of the deployed frontend (Vercel or Render). Used for the public
++#             Mini App button AND as the origin browsers are allowed to call this API from
++#             (CORS). Scheme + host only: no path, no trailing slash.
+ WEBAPP_URL=https://your-frontend-deployment.vercel.app
+-# MINI_APP_URL: Telegram direct bot link (e.g. https://t.me/MentorLinkBot/app)
+-MINI_APP_URL=https://t.me/MentorLinkBot/app
++# MINI_APP_URL: the BotFather *direct link* of the ADMIN Mini App (created with /newapp),
++#               e.g. https://t.me/MentorLinkBot/admin. "Review in App" buttons on admin cards
++#               are built from it. It must be the t.me link, NOT the Vercel URL.
++MINI_APP_URL=https://t.me/MentorLinkBot/admin
++# Fallback used to build https://t.me/<bot username>/<this> if MINI_APP_URL is not a t.me link.
++ADMIN_MINI_APP_SHORT_NAME=admin
++# Optional: comma-separated extra origins allowed by CORS, e.g. when the admin Mini App is
++# hosted on a different domain than WEBAPP_URL.
++CORS_EXTRA_ORIGINS=
++
++# Secret for POST /api/v1/admin/cron/run (the scheduled GitHub Actions workflow sends it as
++# X-Cron-Secret). There is deliberately no default: generate a long random value and set the
++# SAME value as the CRON_SECRET secret in GitHub. Leave empty to disable secret-based access.
++CRON_SECRET=
+ 
+ # Environment
+ ENVIRONMENT=development
+diff --git a/backend/app/bot/bot_instance.py b/backend/app/bot/bot_instance.py
+index f391c99..0a94a34 100644
+--- a/backend/app/bot/bot_instance.py
++++ b/backend/app/bot/bot_instance.py
+@@ -206,10 +206,47 @@ def get_clean_chat_id(chat_id: int | str) -> str:
+     return raw
+ 
+ 
++_review_url_warning_logged = False
++
++
++def _resolve_mini_app_base_url() -> Optional[str]:
++    """Return the ``https://t.me/<bot>/<short_name>`` base for Mini App deep links.
++
++    Preference order:
++      1. ``MINI_APP_URL`` when it is already a t.me direct link (the documented setting).
++      2. ``https://t.me/<running bot's username>/<ADMIN_MINI_APP_SHORT_NAME>`` as a
++         fallback, so setting MINI_APP_URL to the raw web URL (an easy mistake) no longer
++         silently removes the "Review in App" buttons from every admin card.
++    """
++    mini_app_url = settings.MINI_APP_URL
++    if mini_app_url and mini_app_url.startswith("https://t.me/"):
++        return mini_app_url
++
++    short_name = (settings.ADMIN_MINI_APP_SHORT_NAME or "").strip().strip("/")
++    username = None
++    if bot_app is not None:
++        try:
++            username = (bot_app.bot.username or "").lstrip("@")
++        except Exception:
++            username = None
++    if username and short_name:
++        return f"https://t.me/{username}/{short_name}"
++    return None
++
++
+ def get_admin_review_url(start_param: str) -> Optional[str]:
+     """Build a Telegram Mini App deep link from the configured bot app URL."""
+-    mini_app_url = settings.MINI_APP_URL
+-    if not mini_app_url or not mini_app_url.startswith("https://t.me/"):
++    global _review_url_warning_logged
++    mini_app_url = _resolve_mini_app_base_url()
++    if not mini_app_url:
++        if not _review_url_warning_logged:
++            _review_url_warning_logged = True
++            logger.warning(
++                "Cannot build 'Review in App' links, so admin cards will have no such button. "
++                "Set MINI_APP_URL to your BotFather direct link (https://t.me/<bot>/<short_name>) "
++                "- NOT the Vercel URL - or make sure the bot is running and "
++                "ADMIN_MINI_APP_SHORT_NAME matches the app you registered with /newapp."
++            )
+         return None
+     parsed = urlsplit(mini_app_url)
+     query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "startapp"]
+diff --git a/backend/app/config.py b/backend/app/config.py
+index 250fb77..b8408e8 100644
+--- a/backend/app/config.py
++++ b/backend/app/config.py
+@@ -21,9 +21,19 @@ class Settings(BaseSettings):
+     TUTOR_REGISTRATION_TOPIC_ID: Optional[int] = None
+     WEBAPP_URL: Optional[str] = None
+     MINI_APP_URL: Optional[str] = None
++    # Short name of the Admin Mini App registered with BotFather (/newapp). Used to
++    # build "Review in App" deep links (https://t.me/<bot>/<short_name>?startapp=...)
++    # when MINI_APP_URL is not already a t.me link.
++    ADMIN_MINI_APP_SHORT_NAME: Optional[str] = "admin"
++    # Comma-separated extra browser origins allowed by CORS, e.g. when the admin
++    # frontend is hosted on a different domain than WEBAPP_URL.
++    CORS_EXTRA_ORIGINS: Optional[str] = None
+     ENVIRONMENT: str = "development"
+     ALLOW_UNVERIFIED_WEB_PREVIEW: bool = False
+-    CRON_SECRET: Optional[str] = "mentorlink_cron_secret"
++    # No default on purpose: a hardcoded secret in a public repo is not a secret.
++    # When unset, header/bearer cron auth is disabled and only an authenticated
++    # admin (or a CRON_SECRET you configure) can trigger /admin/cron/run.
++    CRON_SECRET: Optional[str] = None
+ 
+     @field_validator("ADMIN_IDS", mode="before")
+     @classmethod
+diff --git a/backend/app/main.py b/backend/app/main.py
+index b46c550..6bd8599 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
+ from uuid import uuid4
+ from fastapi import FastAPI, HTTPException, Request, status
+ from fastapi.middleware.cors import CORSMiddleware
++from fastapi.responses import JSONResponse
+ from telegram import Update
+ 
+ from app.bot import bot_instance
+@@ -16,6 +17,7 @@ from app.routes.health import router as health_router
+ from app.routes.admin import router as admin_router
+ from app.routes.parents import router as parents_router
+ from app.routes.tutors import router as tutors_router
++from app.services.schema_check import get_schema_status
+ 
+ 
+ @asynccontextmanager
+@@ -24,6 +26,23 @@ async def lifespan(app: FastAPI):
+         async with engine.begin() as conn:
+             await conn.run_sync(Base.metadata.create_all)
+     
++    # Surface "code is newer than the database" at boot instead of letting it show up
++    # later as opaque 500s (which browsers report as a generic network error).
++    try:
++        async with AsyncSessionLocal() as session:
++            schema = await get_schema_status(session)
++        if schema["state"] == "behind":
++            logger.error(
++                "DATABASE SCHEMA IS BEHIND THE DEPLOYED CODE (db=%s, code=%s). "
++                "Run `alembic upgrade head` from backend/ - admin actions that touch new "
++                "tables will fail until you do.",
++                schema["current"], schema["head"],
++            )
++        else:
++            logger.info("Database schema state: %s (revision=%s)", schema["state"], schema["current"])
++    except Exception:
++        logger.exception("Startup schema check failed (continuing)")
++
+     # Initialize Telegram Bot Application & background listeners
+     await bot_instance.init_bot_app()
+ 
+@@ -111,6 +130,17 @@ if settings.MINI_APP_URL and not settings.MINI_APP_URL.startswith("https://t.me/
+     if clean_mini_app_url not in cors_origins:
+         cors_origins.append(clean_mini_app_url)
+ 
++if settings.CORS_EXTRA_ORIGINS:
++    for raw_origin in settings.CORS_EXTRA_ORIGINS.split(","):
++        raw_origin = raw_origin.strip()
++        if not raw_origin:
++            continue
++        parsed_extra = urlsplit(raw_origin)
++        if parsed_extra.scheme and parsed_extra.netloc:
++            clean_extra = f"{parsed_extra.scheme}://{parsed_extra.netloc}"
++            if clean_extra not in cors_origins:
++                cors_origins.append(clean_extra)
++
+ if settings.ENVIRONMENT == "development":
+     cors_origins.extend([
+         "http://localhost:3000",
+@@ -119,14 +149,51 @@ if settings.ENVIRONMENT == "development":
+         "http://127.0.0.1:5173",
+     ])
+ 
++if not settings.WEBAPP_URL and not settings.CORS_EXTRA_ORIGINS and settings.ENVIRONMENT != "development":
++    logging.getLogger("mentorlink.api").warning(
++        "Neither WEBAPP_URL nor CORS_EXTRA_ORIGINS is set: browsers will block every request "
++        "from your Mini App frontend (CORS). Set WEBAPP_URL to your frontend's https origin."
++    )
++logging.getLogger("mentorlink.api").info("CORS allowed origins: %s", cors_origins)
++
+ app.add_middleware(
+     CORSMiddleware,
+     allow_origins=cors_origins,
+     allow_credentials=True,
+-    allow_methods=["GET", "POST", "OPTIONS"],
++    # The admin Mini App uses PATCH (verification checklist, resolving incidents)
++    # and DELETE (removing admins). Browsers preflight those cross-origin calls and
++    # refuse to send them unless they are listed here, which surfaces to the user as a
++    # generic "network connection error".
++    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+     allow_headers=["*"],
+ )
+ 
++
++@app.exception_handler(Exception)
++async def unhandled_exception_handler(request: Request, exc: Exception):
++    """Return unexpected failures as JSON *with* CORS headers.
++
++    Starlette runs this handler outside CORSMiddleware, so without adding the headers
++    here the browser sees a CORS failure and reports a generic network error instead of
++    the real 500. The client can now show a reference id that matches the server log.
++    """
++    request_id = getattr(request.state, "request_id", None) or uuid4().hex
++    logger.exception(
++        "unhandled_exception method=%s path=%s request_id=%s",
++        request.method, request.url.path, request_id,
++    )
++    headers = {"X-Request-ID": request_id}
++    origin = request.headers.get("origin")
++    if origin and origin in cors_origins:
++        headers["Access-Control-Allow-Origin"] = origin
++        headers["Access-Control-Allow-Credentials"] = "true"
++        headers["Vary"] = "Origin"
++    return JSONResponse(
++        status_code=500,
++        content={"detail": f"Internal server error. Reference: {request_id}"},
++        headers=headers,
++    )
++
+ # Mount API v1 Routers
+ app.include_router(health_router, prefix="/api/v1")
+ app.include_router(admin_router, prefix="/api/v1")
+diff --git a/backend/app/routes/admin.py b/backend/app/routes/admin.py
+index be9e7df..aca6738 100644
+--- a/backend/app/routes/admin.py
++++ b/backend/app/routes/admin.py
+@@ -1,6 +1,8 @@
+ from collections import Counter, defaultdict
+ from datetime import datetime, time, timedelta, timezone
++import hmac
+ import html
++import logging
+ from typing import Any, Optional
+ 
+ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+@@ -70,6 +72,7 @@ from app.services.matcher import get_tiered_matches
+ from app.services.scheduler import claim_event, run_all_scheduled_tasks
+ 
+ router = APIRouter(prefix="/admin", tags=["Admin"])
++logger = logging.getLogger("mentorlink.routes.admin")
+ 
+ 
+ @router.get("/dashboard", response_model=AdminDashboardResponse, summary="Admin dashboard counts")
+@@ -365,8 +368,11 @@ async def assign_admin_request(
+                           f"Contact: {html.escape(tutor.phone_number)}"),
+                     parse_mode=ParseMode.HTML,
+                 )
+-            except Exception:
+-                pass
++            except Exception as exc:
++                logger.warning(
++                    "Failed to DM parent %s on assignment for request #%s: %s",
++                    parent.telegram_user_id, request_id, exc,
++                )
+         if tutor.telegram_user_id:
+             try:
+                 await bot.send_message(
+@@ -375,8 +381,16 @@ async def assign_admin_request(
+                           f"Contact: {html.escape(parent.phone_number)}"),
+                     parse_mode=ParseMode.HTML,
+                 )
+-            except Exception:
+-                pass
++            except Exception as exc:
++                logger.warning(
++                    "Failed to DM tutor %s on assignment for request #%s: %s",
++                    tutor.telegram_user_id, request_id, exc,
++                )
++    else:
++        logger.warning(
++            "Bot app not running; assignment notifications skipped for request #%s (tutor #%s).",
++            request_id, tutor_id,
++        )
+     return AdminActionResponse(ok=True, message="Tutor assigned successfully.")
+ 
+ 
+@@ -681,6 +695,7 @@ async def get_admin_tutor_scorecard(
+ @router.get("/tutors", response_model=AdminTutorListResponse, summary="List tutors")
+ async def list_admin_tutors(
+     tutor_status: Optional[str] = Query(None, alias="status", max_length=50),
++    search: Optional[str] = Query(None, max_length=100, description="Match against tutor name or phone number"),
+     page: int = Query(1, ge=1),
+     page_size: int = Query(20, ge=1, le=100),
+     _admin: AdminPrincipal = Depends(require_admin),
+@@ -691,6 +706,11 @@ async def list_admin_tutors(
+     filters = []
+     if tutor_status:
+         filters.append(Tutor.status == tutor_status)
++    if search:
++        needle = f"%{search.strip()}%"
++        filters.append(
++            (Tutor.full_name.ilike(needle)) | (Tutor.phone_number.ilike(needle))
++        )
+     if filters:
+         query = query.where(*filters)
+         count_query = count_query.where(*filters)
+@@ -1122,11 +1142,15 @@ async def run_cron_endpoint(
+     expected_secret = settings.CRON_SECRET
+ 
+     if expected_secret:
+-        if x_cron_secret == expected_secret:
++        if x_cron_secret and hmac.compare_digest(x_cron_secret, expected_secret):
+             is_authenticated = True
+         elif authorization:
+             parts = authorization.split()
+-            if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1] == expected_secret:
++            if (
++                len(parts) == 2
++                and parts[0].lower() == "bearer"
++                and hmac.compare_digest(parts[1], expected_secret)
++            ):
+                 is_authenticated = True
+ 
+     if not is_authenticated:
+diff --git a/backend/app/routes/health.py b/backend/app/routes/health.py
+index 90736db..cea4d8d 100644
+--- a/backend/app/routes/health.py
++++ b/backend/app/routes/health.py
+@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from app.database import get_db
+ from app.schemas import HealthResponse
++from app.services.schema_check import get_schema_status
+ 
+ logger = logging.getLogger("mentorlink.health")
+ 
+@@ -22,7 +23,26 @@ async def health_check(db: AsyncSession = Depends(get_db)):
+                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                 detail="Database service unavailable"
+             )
+-        return HealthResponse(status="healthy", database="connected")
++
++        schema = await get_schema_status(db)
++        if schema["state"] == "behind":
++            # Still HTTP 200 so the platform keeps the instance up, but make the
++            # problem impossible to miss for anyone who opens this URL.
++            return HealthResponse(
++                status="degraded",
++                database="connected",
++                schema_state="behind",
++                migration_current=schema["current"],
++                migration_head=schema["head"],
++                detail="Database schema is behind the deployed code. Run: alembic upgrade head",
++            )
++        return HealthResponse(
++            status="healthy",
++            database="connected",
++            schema_state=schema["state"],
++            migration_current=schema["current"],
++            migration_head=schema["head"],
++        )
+     except HTTPException:
+         raise
+     except Exception as exc:
+diff --git a/backend/app/schemas.py b/backend/app/schemas.py
+index 080241f..4254238 100644
+--- a/backend/app/schemas.py
++++ b/backend/app/schemas.py
+@@ -139,6 +139,11 @@ class TutorResponse(TutorCreate):
+ class HealthResponse(BaseModel):
+     status: str
+     database: str
++    # "current" | "behind" | "untracked" | "unknown" - see app/services/schema_check.py
++    schema_state: Optional[str] = None
++    migration_current: Optional[str] = None
++    migration_head: Optional[str] = None
++    detail: Optional[str] = None
+ 
+ 
+ class AdminDashboardResponse(BaseModel):
+diff --git a/backend/app/services/schema_check.py b/backend/app/services/schema_check.py
+new file mode 100644
+index 0000000..d52e873
+--- /dev/null
++++ b/backend/app/services/schema_check.py
+@@ -0,0 +1,72 @@
++"""Detect whether the connected database has all Alembic migrations applied.
++
++Production does not auto-create tables (only ``ENVIRONMENT=development`` does), so
++a deploy that ships new code without running ``alembic upgrade head`` fails at
++request time with an opaque 500. This module makes that state visible in the
++``/api/v1/health`` response and in the startup log instead of leaving it to be
++discovered through a confusing browser error.
++"""
++
++from __future__ import annotations
++
++import logging
++from pathlib import Path
++from typing import Any, Optional
++
++from sqlalchemy import text
++from sqlalchemy.ext.asyncio import AsyncSession
++
++logger = logging.getLogger("mentorlink.schema")
++
++BACKEND_DIR = Path(__file__).resolve().parents[2]
++
++
++def get_migration_head() -> Optional[str]:
++    """Return the newest revision id shipped with this code, or None if unreadable."""
++    try:
++        from alembic.config import Config
++        from alembic.script import ScriptDirectory
++
++        cfg = Config(str(BACKEND_DIR / "alembic.ini"))
++        cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
++        heads = ScriptDirectory.from_config(cfg).get_heads()
++        return heads[0] if len(heads) == 1 else ",".join(sorted(heads))
++    except Exception as exc:  # pragma: no cover - defensive; never break health
++        logger.warning("Could not read Alembic head revision: %s", exc)
++        return None
++
++
++async def get_schema_status(db: AsyncSession) -> dict[str, Any]:
++    """Compare the database revision to the code's head revision.
++
++    ``state`` is one of:
++      * ``current``   - database is at the latest migration
++      * ``behind``    - database is missing migrations (run ``alembic upgrade head``)
++      * ``untracked`` - no ``alembic_version`` table (e.g. dev DB built by create_all)
++      * ``unknown``   - the migration scripts could not be read
++    """
++    head = get_migration_head()
++    current: Optional[str] = None
++    tracked = True
++    try:
++        result = await db.execute(text("SELECT version_num FROM alembic_version"))
++        rows = [row[0] for row in result.fetchall()]
++        current = ",".join(sorted(rows)) if rows else None
++    except Exception:
++        tracked = False
++        # A failed statement can leave the session/transaction unusable on Postgres.
++        try:
++            await db.rollback()
++        except Exception:  # pragma: no cover - defensive
++            pass
++
++    if head is None:
++        state = "unknown"
++    elif not tracked:
++        state = "untracked"
++    elif current == head:
++        state = "current"
++    else:
++        state = "behind"
++
++    return {"state": state, "current": current, "head": head}
+diff --git a/backend/tests/test_admin_api.py b/backend/tests/test_admin_api.py
+index 355c121..e9595ad 100644
+--- a/backend/tests/test_admin_api.py
++++ b/backend/tests/test_admin_api.py
+@@ -267,6 +267,119 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
+     assert audits[0].action == "assign_tutor"
+ 
+ 
++@pytest.mark.asyncio
++async def test_admin_assignment_notifies_parent_and_tutor(
++    async_client: AsyncClient,
++    db_session: AsyncSession,
++    monkeypatch,
++):
++    """Regression test: assign() must DM both sides with each other's contact info."""
++    bot_token = "123456:admin-test-token"
++    admin_id = 700107
++    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
++    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
++    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
++    import app.bot.bot_instance as bot_instance
++    mock_bot = MagicMock()
++    mock_bot.send_message = AsyncMock()
++    monkeypatch.setattr(bot_instance, "bot_app", MagicMock(bot=mock_bot))
++
++    parent = _parent_request("Notify Parent")
++    parent.telegram_user_id = 900001
++    tutor = _tutor("Notify Tutor", status="verified")
++    tutor.telegram_user_id = 900002
++    db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
++    await db_session.flush()
++    db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
++    await db_session.commit()
++
++    response = await async_client.post(
++        f"/api/v1/admin/requests/{parent.id}/assign",
++        json={"tutor_id": tutor.id},
++        headers=_telegram_auth_header(admin_id, bot_token),
++    )
++
++    assert response.status_code == 200
++    assert mock_bot.send_message.await_count == 2
++    calls = mock_bot.send_message.await_args_list
++    recipients = {c.kwargs["chat_id"] for c in calls}
++    assert recipients == {parent.telegram_user_id, tutor.telegram_user_id}
++
++    parent_call = next(c for c in calls if c.kwargs["chat_id"] == parent.telegram_user_id)
++    tutor_call = next(c for c in calls if c.kwargs["chat_id"] == tutor.telegram_user_id)
++    assert "Notify Tutor" in parent_call.kwargs["text"]
++    assert tutor.phone_number in parent_call.kwargs["text"]
++    assert "Notify Parent" in tutor_call.kwargs["text"]
++    assert parent.phone_number in tutor_call.kwargs["text"]
++
++
++@pytest.mark.asyncio
++async def test_admin_assignment_notification_failure_does_not_break_assignment(
++    async_client: AsyncClient,
++    db_session: AsyncSession,
++    monkeypatch,
++):
++    """If the Telegram DM fails (e.g. user blocked the bot), the assignment itself must still succeed."""
++    bot_token = "123456:admin-test-token"
++    admin_id = 700108
++    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
++    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
++    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
++    import app.bot.bot_instance as bot_instance
++    mock_bot = MagicMock()
++    mock_bot.send_message = AsyncMock(side_effect=Exception("Forbidden: bot was blocked by the user"))
++    monkeypatch.setattr(bot_instance, "bot_app", MagicMock(bot=mock_bot))
++
++    parent = _parent_request("Blocked Parent")
++    parent.telegram_user_id = 900003
++    tutor = _tutor("Blocked Tutor", status="verified")
++    tutor.telegram_user_id = 900004
++    db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
++    await db_session.flush()
++    db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
++    await db_session.commit()
++
++    response = await async_client.post(
++        f"/api/v1/admin/requests/{parent.id}/assign",
++        json={"tutor_id": tutor.id},
++        headers=_telegram_auth_header(admin_id, bot_token),
++    )
++
++    assert response.status_code == 200
++    assignments = (await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))).scalars().all()
++    assert len(assignments) == 1
++
++
++@pytest.mark.asyncio
++async def test_admin_tutor_search_matches_name_and_phone(
++    async_client: AsyncClient,
++    db_session: AsyncSession,
++    monkeypatch,
++):
++    bot_token = "123456:admin-test-token"
++    admin_id = 700110
++    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
++    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
++    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
++    target = _tutor("Bethlehem Girma", status="verified")
++    target.phone_number = "+251911223344"
++    other = _tutor("Samuel Wolde", status="verified")
++    other.phone_number = "+251955667788"
++    db_session.add_all([AdminUser(telegram_id=admin_id, role="admin", is_active=True), target, other])
++    await db_session.commit()
++    headers = _telegram_auth_header(admin_id, bot_token)
++
++    by_name = await async_client.get("/api/v1/admin/tutors?search=bethlehem", headers=headers)
++    assert by_name.status_code == 200
++    names = [item["full_name"] for item in by_name.json()["items"]]
++    assert names == ["Bethlehem Girma"]
++
++    by_phone = await async_client.get("/api/v1/admin/tutors?search=955667788", headers=headers)
++    assert by_phone.status_code == 200
++    names = [item["full_name"] for item in by_phone.json()["items"]]
++    assert names == ["Samuel Wolde"]
++
++
+ @pytest.mark.asyncio
+ async def test_admin_coverage_gap_ratio_matches_seeded_counts(
+     async_client: AsyncClient,
+diff --git a/backend/tests/test_deployment_readiness.py b/backend/tests/test_deployment_readiness.py
+new file mode 100644
+index 0000000..f582474
+--- /dev/null
++++ b/backend/tests/test_deployment_readiness.py
+@@ -0,0 +1,230 @@
++"""Tests for failure modes that unit tests normally miss because they never behave like a browser.
++
++Background: the admin Mini App showed "Network connection error" on every click even though
++the whole suite was green. The suite calls the API directly (no CORS enforcement, schema built
++by ``create_all``), so it could not see:
++  * PATCH/DELETE being rejected at the CORS preflight,
++  * unhandled 500s being returned without CORS headers (browser reports a network error),
++  * a database that is behind the deployed migrations,
++  * "Review in App" buttons silently disappearing when MINI_APP_URL is a web URL,
++  * a publicly known default cron secret.
++"""
++
++from unittest.mock import MagicMock
++
++import pytest
++from httpx import ASGITransport, AsyncClient
++from sqlalchemy import text
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from app.config import settings
++from app.main import app
++
++ALLOWED_ORIGIN = "https://web.telegram.org"
++
++
++def _preflight_headers(method: str, origin: str = ALLOWED_ORIGIN) -> dict:
++    return {
++        "Origin": origin,
++        "Access-Control-Request-Method": method,
++        "Access-Control-Request-Headers": "authorization,content-type",
++    }
++
++
++# --------------------------------------------------------------------------
++# CORS
++# --------------------------------------------------------------------------
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("method,path", [
++    ("PATCH", "/api/v1/admin/tutors/1/verification"),
++    ("PATCH", "/api/v1/admin/incidents/1"),
++    ("DELETE", "/api/v1/admin/admins/123"),
++    ("POST", "/api/v1/admin/requests/1/assign"),
++    ("GET", "/api/v1/admin/dashboard"),
++])
++async def test_cors_preflight_allows_every_method_the_admin_app_uses(async_client: AsyncClient, method, path):
++    response = await async_client.options(path, headers=_preflight_headers(method))
++
++    assert response.status_code == 200, response.text
++    allowed = [m.strip() for m in response.headers["access-control-allow-methods"].split(",")]
++    assert method in allowed
++    assert response.headers["access-control-allow-origin"] == ALLOWED_ORIGIN
++
++
++@pytest.mark.asyncio
++async def test_cors_preflight_rejects_unknown_origin(async_client: AsyncClient):
++    response = await async_client.options(
++        "/api/v1/admin/dashboard",
++        headers=_preflight_headers("GET", origin="https://evil.example.com"),
++    )
++
++    assert response.status_code == 400
++    assert "access-control-allow-origin" not in response.headers
++
++
++# --------------------------------------------------------------------------
++# Unhandled errors must stay readable in the browser
++# --------------------------------------------------------------------------
++
++@pytest.mark.asyncio
++async def test_unhandled_exception_returns_json_with_cors_headers():
++    async def boom():
++        raise RuntimeError("simulated crash")
++
++    app.add_api_route("/api/v1/__boom", boom, methods=["GET"])
++    try:
++        transport = ASGITransport(app=app, raise_app_exceptions=False)
++        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
++            response = await client.get("/api/v1/__boom", headers={"Origin": ALLOWED_ORIGIN})
++    finally:
++        app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != "/api/v1/__boom"]
++
++    assert response.status_code == 500
++    body = response.json()
++    assert body["detail"].startswith("Internal server error. Reference: ")
++    assert body["detail"].endswith(response.headers["x-request-id"])
++    # Without these the browser hides the 500 behind a generic network error.
++    assert response.headers["access-control-allow-origin"] == ALLOWED_ORIGIN
++    assert "simulated crash" not in response.text  # never leak internals to the client
++
++
++@pytest.mark.asyncio
++async def test_unhandled_exception_does_not_grant_cors_to_unknown_origin():
++    async def boom():
++        raise RuntimeError("simulated crash")
++
++    app.add_api_route("/api/v1/__boom", boom, methods=["GET"])
++    try:
++        transport = ASGITransport(app=app, raise_app_exceptions=False)
++        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
++            response = await client.get("/api/v1/__boom", headers={"Origin": "https://evil.example.com"})
++    finally:
++        app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != "/api/v1/__boom"]
++
++    assert response.status_code == 500
++    assert "access-control-allow-origin" not in response.headers
++
++
++# --------------------------------------------------------------------------
++# Health reports migration state
++# --------------------------------------------------------------------------
++
++@pytest.mark.asyncio
++async def test_health_reports_untracked_when_no_alembic_table(async_client: AsyncClient):
++    response = await async_client.get("/api/v1/health")
++
++    assert response.status_code == 200
++    body = response.json()
++    assert body["status"] == "healthy"
++    assert body["schema_state"] == "untracked"
++
++
++@pytest.mark.asyncio
++async def test_health_reports_degraded_when_database_is_behind_migrations(
++    async_client: AsyncClient, db_session: AsyncSession
++):
++    await db_session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
++    await db_session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('20260925_01')"))
++    await db_session.commit()
++    try:
++        response = await async_client.get("/api/v1/health")
++    finally:
++        await db_session.execute(text("DROP TABLE alembic_version"))
++        await db_session.commit()
++
++    assert response.status_code == 200  # keep the instance up; just make the problem visible
++    body = response.json()
++    assert body["status"] == "degraded"
++    assert body["schema_state"] == "behind"
++    assert body["migration_current"] == "20260925_01"
++    assert body["migration_head"]
++    assert "alembic upgrade head" in body["detail"]
++
++
++@pytest.mark.asyncio
++async def test_health_reports_current_when_database_matches_head(
++    async_client: AsyncClient, db_session: AsyncSession
++):
++    from app.services.schema_check import get_migration_head
++
++    head = get_migration_head()
++    assert head, "migration scripts should be readable from the backend directory"
++    await db_session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
++    await db_session.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": head})
++    await db_session.commit()
++    try:
++        response = await async_client.get("/api/v1/health")
++    finally:
++        await db_session.execute(text("DROP TABLE alembic_version"))
++        await db_session.commit()
++
++    body = response.json()
++    assert body["status"] == "healthy"
++    assert body["schema_state"] == "current"
++    assert body["migration_current"] == head
++
++
++# --------------------------------------------------------------------------
++# "Review in App" deep links
++# --------------------------------------------------------------------------
++
++def test_review_url_uses_configured_t_me_link(monkeypatch):
++    import app.bot.bot_instance as bot_instance
++
++    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/admin")
++
++    assert bot_instance.get_admin_review_url("tutor_7") == "https://t.me/MentorLinkBot/admin?startapp=tutor_7"
++
++
++def test_review_url_falls_back_to_bot_username_when_mini_app_url_is_a_web_url(monkeypatch):
++    """The common misconfiguration: MINI_APP_URL set to the Vercel URL instead of the t.me link."""
++    import app.bot.bot_instance as bot_instance
++
++    monkeypatch.setattr(settings, "MINI_APP_URL", "https://my-app.vercel.app/admin.html")
++    monkeypatch.setattr(settings, "ADMIN_MINI_APP_SHORT_NAME", "admin")
++    fake_app = MagicMock()
++    fake_app.bot.username = "MentorLinkTestBot"
++    monkeypatch.setattr(bot_instance, "bot_app", fake_app)
++
++    assert bot_instance.get_admin_review_url("request_3") == "https://t.me/MentorLinkTestBot/admin?startapp=request_3"
++
++
++def test_review_url_is_none_and_warns_once_when_nothing_can_be_resolved(monkeypatch, caplog):
++    import logging
++    import app.bot.bot_instance as bot_instance
++
++    monkeypatch.setattr(settings, "MINI_APP_URL", "https://my-app.vercel.app/admin.html")
++    monkeypatch.setattr(bot_instance, "bot_app", None)
++    monkeypatch.setattr(bot_instance, "_review_url_warning_logged", False)
++
++    with caplog.at_level(logging.WARNING, logger="mentorlink.bot"):
++        assert bot_instance.get_admin_review_url("tutor_1") is None
++        assert bot_instance.get_admin_review_url("tutor_2") is None
++
++    warnings = [r for r in caplog.records if "Review in App" in r.getMessage()]
++    assert len(warnings) == 1
++
++
++# --------------------------------------------------------------------------
++# Cron secret hardening
++# --------------------------------------------------------------------------
++
++def test_cron_secret_has_no_hardcoded_default():
++    from app.config import Settings
++
++    assert Settings.model_fields["CRON_SECRET"].default is None
++
++
++@pytest.mark.asyncio
++async def test_old_public_default_cron_secret_is_rejected(async_client: AsyncClient, monkeypatch):
++    monkeypatch.setattr(settings, "CRON_SECRET", None)
++    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
++    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
++
++    response = await async_client.post(
++        "/api/v1/admin/cron/run",
++        headers={"X-Cron-Secret": "mentorlink_cron_secret"},
++    )
++
++    assert response.status_code == 401
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index 518c43a..5a0b767 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -28,6 +28,10 @@ From `backend/`, apply migrations with:
+ alembic upgrade head
+ ```
+ 
++Run this on **every release**, not just once. Production never creates tables by itself (only `ENVIRONMENT=development` does), so shipping new code without migrating makes admin actions fail with a 500. Phases 3-5 add the tables `audit_log`, `tutor_verifications`, `session_feedback`, `tutor_incidents`, `scheduled_event_claims`, `notification_outbox` and `registration_funnel_events`; on Render, put `alembic upgrade head` in the service's **Pre-Deploy Command**.
++
++After deploying, open `https://<backend>/api/v1/health`. You want `"status": "healthy"` and `"schema_state": "current"`. `"degraded"` / `"behind"` means migrations are missing; the backend also logs a `DATABASE SCHEMA IS BEHIND` error at startup.
++
+ The Phase 2 migrations add match-invite uniqueness and tutor pause state. Before applying to an existing database, inspect duplicate `(request_id, tutor_id)` invite pairs. The uniqueness migration intentionally stops instead of deleting historical records.
+ 
+ ## Administrator management
+@@ -40,6 +44,27 @@ The database registry survives restarts and deployments. `ADMIN_IDS` remains sup
+ 
+ Use `/api/v1/health` for database health. API responses include an `X-Request-ID` header. Supply your own `X-Request-ID` when tracing a request across logs.
+ 
++## Admin Mini App environment
++
++| Variable | Value |
++|---|---|
++| `WEBAPP_URL` | Frontend origin, e.g. `https://my-admin.vercel.app` (also the CORS-allowed origin) |
++| `CORS_EXTRA_ORIGINS` | Optional, comma-separated extra origins if the admin app lives on another domain |
++| `MINI_APP_URL` | BotFather direct link of the admin app, e.g. `https://t.me/MyBot/admin` (**not** the Vercel URL) |
++| `ADMIN_MINI_APP_SHORT_NAME` | Fallback short name (default `admin`) if `MINI_APP_URL` is not a t.me link |
++| `CRON_SECRET` | Long random value, identical to the `CRON_SECRET` GitHub Actions secret. No default. |
++
++If "Review in App" buttons are missing from admin cards, the backend logs `Cannot build 'Review in App' links` at the first card; fix `MINI_APP_URL` as above.
++
++## Troubleshooting: "Could not reach the MentorLink server"
++
++The message shows the API host and the app's own origin. Work through these in order:
++
++1. Open `https://<backend>/api/v1/health` in a browser. If it does not load, the server is down or cold-starting (free Render instances sleep); check the Render logs and wait a minute.
++2. If health loads but reports `"schema_state": "behind"`, run `alembic upgrade head`.
++3. If health is fine, the browser is refusing the request (CORS). Set `WEBAPP_URL` or `CORS_EXTRA_ORIGINS` to exactly the origin printed in the error (scheme + host, no path or trailing slash), then redeploy. Startup logs list the allowed origins (`CORS allowed origins: ...`).
++4. If the error says `Internal server error. Reference: <id>`, search the backend logs for that id to find the traceback.
++
+ ## Common recovery actions
+ 
+ - `TOPIC_CLOSED`: post confirmation messages before closing the forum topic.
+diff --git a/frontend/src/admin/AdminManagement.jsx b/frontend/src/admin/AdminManagement.jsx
+index b63e580..136a9b2 100644
+--- a/frontend/src/admin/AdminManagement.jsx
++++ b/frontend/src/admin/AdminManagement.jsx
+@@ -1,26 +1,31 @@
+ import React, { useEffect, useState } from 'react';
+-import { UserPlus, Trash2, Loader2 } from 'lucide-react';
++import { UserPlus, Trash2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+ import { getAdminUsers, createAdminUser, deleteAdminUser, getAdminAuditLog } from '../services/api';
+ 
++const AUDIT_PAGE_SIZE = 20;
++
+ export default function AdminManagement() {
+   const [admins, setAdmins] = useState([]);
+   const [auditLogs, setAuditLogs] = useState([]);
++  const [auditTotal, setAuditTotal] = useState(0);
++  const [auditPage, setAuditPage] = useState(1);
+   const [activeTab, setActiveTab] = useState('admins');
+   const [newTelegramId, setNewTelegramId] = useState('');
+   const [newRole, setNewRole] = useState('verifier');
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState(null);
+ 
+-  const loadData = () => {
++  const loadData = (page = auditPage) => {
+     setLoading(true);
+     setError(null);
+     Promise.all([
+       getAdminUsers().catch((err) => ({ items: [], error: err })),
+-      getAdminAuditLog({ page: 1, page_size: 50 }).catch((err) => ({ items: [], error: err })),
++      getAdminAuditLog({ page, page_size: AUDIT_PAGE_SIZE }).catch((err) => ({ items: [], total: 0, error: err })),
+     ])
+       .then(([adminsData, auditData]) => {
+         setAdmins(adminsData.items || []);
+         setAuditLogs(auditData.items || []);
++        setAuditTotal(auditData.total || 0);
+         setLoading(false);
+       })
+       .catch((err) => {
+@@ -30,9 +35,15 @@ export default function AdminManagement() {
+   };
+ 
+   useEffect(() => {
+-    loadData();
++    loadData(1);
+   }, []);
+ 
++  useEffect(() => {
++    if (activeTab === 'audit') loadData(auditPage);
++  }, [auditPage]);
++
++  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
++
+   const handleAddAdmin = async (e) => {
+     e.preventDefault();
+     if (!newTelegramId.trim()) return;
+@@ -71,7 +82,7 @@ export default function AdminManagement() {
+             className={activeTab === 'audit' ? 'pill-active' : 'pill'}
+             onClick={() => setActiveTab('audit')}
+           >
+-            Audit Trail ({auditLogs.length})
++            Audit Trail ({auditTotal})
+           </button>
+         </div>
+       </div>
+@@ -134,6 +145,7 @@ export default function AdminManagement() {
+           </div>
+         </div>
+       ) : (
++        <>
+         <div className="table-scroll">
+         <table className="admin-table">
+           <thead>
+@@ -162,6 +174,15 @@ export default function AdminManagement() {
+           </tbody>
+         </table>
+         </div>
++        <div className="pagination-row">
++          <span>{auditTotal ? `${(auditPage - 1) * AUDIT_PAGE_SIZE + 1}–${Math.min(auditPage * AUDIT_PAGE_SIZE, auditTotal)} of ${auditTotal}` : '0 entries'}</span>
++          <div>
++            <button className="icon-button" type="button" aria-label="Previous page" disabled={auditPage <= 1} onClick={() => setAuditPage((p) => p - 1)}><ChevronLeft size={16} /></button>
++            <span>Page {auditPage} / {auditTotalPages}</span>
++            <button className="icon-button" type="button" aria-label="Next page" disabled={auditPage >= auditTotalPages} onClick={() => setAuditPage((p) => p + 1)}><ChevronRight size={16} /></button>
++          </div>
++        </div>
++        </>
+       )}
+     </div>
+   );
+diff --git a/frontend/src/admin/OpsQueue.jsx b/frontend/src/admin/OpsQueue.jsx
+index 4957caa..a38a43b 100644
+--- a/frontend/src/admin/OpsQueue.jsx
++++ b/frontend/src/admin/OpsQueue.jsx
+@@ -1,26 +1,34 @@
+ import React, { useEffect, useState } from 'react';
+-import { Play, Loader2 } from 'lucide-react';
++import { Play, Loader2, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+ import { getAdminFlags, getAdminIncidents, updateAdminIncident, runAdminCron } from '../services/api';
+ 
++const INCIDENT_PAGE_SIZE = 20;
++
+ export default function OpsQueue({ onSelectTutor }) {
+   const [flags, setFlags] = useState([]);
+   const [incidents, setIncidents] = useState([]);
++  const [incidentTotal, setIncidentTotal] = useState(0);
++  const [incidentPage, setIncidentPage] = useState(1);
+   const [activeTab, setActiveTab] = useState('flags');
+   const [loading, setLoading] = useState(true);
+   const [cronRunning, setCronRunning] = useState(false);
+   const [cronResult, setCronResult] = useState(null);
+   const [error, setError] = useState(null);
+ 
+-  const loadData = () => {
++  const loadData = (page = incidentPage) => {
+     setLoading(true);
+     setError(null);
++    // Surface real failures instead of silently rendering "nothing found":
++    // an empty list caused by a network/auth error looks identical to a
++    // genuinely empty queue, which hides problems from the admin.
+     Promise.all([
+-      getAdminFlags().catch(() => []),
+-      getAdminIncidents({ page: 1, page_size: 50 }).catch(() => ({ items: [] })),
++      getAdminFlags(),
++      getAdminIncidents({ page, page_size: INCIDENT_PAGE_SIZE }),
+     ])
+       .then(([flagsData, incidentsData]) => {
+         setFlags(flagsData || []);
+         setIncidents(incidentsData.items || []);
++        setIncidentTotal(incidentsData.total || 0);
+         setLoading(false);
+       })
+       .catch((err) => {
+@@ -30,9 +38,15 @@ export default function OpsQueue({ onSelectTutor }) {
+   };
+ 
+   useEffect(() => {
+-    loadData();
++    loadData(1);
+   }, []);
+ 
++  useEffect(() => {
++    if (activeTab === 'incidents') loadData(incidentPage);
++  }, [incidentPage]);
++
++  const incidentTotalPages = Math.max(1, Math.ceil(incidentTotal / INCIDENT_PAGE_SIZE));
++
+   const handleResolveIncident = async (incidentId) => {
+     try {
+       await updateAdminIncident(incidentId, { status: 'resolved' });
+@@ -74,7 +88,7 @@ export default function OpsQueue({ onSelectTutor }) {
+             className={activeTab === 'incidents' ? 'pill-active' : 'pill'}
+             onClick={() => setActiveTab('incidents')}
+           >
+-            Incidents ({incidents.length})
++            Incidents ({incidentTotal})
+           </button>
+         </div>
+ 
+@@ -97,6 +111,8 @@ export default function OpsQueue({ onSelectTutor }) {
+ 
+       {loading ? (
+         <div className="loading-state"><Loader2 className="spin" size={24} /><span>Loading operations queue...</span></div>
++      ) : error ? (
++        <div className="error-state"><AlertCircle size={20} /><span>{error}</span></div>
+       ) : activeTab === 'flags' ? (
+         flags.length === 0 ? (
+           <div className="empty-state">No active red flags detected across tutor profiles!</div>
+@@ -137,6 +153,7 @@ export default function OpsQueue({ onSelectTutor }) {
+       ) : incidents.length === 0 ? (
+         <div className="empty-state">No incidents logged.</div>
+       ) : (
++        <>
+         <div className="table-scroll">
+         <table className="admin-table">
+           <thead>
+@@ -183,6 +200,15 @@ export default function OpsQueue({ onSelectTutor }) {
+           </tbody>
+         </table>
+         </div>
++        <div className="pagination-row">
++          <span>{incidentTotal ? `${(incidentPage - 1) * INCIDENT_PAGE_SIZE + 1}–${Math.min(incidentPage * INCIDENT_PAGE_SIZE, incidentTotal)} of ${incidentTotal}` : '0 incidents'}</span>
++          <div>
++            <button className="icon-button" type="button" aria-label="Previous page" disabled={incidentPage <= 1} onClick={() => setIncidentPage((p) => p - 1)}><ChevronLeft size={16} /></button>
++            <span>Page {incidentPage} / {incidentTotalPages}</span>
++            <button className="icon-button" type="button" aria-label="Next page" disabled={incidentPage >= incidentTotalPages} onClick={() => setIncidentPage((p) => p + 1)}><ChevronRight size={16} /></button>
++          </div>
++        </div>
++        </>
+       )}
+     </div>
+   );
+diff --git a/frontend/src/admin/TutorList.jsx b/frontend/src/admin/TutorList.jsx
+index 9b38384..e9a1d52 100644
+--- a/frontend/src/admin/TutorList.jsx
++++ b/frontend/src/admin/TutorList.jsx
+@@ -1,30 +1,44 @@
+ import React, { useEffect, useState } from 'react';
+-import { ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
++import { ChevronLeft, ChevronRight, AlertCircle, Loader2, Search } from 'lucide-react';
+ import { getAdminTutors } from '../services/api';
+ 
++const PAGE_SIZE = 20;
++
+ export default function TutorList({ onSelectTutor }) {
+   const [tutors, setTutors] = useState([]);
++  const [list, setList] = useState({ total: 0, page: 1, page_size: PAGE_SIZE });
+   const [loading, setLoading] = useState(true);
+   const [statusFilter, setStatusFilter] = useState('');
++  const [searchInput, setSearchInput] = useState('');
++  const [search, setSearch] = useState('');
++  const [page, setPage] = useState(1);
+   const [error, setError] = useState(null);
+ 
+-  const fetchTutors = () => {
++  // Debounce the search box so we don't fire a request on every keystroke.
++  useEffect(() => {
++    const timer = setTimeout(() => {
++      setSearch(searchInput.trim());
++      setPage(1);
++    }, 350);
++    return () => clearTimeout(timer);
++  }, [searchInput]);
++
++  useEffect(() => {
+     setLoading(true);
+     setError(null);
+-    getAdminTutors({ status: statusFilter || undefined, page: 1, page_size: 50 })
++    getAdminTutors({ status: statusFilter || undefined, search: search || undefined, page, page_size: PAGE_SIZE })
+       .then((data) => {
+         setTutors(data.items || []);
++        setList({ total: data.total || 0, page: data.page || page, page_size: data.page_size || PAGE_SIZE });
+         setLoading(false);
+       })
+       .catch((err) => {
+         setError(err.message || 'Failed to load tutors.');
+         setLoading(false);
+       });
+-  };
++  }, [statusFilter, search, page]);
+ 
+-  useEffect(() => {
+-    fetchTutors();
+-  }, [statusFilter]);
++  const totalPages = Math.max(1, Math.ceil(list.total / list.page_size));
+ 
+   return (
+     <div className="tutor-list-view">
+@@ -41,12 +55,22 @@ export default function TutorList({ onSelectTutor }) {
+               key={id}
+               type="button"
+               className={statusFilter === id ? 'pill-active' : 'pill'}
+-              onClick={() => setStatusFilter(id)}
++              onClick={() => { setStatusFilter(id); setPage(1); }}
+             >
+               {label}
+             </button>
+           ))}
+         </div>
++        <div className="search-field">
++          <Search size={14} />
++          <input
++            type="text"
++            placeholder="Search name or phone…"
++            value={searchInput}
++            onChange={(e) => setSearchInput(e.target.value)}
++            aria-label="Search tutors by name or phone number"
++          />
++        </div>
+       </div>
+ 
+       {loading ? (
+@@ -54,44 +78,56 @@ export default function TutorList({ onSelectTutor }) {
+       ) : error ? (
+         <div className="error-state"><AlertCircle size={20} /><span>{error}</span></div>
+       ) : tutors.length === 0 ? (
+-        <div className="empty-state">No tutors found for status: {statusFilter || 'all'}.</div>
++        <div className="empty-state">
++          No tutors found{search ? ` matching "${search}"` : ''} for status: {statusFilter || 'all'}.
++        </div>
+       ) : (
+-        <div className="tutors-table-wrapper">
+-          <table className="admin-table">
+-            <thead>
+-              <tr>
+-                <th>ID</th>
+-                <th>Tutor Name</th>
+-                <th>Base Subcity</th>
+-                <th>Subjects</th>
+-                <th>Entrance</th>
+-                <th>Status</th>
+-                <th>Action</th>
+-              </tr>
+-            </thead>
+-            <tbody>
+-              {tutors.map((t) => (
+-                <tr key={t.id} onClick={() => onSelectTutor(t.id)} className="clickable-row">
+-                  <td>#{t.id}</td>
+-                  <td><strong>{t.full_name}</strong><br /><small>{t.phone_number}</small></td>
+-                  <td>{t.base_subcity}</td>
+-                  <td>{(t.subjects_qualified || []).slice(0, 3).join(', ')}</td>
+-                  <td>{t.entrance_result ?? '—'}</td>
+-                  <td>
+-                    <span className={`status-badge status-${t.status}`}>
+-                      {t.status.toUpperCase()}
+-                    </span>
+-                  </td>
+-                  <td>
+-                    <button className="row-action-btn" type="button" onClick={(e) => { e.stopPropagation(); onSelectTutor(t.id); }}>
+-                      Review <ChevronRight size={14} />
+-                    </button>
+-                  </td>
++        <>
++          <div className="tutors-table-wrapper">
++            <table className="admin-table">
++              <thead>
++                <tr>
++                  <th>ID</th>
++                  <th>Tutor Name</th>
++                  <th>Base Subcity</th>
++                  <th>Subjects</th>
++                  <th>Entrance</th>
++                  <th>Status</th>
++                  <th>Action</th>
+                 </tr>
+-              ))}
+-            </tbody>
+-          </table>
+-        </div>
++              </thead>
++              <tbody>
++                {tutors.map((t) => (
++                  <tr key={t.id} onClick={() => onSelectTutor(t.id)} className="clickable-row">
++                    <td>#{t.id}</td>
++                    <td><strong>{t.full_name}</strong><br /><small>{t.phone_number}</small></td>
++                    <td>{t.base_subcity}</td>
++                    <td>{(t.subjects_qualified || []).slice(0, 3).join(', ')}</td>
++                    <td>{t.entrance_result ?? '—'}</td>
++                    <td>
++                      <span className={`status-badge status-${t.status}`}>
++                        {t.status.toUpperCase()}
++                      </span>
++                    </td>
++                    <td>
++                      <button className="row-action-btn" type="button" onClick={(e) => { e.stopPropagation(); onSelectTutor(t.id); }}>
++                        Review <ChevronRight size={14} />
++                      </button>
++                    </td>
++                  </tr>
++                ))}
++              </tbody>
++            </table>
++          </div>
++          <div className="pagination-row">
++            <span>{list.total ? `${(list.page - 1) * list.page_size + 1}–${Math.min(list.page * list.page_size, list.total)} of ${list.total}` : '0 tutors'}</span>
++            <div>
++              <button className="icon-button" type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft size={16} /></button>
++              <span>Page {page} / {totalPages}</span>
++              <button className="icon-button" type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight size={16} /></button>
++            </div>
++          </div>
++        </>
+       )}
+     </div>
+   );
+diff --git a/frontend/src/admin/admin.css b/frontend/src/admin/admin.css
+index ca4a837..f092e1c 100644
+--- a/frontend/src/admin/admin.css
++++ b/frontend/src/admin/admin.css
+@@ -350,6 +350,29 @@ button, a { font: inherit; }
+   flex-wrap: wrap;
+ }
+ 
++.search-field {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  padding: 7px 12px;
++  min-width: 220px;
++  color: var(--muted);
++  background: #fff;
++  border: 1px solid var(--line);
++  border-radius: 20px;
++}
++.search-field input {
++  flex: 1;
++  min-width: 0;
++  border: none;
++  outline: none;
++  font-size: 13px;
++  font-family: inherit;
++  color: var(--ink);
++  background: transparent;
++}
++.search-field input::placeholder { color: var(--muted); }
++
+ .pill, .pill-active {
+   padding: 6px 14px;
+   font-size: 13px;
+@@ -761,6 +784,7 @@ button, a { font: inherit; }
+     align-items: flex-start;
+   }
+   .status-pill-group { width: 100%; }
++  .search-field { width: 100%; min-width: 0; }
+ 
+   .admin-table { font-size: 12px; }
+   .admin-table th, .admin-table td { padding: 9px 10px; white-space: nowrap; }
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index e39ac88..76cdf05 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -85,7 +85,42 @@ export function getAuthHeaders() {
+   return headers;
+ }
+ 
++function describeApiHost(baseUrl) {
++  try {
++    return new URL(baseUrl).host;
++  } catch (_) {
++    return baseUrl;
++  }
++}
++
++function currentOrigin() {
++  try {
++    return window.location.origin;
++  } catch (_) {
++    return "";
++  }
++}
++
++const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
++
++/**
++ * Public request helper. Idempotent reads (GET) get one automatic retry on a
++ * network-level failure, which smooths over cold starts and brief connection drops.
++ * Writes are never retried automatically, to avoid double-submitting an action.
++ */
+ async function request(path, options = {}) {
++  const method = (options.method || "GET").toUpperCase();
++  try {
++    return await requestOnce(path, options);
++  } catch (err) {
++    const retryable = method === "GET" && (err.code === "NETWORK" || err.code === "TIMEOUT");
++    if (!retryable) throw err;
++    await sleep(1500);
++    return requestOnce(path, options);
++  }
++}
++
++async function requestOnce(path, options = {}) {
+   const baseUrl = getBaseUrl();
+   const url = `${baseUrl}${path}`;
+ 
+@@ -134,10 +169,24 @@ async function request(path, options = {}) {
+   } catch (err) {
+     clearTimeout(timer);
+     if (err.name === "AbortError") {
+-      throw new Error("Request timed out (15s). Please check your internet connection and try again.");
++      const timeoutError = new Error(
++        "The MentorLink server took too long to respond (15s). It may be waking up - please try again in a moment."
++      );
++      timeoutError.code = "TIMEOUT";
++      throw timeoutError;
+     }
+-    if (err.message && err.message.includes("Failed to fetch")) {
+-      throw new Error("Network connection error. Could not connect to the MentorLink server.");
++    // fetch() rejects with a TypeError for every network-level failure, but the message
++    // differs per browser ("Failed to fetch" / "Load failed" / "NetworkError ..."), so
++    // match on the error type rather than its wording. A CORS rejection looks identical.
++    if (err instanceof TypeError) {
++      const networkError = new Error(
++        `Could not reach the MentorLink server (${describeApiHost(baseUrl)}). ` +
++        "It may be starting up - try again in a few seconds. If this keeps happening, " +
++        `the server may be down or not allowing this app's address (${currentOrigin() || "unknown origin"}).`
++      );
++      networkError.code = "NETWORK";
++      networkError.apiHost = describeApiHost(baseUrl);
++      throw networkError;
+     }
+     throw err;
+   }
+-- 
+2.43.0
+
+
+From 26873135429c56d69e50a1561fbf65b15ad9f0ec Mon Sep 17 00:00:00 2001
+From: MentorLink Admin Agent <admin-agent@mentorlink.local>
+Date: Mon, 28 Sep 2026 09:38:17 +0000
+Subject: [PATCH 2/2] Stop guessing the Mini App short name; diagnose "Review
+ in App" opening the bot
+
+"Review in App" opened the bot chat instead of the app. The link is built from
+MINI_APP_URL, and Telegram only opens an app when https://t.me/<bot>/<short_name>
+matches an app registered with /newapp on that bot; otherwise it silently opens the
+bot chat. DEPLOYMENT_GUIDE registered the admin app as ".../admin" but told operators
+to set MINI_APP_URL to the main app link ".../app", so the two never matched.
+
+- ADMIN_MINI_APP_SHORT_NAME no longer defaults to "admin". A guessed name that is not
+  registered produces exactly this symptom, so it is now explicit opt-in.
+- New startup self-check logs the exact link cards will use, warns when MINI_APP_URL
+  has no short name, and tells the operator what to verify in BotFather /myapps.
+- DEPLOYMENT_GUIDE: MINI_APP_URL is the ADMIN app link; ENVIRONMENT default is
+  "development" in code (was documented as "production"), which makes the app run
+  create_all and conflict with Alembic; added troubleshooting for both.
+- Tests reproduce the reported mix-up (registered "admin" vs configured "app").
+---
+ DEPLOYMENT_GUIDE.md                        |  8 +++--
+ backend/.env.example                       |  6 ++--
+ backend/app/bot/bot_instance.py            | 27 ++++++++++++++
+ backend/app/config.py                      |  9 ++---
+ backend/app/main.py                        |  1 +
+ backend/tests/test_deployment_readiness.py | 42 ++++++++++++++++++++++
+ docs/RUNBOOK.md                            |  6 ++--
+ 7 files changed, 89 insertions(+), 10 deletions(-)
+
+diff --git a/DEPLOYMENT_GUIDE.md b/DEPLOYMENT_GUIDE.md
+index 1d3ae8d..a510568 100644
+--- a/DEPLOYMENT_GUIDE.md
++++ b/DEPLOYMENT_GUIDE.md
+@@ -171,8 +171,8 @@ Configure these environment variables in your deployment dashboard:
+ | `PARENT_REQUESTS_TOPIC_ID` | No | Auto | Forum topic thread ID for parent requests. Leave empty for automatic creation. | `2` |
+ | `TUTOR_REGISTRATION_TOPIC_ID` | No | Auto | Forum topic thread ID for tutor profiles. Leave empty for automatic creation. | `4` |
+ | `WEBAPP_URL` | **Yes** | — | Public HTTPS URL of the hosted frontend (Vercel). Used for validating Telegram `initData`. | `https://mentorlink-app.vercel.app` |
+-| `MINI_APP_URL` | **Yes** | — | Direct Telegram link to the main bot Mini App. | `https://t.me/MentorLinkProdBot/app` |
+-| `ENVIRONMENT` | **Yes** | `production` | Environment mode (`production` enforces strict security & disables preview auth bypass). | `production` |
++| `MINI_APP_URL` | **Yes** | — | Direct Telegram link to the **Admin** Mini App you registered in step 2.2-B (same short name). "Review in App" buttons are built from it. Do **not** use the intake app's link or the Vercel URL. | `https://t.me/MentorLinkProdBot/admin` |
++| `ENVIRONMENT` | **Yes** | `development` | Environment mode. **The code default is `development`, so set it to `production` explicitly.** In `development` the app creates tables itself at startup (`create_all`), which conflicts with Alembic migrations, and allows localhost origins. | `production` |
+ | `ALLOW_UNVERIFIED_WEB_PREVIEW` | **Yes** | `false` | Must be `false` in production. Setting to `true` is blocked by validation when `ENVIRONMENT=production`. | `false` |
+ | `CRON_SECRET` | **Yes** | — | Secret token required to authenticate external triggers to `POST /api/v1/admin/cron/run`. | `cron_ml_prod_9876543210_secret` |
+ 
+@@ -341,4 +341,8 @@ Execute these 7 steps to confirm production readiness:
+ #### Q4: Alembic migration fails during deployment?
+ - **Cause:** Database URL is using `postgresql://` instead of `postgresql+asyncpg://` or database user lacks table creation privileges.
+ - **Solution:** Ensure `DATABASE_URL` uses the async driver: `postgresql+asyncpg://<user>:<pass>@<host>/<db>`. Run `alembic upgrade head`.
++- **If the error is `relation ... already exists` / `column ... already exists`:** the tables were created outside Alembic, almost always by the app's own `create_all`, which runs whenever `ENVIRONMENT` is not `production`. Set `ENVIRONMENT=production`. For a database that already has the tables, do not drop columns or edit migrations: back it up, confirm the schema matches the models, then run `alembic stamp head` once.
+ 
++#### Q5: "Review in App" opens the bot chat instead of the Mini App?
++- **Cause:** Telegram only opens the app when `https://t.me/<bot>/<short_name>` matches an app registered with `/newapp` on that same bot. Otherwise it silently opens the bot chat.
++- **Solution:** In @BotFather send `/myapps`, choose the bot and read the admin app's short name. Set `MINI_APP_URL=https://t.me/<bot>/<that short name>` (the startup log prints the resulting link), and make sure the app's Web App URL ends in `/admin.html`. Redeploy, then use a *new* card: old cards keep the old link.
+diff --git a/backend/.env.example b/backend/.env.example
+index ba3616d..453ecbc 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -29,8 +29,10 @@ WEBAPP_URL=https://your-frontend-deployment.vercel.app
+ #               e.g. https://t.me/MentorLinkBot/admin. "Review in App" buttons on admin cards
+ #               are built from it. It must be the t.me link, NOT the Vercel URL.
+ MINI_APP_URL=https://t.me/MentorLinkBot/admin
+-# Fallback used to build https://t.me/<bot username>/<this> if MINI_APP_URL is not a t.me link.
+-ADMIN_MINI_APP_SHORT_NAME=admin
++# Optional, no default. Only used to build https://t.me/<bot username>/<this> when MINI_APP_URL
++# is not a t.me link. It must be the short name you chose in BotFather /newapp for the admin app;
++# a name that isn't registered makes "Review in App" open the bot chat instead of the app.
++ADMIN_MINI_APP_SHORT_NAME=
+ # Optional: comma-separated extra origins allowed by CORS, e.g. when the admin Mini App is
+ # hosted on a different domain than WEBAPP_URL.
+ CORS_EXTRA_ORIGINS=
+diff --git a/backend/app/bot/bot_instance.py b/backend/app/bot/bot_instance.py
+index 0a94a34..6a2280a 100644
+--- a/backend/app/bot/bot_instance.py
++++ b/backend/app/bot/bot_instance.py
+@@ -254,6 +254,33 @@ def get_admin_review_url(start_param: str) -> Optional[str]:
+     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+ 
+ 
++def check_review_link_config() -> None:
++    """Log what "Review in App" links will look like, so a wrong short name is visible at boot.
++
++    A link like https://t.me/<bot>/<short_name>?startapp=... only opens the Mini App when
++    <short_name> is registered (BotFather -> /newapp) on the SAME bot. Otherwise Telegram
++    silently opens the bot chat instead, which is easy to mistake for an app bug.
++    """
++    sample = get_admin_review_url("tutor_1")
++    if not sample:
++        return  # get_admin_review_url already logged why
++    segments = [part for part in urlsplit(sample).path.split("/") if part]
++    logger.info("'Review in App' links will look like: %s", sample)
++    if len(segments) < 2:
++        logger.warning(
++            "MINI_APP_URL has no Mini App short name (%s). Such a link only opens an app if the bot's "
++            "*Main* Mini App is configured; otherwise it opens the bot chat. Use the direct link of the "
++            "admin app from @BotFather -> /myapps, e.g. https://t.me/<bot>/admin",
++            sample,
++        )
++    else:
++        logger.info(
++            "Check in @BotFather -> /myapps that '%s' is the short name of the ADMIN app and that its "
++            "Web App URL ends with /admin.html (otherwise the button opens the bot chat or the wrong app).",
++            segments[1],
++        )
++
++
+ async def send_parent_request_card(parent_req, db_session: Optional[AsyncSession] = None) -> Optional[int]:
+     """
+     Sends parent request notification cards to ADMIN_GROUP_ID:
+diff --git a/backend/app/config.py b/backend/app/config.py
+index b8408e8..8bb6c13 100644
+--- a/backend/app/config.py
++++ b/backend/app/config.py
+@@ -21,10 +21,11 @@ class Settings(BaseSettings):
+     TUTOR_REGISTRATION_TOPIC_ID: Optional[int] = None
+     WEBAPP_URL: Optional[str] = None
+     MINI_APP_URL: Optional[str] = None
+-    # Short name of the Admin Mini App registered with BotFather (/newapp). Used to
+-    # build "Review in App" deep links (https://t.me/<bot>/<short_name>?startapp=...)
+-    # when MINI_APP_URL is not already a t.me link.
+-    ADMIN_MINI_APP_SHORT_NAME: Optional[str] = "admin"
++    # Optional. Short name of the Admin Mini App registered with BotFather (/newapp).
++    # Only used to build "Review in App" links (https://t.me/<bot>/<short_name>) when
++    # MINI_APP_URL is not a t.me link. Deliberately has NO default: a guessed short name
++    # that does not exist makes the button open the bot chat instead of the app.
++    ADMIN_MINI_APP_SHORT_NAME: Optional[str] = None
+     # Comma-separated extra browser origins allowed by CORS, e.g. when the admin
+     # frontend is hosted on a different domain than WEBAPP_URL.
+     CORS_EXTRA_ORIGINS: Optional[str] = None
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 6bd8599..475290f 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
+ 
+     # Initialize Telegram Bot Application & background listeners
+     await bot_instance.init_bot_app()
++    bot_instance.check_review_link_config()
+ 
+     # Automatically verify, create, and cache dedicated forum topics if enabled
+     if bot_instance.bot_app and bot_instance.bot_app.bot:
+diff --git a/backend/tests/test_deployment_readiness.py b/backend/tests/test_deployment_readiness.py
+index f582474..a03f99c 100644
+--- a/backend/tests/test_deployment_readiness.py
++++ b/backend/tests/test_deployment_readiness.py
+@@ -206,6 +206,48 @@ def test_review_url_is_none_and_warns_once_when_nothing_can_be_resolved(monkeypa
+     assert len(warnings) == 1
+ 
+ 
++def test_review_url_never_guesses_a_short_name(monkeypatch):
++    """A guessed short name that isn't registered makes the button open the bot chat, not the app."""
++    import app.bot.bot_instance as bot_instance
++
++    monkeypatch.setattr(settings, "MINI_APP_URL", "https://my-app.vercel.app/admin.html")
++    monkeypatch.setattr(settings, "ADMIN_MINI_APP_SHORT_NAME", None)
++    fake_app = MagicMock()
++    fake_app.bot.username = "MentorLinkTestBot"
++    monkeypatch.setattr(bot_instance, "bot_app", fake_app)
++    monkeypatch.setattr(bot_instance, "_review_url_warning_logged", False)
++
++    assert bot_instance.get_admin_review_url("tutor_9") is None
++
++
++def test_startup_check_tells_admin_which_short_name_to_verify(monkeypatch, caplog):
++    """Reproduces the reported mix-up: registered app is 'admin' but MINI_APP_URL says 'app'."""
++    import logging
++    import app.bot.bot_instance as bot_instance
++
++    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkProdBot/app")
++
++    with caplog.at_level(logging.INFO, logger="mentorlink.bot"):
++        bot_instance.check_review_link_config()
++
++    text_out = " ".join(r.getMessage() for r in caplog.records)
++    assert "https://t.me/MentorLinkProdBot/app?startapp=tutor_1" in text_out
++    assert "/myapps" in text_out
++    assert "'app'" in text_out
++
++
++def test_startup_check_warns_when_link_has_no_short_name(monkeypatch, caplog):
++    import logging
++    import app.bot.bot_instance as bot_instance
++
++    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkProdBot")
++
++    with caplog.at_level(logging.WARNING, logger="mentorlink.bot"):
++        bot_instance.check_review_link_config()
++
++    assert any("no Mini App short name" in r.getMessage() for r in caplog.records)
++
++
+ # --------------------------------------------------------------------------
+ # Cron secret hardening
+ # --------------------------------------------------------------------------
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index 5a0b767..d62977b 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -51,10 +51,12 @@ Use `/api/v1/health` for database health. API responses include an `X-Request-ID
+ | `WEBAPP_URL` | Frontend origin, e.g. `https://my-admin.vercel.app` (also the CORS-allowed origin) |
+ | `CORS_EXTRA_ORIGINS` | Optional, comma-separated extra origins if the admin app lives on another domain |
+ | `MINI_APP_URL` | BotFather direct link of the admin app, e.g. `https://t.me/MyBot/admin` (**not** the Vercel URL) |
+-| `ADMIN_MINI_APP_SHORT_NAME` | Fallback short name (default `admin`) if `MINI_APP_URL` is not a t.me link |
++| `ADMIN_MINI_APP_SHORT_NAME` | Optional, no default. Short name of the admin app, used only if `MINI_APP_URL` is not a t.me link |
+ | `CRON_SECRET` | Long random value, identical to the `CRON_SECRET` GitHub Actions secret. No default. |
+ 
+-If "Review in App" buttons are missing from admin cards, the backend logs `Cannot build 'Review in App' links` at the first card; fix `MINI_APP_URL` as above.
++If "Review in App" buttons are missing from admin cards, the backend logs `Cannot build 'Review in App' links` at startup; fix `MINI_APP_URL` as above.
++
++If the button is there but **opens the bot chat instead of the app**, the short name in `MINI_APP_URL` does not match an app registered on that bot. The startup log prints the exact link (`'Review in App' links will look like: ...`). In @BotFather send `/myapps`, pick the bot, and compare: the short name must be the admin app's, and its Web App URL must end in `/admin.html`.
+ 
+ ## Troubleshooting: "Could not reach the MentorLink server"
+ 
+-- 
+2.43.0
+

@@ -139,6 +139,10 @@ class TutorResponse(TutorCreate):
 class HealthResponse(BaseModel):
     status: str
     database: str
+    schema_state: Optional[str] = None
+    migration_current: Optional[str] = None
+    migration_head: Optional[str] = None
+    detail: Optional[str] = None
 
 
 class AdminDashboardResponse(BaseModel):
