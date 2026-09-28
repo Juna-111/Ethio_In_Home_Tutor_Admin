@@ -387,3 +387,35 @@ export function getExportUrl(type = 'tutors') {
   return `${baseUrl}/api/v1/admin/export?type=${encodeURIComponent(type)}`;
 }
 
+export async function getAdminParents(search = '') {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return request(`/api/v1/admin/parents${query}`);
+}
+
+export async function getAdminAssignmentPipeline() {
+  return request('/api/v1/admin/assignments/pipeline');
+}
+
+export async function getTutorMyAssignments() {
+  return request('/api/v1/tutors/me/assignments');
+}
+
+export async function getParentMyRequests() {
+  return request('/api/v1/parents/me/requests');
+}
+
+export async function submitParentFeedback(data) {
+  return request('/api/v1/parents/me/feedback', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function submitParentContactAdmin(data) {
+  return request('/api/v1/parents/me/contact-admin', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+

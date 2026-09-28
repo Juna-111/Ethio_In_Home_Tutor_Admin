@@ -187,69 +187,56 @@ async def test_flags_detect_low_entrance_score(async_client: AsyncClient, db_ses
 # ===========================================================================
 
 @pytest.mark.asyncio
-async def test_verifier_role_rejected_on_matcher_routes(async_client: AsyncClient, db_session: AsyncSession, monkeypatch):
-    """A verifier-only admin should get 403 on matcher-only routes (ping, assign)."""
+async def test_verifier_role_normalized_and_allowed_on_matcher_routes(async_client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    """A legacy verifier admin is normalized to admin and allowed on operational routes."""
     bot_token = "123456:ABC"
     admin_id = 800005
     monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
     monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
     monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
 
-    parent = ParentRequest(
-        parent_name="Role Test", phone_number="+251911000004",
-        student_level="Primary 1-4", subjects=["English"],
-        preferred_gender="No preference", preferred_experience="Any",
-        location_subcity="Bole", schedule_days=["Mon"],
-        time_slot="Morning", session_duration="1 hr", budget_etb=200.0,
-    )
-    db_session.add_all([AdminUser(telegram_id=admin_id, role="verifier", is_active=True), parent])
+    tutor = _tutor("Verifier Allowed", phone_number="+251911000004", status="pending")
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="verifier", is_active=True), tutor])
     await db_session.commit()
 
-    # Ping should be 403 for verifier
-    resp = await async_client.post(
-        f"/api/v1/admin/requests/{parent.id}/ping",
-        json={"tutor_ids": [1]},
+    # Verification PATCH is allowed (not 403)
+    resp = await async_client.patch(
+        f"/api/v1/admin/tutors/{tutor.id}/verification",
+        json={"id_verified": True},
         headers=_telegram_auth_header(admin_id, bot_token),
     )
-    assert resp.status_code == 403
-
-    # Assign should be 403 for verifier
-    resp = await async_client.post(
-        f"/api/v1/admin/requests/{parent.id}/assign",
-        json={"tutor_id": 1},
-        headers=_telegram_auth_header(admin_id, bot_token),
-    )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert resp.json()["id_verified"] is True
 
 
 @pytest.mark.asyncio
-async def test_matcher_role_rejected_on_verifier_routes(async_client: AsyncClient, db_session: AsyncSession, monkeypatch):
-    """A matcher-only admin should get 403 on verifier-only routes (verification, reject)."""
+async def test_matcher_role_normalized_and_allowed_on_verifier_routes(async_client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    """A legacy matcher admin is normalized to admin and allowed on verification and reject routes."""
     bot_token = "123456:ABC"
     admin_id = 800006
     monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
     monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
     monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
 
-    tutor = _tutor("Matcher Blocked", phone_number="+251911000005", status="pending")
+    tutor = _tutor("Matcher Allowed", phone_number="+251911000005", status="pending")
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), tutor])
     await db_session.commit()
 
-    # Verification PATCH should be 403
+    # Verification PATCH is allowed (not 403)
     resp = await async_client.patch(
         f"/api/v1/admin/tutors/{tutor.id}/verification",
         json={"id_verified": True},
         headers=_telegram_auth_header(admin_id, bot_token),
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
-    # Reject should be 403
+    # Reject is allowed (not 403)
     resp = await async_client.post(
         f"/api/v1/admin/tutors/{tutor.id}/reject",
         json={"reason": "Does not meet requirements"},
         headers=_telegram_auth_header(admin_id, bot_token),
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
 # ===========================================================================
@@ -282,14 +269,22 @@ async def test_admin_crud_super_admin_only(async_client: AsyncClient, db_session
     )
     assert resp.status_code == 200
 
-    # Super admin can add
+    # Adding legacy role returns 422
+    resp_invalid = await async_client.post(
+        "/api/v1/admin/admins",
+        json={"telegram_id": 999002, "role": "verifier"},
+        headers=_telegram_auth_header(super_id, bot_token),
+    )
+    assert resp_invalid.status_code == 422
+
+    # Super admin can add valid admin role
     resp = await async_client.post(
         "/api/v1/admin/admins",
-        json={"telegram_id": 999001, "role": "verifier"},
+        json={"telegram_id": 999001, "role": "admin"},
         headers=_telegram_auth_header(super_id, bot_token),
     )
     assert resp.status_code == 201
-    assert resp.json()["role"] == "verifier"
+    assert resp.json()["role"] == "admin"
 
     # Super admin can delete
     resp = await async_client.delete(

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowUpRight, BarChart3, ClipboardList,
   GraduationCap, LayoutDashboard, RefreshCw, ShieldCheck, UsersRound,
-  ShieldAlert, Download, Settings
+  ShieldAlert, Download, Settings, GitPullRequest, Contact
 } from 'lucide-react';
 import { getAdminDashboard } from '../services/api';
 import CoverageBoard from './CoverageBoard.jsx';
@@ -14,6 +14,8 @@ import OpsQueue from './OpsQueue.jsx';
 import AnalyticsBoard from './AnalyticsBoard.jsx';
 import ExportCenter from './ExportCenter.jsx';
 import AdminManagement from './AdminManagement.jsx';
+import CustomerCRM from './CustomerCRM.jsx';
+import AssignmentPipeline from './AssignmentPipeline.jsx';
 
 function parseStartParam(value) {
   const match = /^(tutor|request)_(\d+)$/.exec(value || '');
@@ -70,12 +72,17 @@ export default function AdminApp() {
     { label: 'Pending requests', value: dashboard.pending_requests, icon: ClipboardList, tone: 'coral' },
     { label: 'Active assignments', value: dashboard.active_assignments, icon: Activity, tone: 'green' },
     { label: 'Requests today', value: dashboard.requests_today, icon: ArrowUpRight, tone: 'blue' },
+    { label: 'Conversion rate', value: `${dashboard.conversion_rate_pct ?? 0}%`, icon: ShieldCheck, tone: 'green' },
+    { label: 'Avg days to assign', value: `${dashboard.avg_days_to_assign ?? 0}d`, icon: Activity, tone: 'citrus' },
+    { label: 'Tutor funnel conv.', value: `${dashboard.tutor_verification_funnel_pct ?? 0}%`, icon: ArrowUpRight, tone: 'blue' },
   ] : [];
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'requests', label: 'Requests', icon: ClipboardList },
     { id: 'tutors', label: 'Tutors', icon: GraduationCap },
+    { id: 'crm', label: 'Parent CRM', icon: Contact },
+    { id: 'pipeline', label: 'Pipeline', icon: GitPullRequest },
     { id: 'ops', label: 'Ops Queue', icon: ShieldAlert },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'coverage', label: 'Coverage', icon: UsersRound },
@@ -172,7 +179,7 @@ export default function AdminApp() {
                         <span>{label}</span>
                         <Icon size={18} strokeWidth={1.8} />
                       </div>
-                      <strong>{formatCount(value)}</strong>
+                      <strong>{typeof value === 'number' ? formatCount(value) : value}</strong>
                       <span className="metric-rule" />
                     </article>
                   ))}
@@ -208,6 +215,12 @@ export default function AdminApp() {
             )}
             {view.status === 'ready' && activeSection === 'tutors' && (
               <TutorList onSelectTutor={(id) => setSelectedTutorId(id)} />
+            )}
+            {view.status === 'ready' && activeSection === 'crm' && (
+              <CustomerCRM />
+            )}
+            {view.status === 'ready' && activeSection === 'pipeline' && (
+              <AssignmentPipeline />
             )}
             {view.status === 'ready' && activeSection === 'ops' && (
               <OpsQueue onSelectTutor={(id) => setSelectedTutorId(id)} />

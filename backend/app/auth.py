@@ -62,8 +62,8 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict
         if "user" in data_dict and isinstance(data_dict["user"], str):
             try:
                 data_dict["user"] = json.loads(data_dict["user"])
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                logger.debug("Failed to decode user JSON in initData: %s", exc)
 
         return data_dict
     except Exception as exc:

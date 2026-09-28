@@ -30,7 +30,14 @@ from telegram.ext import (
 
 from pathlib import Path
 
-from app.bot.bot_instance import format_parent_card, format_tutor_card
+from app.bot.bot_instance import (
+    build_parent_assignment_keyboard,
+    build_tutor_assignment_keyboard,
+    format_assignment_card_parent,
+    format_assignment_card_tutor,
+    format_parent_card,
+    format_tutor_card,
+)
 from app.bot.topics import get_parent_topic_id
 from app.config import settings, UPLOAD_DIR
 from app.database import AsyncSessionLocal
@@ -40,7 +47,6 @@ from app.services.matcher import find_top_matches, get_tiered_matches
 
 logger = logging.getLogger("mentorlink.bot.handlers")
 
-# In-memory session cache & TTL cache for admin status
 admin_states: Dict[int, dict] = {}
 _admin_cache: Dict[int, Tuple[bool, float]] = {}
 _admin_roles: Dict[int, str] = {}
@@ -59,37 +65,41 @@ GROUP_BROADCAST_SUBJECTS = (
 )
 pending_group_broadcasts: Dict[str, dict] = {}
 
+_NORMALIZED_ADMIN_ROLES = frozenset({"admin", "super_admin"})
+_LEGACY_ROLES = frozenset({"matcher", "verifier"})
+
+
+def _normalize_admin_role(raw_role: str) -> str:
+    if raw_role in _LEGACY_ROLES:
+        return "admin"
+    return raw_role
+
 
 def is_super_admin(update: Update) -> bool:
-    """Checks whether the effective user is the configured SUPER_ADMIN_ID."""
     if not update.effective_user:
         return False
     return (
         update.effective_user.id == settings.SUPER_ADMIN_ID
-        or _admin_roles.get(update.effective_user.id) == "super_admin"
+        or _normalize_admin_role(_admin_roles.get(update.effective_user.id, "")) == "super_admin"
     )
 
 
 async def load_admin_registry() -> None:
-    """Load database-managed admin roles into the authorization cache."""
     _admin_roles.clear()
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(AdminUser.telegram_id, AdminUser.role).where(AdminUser.is_active.is_(True))
             )
-            _admin_roles.update({telegram_id: role for telegram_id, role in result.all()})
+            _admin_roles.update({
+                telegram_id: _normalize_admin_role(role)
+                for telegram_id, role in result.all()
+            })
     except Exception as exc:
         logger.warning("Could not load database admin registry: %s", exc)
 
 
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """
-    Checks if user has admin privileges:
-    1. Super Admin (SUPER_ADMIN_ID)
-    2. Configured ADMIN_IDS
-    3. Telegram group chat admin in ADMIN_GROUP_ID (cached for 300s)
-    """
     if is_super_admin(update):
         return True
 
@@ -100,15 +110,18 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if settings.ADMIN_IDS and user.id in settings.ADMIN_IDS:
         return True
 
-    if _admin_roles.get(user.id) in ("admin", "super_admin"):
+    cached_role = _normalize_admin_role(_admin_roles.get(user.id, ""))
+    if cached_role in _NORMALIZED_ADMIN_ROLES:
         return True
 
     try:
         async with AsyncSessionLocal() as session:
             admin_user = await session.get(AdminUser, user.id)
-            if admin_user and admin_user.is_active and admin_user.role in ("admin", "super_admin"):
-                _admin_roles[user.id] = admin_user.role
-                return True
+            if admin_user and admin_user.is_active:
+                role = _normalize_admin_role(admin_user.role)
+                if role in _NORMALIZED_ADMIN_ROLES:
+                    _admin_roles[user.id] = role
+                    return True
     except Exception as exc:
         logger.debug("Database admin lookup failed for user %s: %s", user.id, exc)
 
@@ -892,8 +905,8 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
                         parse_mode=ParseMode.HTML,
                         reply_markup=None
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to edit already-closed message: %s", exc)
             return
 
         # Check & record MatchInvite response (B-09)
@@ -1128,52 +1141,33 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as exc:
             logger.error("Error updating match assignment message: %s", exc)
 
-    # Direct Notification to Parent upon Assignment (with html.escape)
+    # Direct Notification to Parent upon Assignment (with html.escape and rich card)
     if parent.telegram_user_id:
         try:
-            parent_dm = (
-                f"<b>Great news, {html.escape(parent.parent_name)}!</b>\n\n"
-                f"A verified mentor has been assigned to your tutoring request:\n"
-                f"<b>Mentor:</b> {html.escape(tutor.full_name)} ({html.escape(tutor.gender)})\n"
-                f"<b>Background:</b> {html.escape(tutor.university)} — {html.escape(tutor.department)}\n"
-                f"<b>Experience:</b> {tutor.years_of_experience:g} years\n"
-                f"<b>Phone:</b> {html.escape(tutor.phone_number)}\n\n"
-                "Our coordinator or your mentor will contact you shortly to confirm your first session. Thank you for trusting Us."
-            )
+            parent_dm = format_assignment_card_parent(parent, tutor, assignment.id)
+            parent_keyboard = build_parent_assignment_keyboard(parent_id)
             await context.bot.send_message(
                 chat_id=parent.telegram_user_id,
                 text=parent_dm,
-                parse_mode=ParseMode.HTML
+                parse_mode=ParseMode.HTML,
+                reply_markup=parent_keyboard,
             )
         except Exception as exc:
-            logger.warning("Could not send assignment DM to parent %s (tg_id: %s): %s", parent.parent_name, parent.telegram_user_id, exc)
+            logger.warning("Could not send assignment DM to parent %s (tg_id: %s, role=parent): %s", parent.parent_name, parent.telegram_user_id, exc)
 
-    # DM tutor with job details (with html.escape)
+    # DM tutor with job details (with html.escape and rich card)
     if tutor.telegram_user_id:
         try:
-            landmark = f" ({html.escape(parent.location_landmark)})" if parent.location_landmark else ""
-            subjects_str = _format_subjects(parent.subjects)
-            days_str = _format_schedule(parent.schedule_days)
-
-            job_alert = (
-                f"<b>New Tutoring Opportunity Assigned</b>\n\n"
-                f"Hello {html.escape(tutor.full_name)}, you have been assigned:\n\n"
-                f"<b>Parent:</b> {html.escape(parent.parent_name)}\n"
-                f"<b>Contact:</b> {html.escape(parent.phone_number)}\n"
-                f"<b>Student Level:</b> {html.escape(parent.student_level)}\n"
-                f"<b>Subjects:</b> {subjects_str}\n"
-                f"<b>Location:</b> {html.escape(parent.location_subcity)}{landmark}\n"
-                f"<b>Schedule:</b> {days_str} | {html.escape(parent.time_slot)} ({html.escape(parent.session_duration)})\n"
-                f"<b>Budget:</b> {parent.budget_etb:,.2f} ETB\n\n"
-                "Please reach out to the parent or contact admin to confirm your first session."
-            )
+            job_alert = format_assignment_card_tutor(parent, tutor, assignment.id)
+            tutor_keyboard = build_tutor_assignment_keyboard(parent_id)
             await context.bot.send_message(
                 chat_id=tutor.telegram_user_id,
                 text=job_alert,
-                parse_mode=ParseMode.HTML
+                parse_mode=ParseMode.HTML,
+                reply_markup=tutor_keyboard,
             )
         except Exception as exc:
-            logger.warning("Could not send assignment DM to tutor %s: %s", tutor.full_name, exc)
+            logger.warning("Could not send assignment DM to tutor %s (tg_id: %s, role=tutor): %s", tutor.full_name, tutor.telegram_user_id, exc)
 
     # Dedicated topic auto-closing ONLY AFTER thread messages and DMs complete
     if parent.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
@@ -1461,8 +1455,8 @@ async def handle_admin_close_stats(update: Update, context: ContextTypes.DEFAULT
         return
     try:
         await query.message.edit_text("📊 <i>Analytics dashboard closed.</i>", parse_mode=ParseMode.HTML, reply_markup=None)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to edit stats message: %s", exc)
     await query.answer("Closed.")
 
 
@@ -2055,8 +2049,8 @@ async def handle_export_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Closed.")
         try:
             await query.message.edit_text("📥 <i>Export Data Center closed.</i>", parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to edit export closed message: %s", exc)
         return
 
     await query.answer("⏳ Generating CSV export...")

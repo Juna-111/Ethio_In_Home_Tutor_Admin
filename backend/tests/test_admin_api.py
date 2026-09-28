@@ -121,22 +121,23 @@ async def test_admin_dashboard_counts_database_records(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "admin_telegram_id": admin_id,
-        "admin_role": "admin",
-        "pending_tutors": 1,
-        "pending_requests": 1,
-        "active_assignments": 1,
-        "requests_today": 2,
-    }
+    data = response.json()
+    assert data["admin_telegram_id"] == admin_id
+    assert data["admin_role"] == "admin"
+    assert data["pending_tutors"] == 1
+    assert data["pending_requests"] == 1
+    assert data["active_assignments"] == 1
+    assert data["requests_today"] == 2
+    assert data["conversion_rate_pct"] == 50.0
+    assert data["tutor_verification_funnel_pct"] == 50.0
 
 
 @pytest.mark.asyncio
 async def test_require_role_rejects_admin_without_required_role():
-    verifier_only = require_role("verifier")
+    super_admin_only = require_role("super_admin")
 
     with pytest.raises(HTTPException) as exc_info:
-        await verifier_only(principal=AdminPrincipal(telegram_id=700003, role="admin"))
+        await super_admin_only(principal=AdminPrincipal(telegram_id=700003, role="admin"))
 
     assert exc_info.value.status_code == 403
 

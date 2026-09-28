@@ -29,41 +29,41 @@ export default function SuccessModal({ data, type, lang, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-200">
-      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center relative border border-gray-100">
+    <div className="fixed inset-0 z-50 bg-ink/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-200">
+      <div className="bg-paper w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center relative border border-line">
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 p-1.5 rounded-full text-gray-400 hover:text-gray-600 bg-gray-100 transition-colors"
+          className="absolute right-4 top-4 p-1.5 rounded-full text-muted hover:text-ink bg-line/60 transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+        <div className="w-16 h-16 bg-green-100 text-green rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
           <CheckCircle2 className="w-10 h-10" />
         </div>
 
-        <h3 className="text-xl font-bold text-gray-900 mb-1">
+        <h3 className="text-xl font-bold text-ink mb-1">
           {type === 'parent' ? t.parentTitle : t.tutorTitle}
         </h3>
         
-        <p className="text-xs text-gray-600 mb-5 leading-relaxed bg-blue-50/60 p-3 rounded-xl border border-blue-100/70">
+        <p className="text-xs text-muted mb-5 leading-relaxed bg-white/70 p-3 rounded-xl border border-line">
           {type === 'parent' ? t.parentTrustMsg : t.tutorTrustMsg}
         </p>
 
-        <div className="bg-gray-50 rounded-2xl p-4 mb-6 text-left border border-gray-100 space-y-2">
+        <div className="bg-white/80 rounded-2xl p-4 mb-6 text-left border border-line space-y-2">
           <div className="flex justify-between text-xs">
-            <span className="text-gray-500 font-medium">{t.recordId}:</span>
-            <span className="font-bold text-gray-900">#{data?.id || '—'}</span>
+            <span className="text-muted font-medium">{t.recordId}:</span>
+            <span className="font-bold text-ink">#{data?.id || '—'}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-gray-500 font-medium">{t.initialStatus}:</span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
+            <span className="text-muted font-medium">{t.initialStatus}:</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-citrus/15 text-citrus">
               {t.statusPending}
             </span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-gray-500 font-medium">{t.contact}:</span>
-            <span className="font-semibold text-gray-900">{data?.phone_number || '—'}</span>
+            <span className="text-muted font-medium">{t.contact}:</span>
+            <span className="font-semibold text-ink">{data?.phone_number || '—'}</span>
           </div>
         </div>
 
@@ -71,14 +71,14 @@ export default function SuccessModal({ data, type, lang, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="w-full py-3 px-4 rounded-xl font-semibold text-xs bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm shadow-blue-500/20"
+            className="w-full py-3 px-4 rounded-xl font-semibold text-xs bg-pine hover:bg-ink text-paper transition shadow-sm"
           >
             {t.submitAnother}
           </button>
           <button
             type="button"
             onClick={handleTelegramClose}
-            className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs text-gray-500 hover:text-gray-800 bg-gray-100 transition"
+            className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs text-muted hover:text-ink bg-line/60 transition"
           >
             {t.closeApp}
           </button>

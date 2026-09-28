@@ -5,6 +5,14 @@
 :root {
   font-family: 'Plus Jakarta Sans', 'Noto Sans Ethiopic', system-ui, -apple-system, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  --ink: #172924;
+  --pine: #183b34;
+  --paper: #fbfcf9;
+  --coral: #c35d47;
+  --green: #27715e;
+  --citrus: #a88221;
+  --muted: #78847c;
+  --line: #e2e7df;
 }
 
 /* Custom scrollbar */

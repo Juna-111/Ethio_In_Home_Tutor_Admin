@@ -5,15 +5,25 @@ from typing import Optional
 import uuid
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
 from app.auth import get_optional_telegram_user
-from app.bot.bot_instance import send_tutor_registration_card
+from app.bot.bot_instance import format_schedule, send_tutor_registration_card
 from app.config import UPLOAD_DIR
 from app.database import get_db
-from app.models import RegistrationFunnelEvent, Tutor
-from app.schemas import FunnelStartRequest, FunnelStartResponse, TutorCreate, TutorResponse
+from app.models import Assignment, ParentRequest, RegistrationFunnelEvent, SessionFeedback, Tutor
+from app.schemas import (
+    FunnelStartRequest,
+    FunnelStartResponse,
+    TutorAssignmentItem,
+    TutorCreate,
+    TutorMyAssignmentsResponse,
+    TutorResponse,
+)
+
+logger = logging.getLogger("mentorlink.routes.tutors")
 
 router = APIRouter(prefix="/tutors", tags=["Tutors"])
 
@@ -177,8 +187,8 @@ async def register_tutor(
         )
         db.add(funnel_event)
         await db.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Could not record tutor registration funnel event: %s", exc)
 
     # Broadcast verification card to Telegram Admin Group
     await send_tutor_registration_card(tutor)
@@ -203,4 +213,100 @@ async def start_funnel_event(
     db.add(event)
     await db.commit()
     return FunnelStartResponse(ok=True, session_id=payload.session_id)
+
+
+@router.get(
+    "/me/assignments",
+    response_model=TutorMyAssignmentsResponse,
+    summary="Get authenticated tutor's assignments and fee tracking"
+)
+async def get_tutor_assignments(
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> TutorMyAssignmentsResponse:
+    """Returns active and past assignments with session counts and earnings tracker for the authenticated tutor."""
+    if verified_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Telegram Mini App authentication is required.",
+        )
+
+    tutor = await db.scalar(select(Tutor).where(Tutor.telegram_user_id == verified_user_id))
+    if not tutor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tutor profile not found for this Telegram account.",
+        )
+
+    assignments_res = await db.execute(
+        select(Assignment).where(Assignment.tutor_id == tutor.id).order_by(Assignment.assigned_at.desc())
+    )
+    assignments = assignments_res.scalars().all()
+
+    req_ids = [a.request_id for a in assignments]
+    requests_map = {}
+    if req_ids:
+        req_res = await db.execute(select(ParentRequest).where(ParentRequest.id.in_(req_ids)))
+        requests_map = {r.id: r for r in req_res.scalars().all()}
+
+    asmt_ids = [a.id for a in assignments]
+    feedback_stats = {}
+    if asmt_ids:
+        fb_res = await db.execute(
+            select(
+                SessionFeedback.assignment_id,
+                func.count(SessionFeedback.id),
+                func.avg(SessionFeedback.rating),
+            ).where(SessionFeedback.assignment_id.in_(asmt_ids)).group_by(SessionFeedback.assignment_id)
+        )
+        for asmt_id, cnt, avg_r in fb_res.all():
+            feedback_stats[asmt_id] = (cnt, round(float(avg_r), 2) if avg_r is not None else None)
+
+    assignment_items = []
+    total_earnings = 0.0
+    active_count = 0
+
+    for a in assignments:
+        req = requests_map.get(a.request_id)
+        if not req:
+            continue
+
+        if a.status == "active":
+            active_count += 1
+
+        landmark = f" ({req.location_landmark})" if req.location_landmark else ""
+        loc_str = f"{req.location_subcity}{landmark}"
+        sched_str = f"{format_schedule(req.schedule_days)} ({req.time_slot}, {req.session_duration})"
+        student_ctx = f"{req.parent_name} ({req.student_level})"
+
+        cnt, avg_r = feedback_stats.get(a.id, (0, None))
+        # Estimate earnings: if sessions completed > 0, cnt * rate; if active without feedback yet, 1 baseline session
+        estimated_asmt_earnings = float(max(1, cnt) * req.budget_etb) if a.status == "active" else float(cnt * req.budget_etb)
+        total_earnings += estimated_asmt_earnings
+
+        assignment_items.append(
+            TutorAssignmentItem(
+                assignment_id=a.id,
+                request_id=a.request_id,
+                student_name_context=student_ctx,
+                subjects=req.subjects if isinstance(req.subjects, list) else [str(req.subjects)],
+                location=loc_str,
+                schedule=sched_str,
+                hourly_rate_etb=req.budget_etb,
+                status=a.status,
+                assigned_at=a.assigned_at,
+                sessions_completed=cnt,
+                avg_rating=avg_r,
+                estimated_earnings_etb=round(estimated_asmt_earnings, 2),
+                parent_phone=req.phone_number,
+            )
+        )
+
+    return TutorMyAssignmentsResponse(
+        tutor_id=tutor.id,
+        full_name=tutor.full_name,
+        active_count=active_count,
+        total_earnings_estimate=round(total_earnings, 2),
+        assignments=assignment_items,
+    )
 
