@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import hmac
 import logging
+from typing import Optional
 from urllib.parse import urlsplit
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, status
@@ -88,16 +89,18 @@ async def request_id_middleware(request: Request, call_next):
 
 
 @app.post("/telegram/webhook/{webhook_secret}", include_in_schema=False)
-async def telegram_webhook(webhook_secret: str, request: Request):
-    """Accept Telegram updates only through the configured secret path and header."""
+@app.post("/telegram/webhook", include_in_schema=False)
+async def telegram_webhook(request: Request, webhook_secret: Optional[str] = None):
+    """Accept Telegram updates only through the configured secret path and/or header."""
     configured_secret = settings.WEBHOOK_SECRET
     header_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if (
-        settings.BOT_MODE != "webhook"
-        or not configured_secret
-        or not hmac.compare_digest(webhook_secret, configured_secret)
-        or not hmac.compare_digest(header_secret, configured_secret)
-    ):
+    if settings.BOT_MODE != "webhook" or not configured_secret:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    if webhook_secret is not None and not hmac.compare_digest(webhook_secret, configured_secret):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    if not hmac.compare_digest(header_secret, configured_secret):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     application = bot_instance.bot_app
