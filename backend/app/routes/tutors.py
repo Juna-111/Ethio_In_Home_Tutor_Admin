@@ -289,6 +289,7 @@ async def get_tutor_assignments(
                 assignment_id=a.id,
                 request_id=a.request_id,
                 student_name_context=student_ctx,
+                student_level=req.student_level,
                 subjects=req.subjects if isinstance(req.subjects, list) else [str(req.subjects)],
                 location=loc_str,
                 schedule=sched_str,

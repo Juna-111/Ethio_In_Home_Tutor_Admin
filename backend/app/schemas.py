@@ -475,6 +475,7 @@ class TutorAssignmentItem(BaseModel):
     assignment_id: int
     request_id: int
     student_name_context: str
+    student_level: Optional[str] = None
     subjects: List[str]
     location: str
     schedule: str

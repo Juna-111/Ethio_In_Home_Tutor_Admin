@@ -205,6 +205,12 @@ export default function RequestWorkbench({ initialRequestId }) {
             <div><small>TIME</small><strong>{request.time_slot} · {request.session_duration}</strong></div>
             <div><small>TUTOR PREFERENCE</small><strong>{request.preferred_gender} · {request.preferred_experience}</strong></div>
           </section>
+          {request.status === 'matched' && (
+            <div style={{ background: 'var(--pine)', color: '#ffffff', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
+              <UserRoundCheck size={18} />
+              <span>Request #{request.id} has been matched and assigned to a mentor. Active in assignment pipeline.</span>
+            </div>
+          )}
           <section className="candidate-section">
             <div className="section-title-row candidate-title-row">
               <div><p className="eyebrow">MATCHING WORKBENCH</p><h3>Candidate comparison</h3></div>
@@ -219,7 +225,7 @@ export default function RequestWorkbench({ initialRequestId }) {
               <div className="candidate-list">
                 {candidates.map((candidate) => {
                   const canPing = candidate.telegram_available && !['sent', 'yes', 'no'].includes(candidate.invite_status);
-                  const canAssign = candidate.invite_status === 'yes' && request.status === 'pending';
+                  const canAssign = request.status === 'pending';
                   return (
                     <article className="candidate-row" key={candidate.tutor_id}>
                       <div className="candidate-select">
@@ -242,7 +248,7 @@ export default function RequestWorkbench({ initialRequestId }) {
                       </div>
                       <div className="candidate-actions">
                         {!candidate.telegram_available && <span className="muted-caption">No Telegram</span>}
-                        {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status}</span>}
+                        {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status === 'no' ? 'Unavailable' : candidate.invite_status}</span>}
                         <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => runAction(() => assignAdminTutor(request.id, candidate.tutor_id))}>
                           <UserRoundCheck size={15} /> Assign
                         </button>

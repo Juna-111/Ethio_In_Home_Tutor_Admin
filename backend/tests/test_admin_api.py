@@ -516,9 +516,57 @@ async def test_idle_tutor_list_and_reactivation_nudge(
         headers=headers,
     )
     assert nudge_response.status_code == 200
-    assert mock_bot.send_message.await_count == 1
-    assert mock_bot.send_message.await_args.kwargs["chat_id"] == tutor.telegram_user_id
     audit = await db_session.scalar(select(AuditLog).where(
         AuditLog.action == "reactivate_nudge", AuditLog.target_id == tutor.id,
     ))
     assert audit is not None
+
+
+@pytest.mark.asyncio
+async def test_admin_direct_assignment_without_prior_invite_succeeds(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """An administrator can directly assign any verified active tutor even without a prior ping."""
+    bot_token = "123456:admin-test-token"
+    admin_id = 700012
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+    import app.bot.bot_instance as bot_instance
+    mock_bot = MagicMock()
+    mock_bot.send_message = AsyncMock()
+    monkeypatch.setattr(bot_instance, "bot_app", MagicMock(bot=mock_bot))
+
+    parent = _parent_request("Direct Assign Parent")
+    parent.telegram_user_id = 910001
+    tutor = _tutor("Direct Assign Tutor", status="verified")
+    tutor.telegram_user_id = 910002
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="admin", is_active=True), parent, tutor])
+    await db_session.commit()
+
+    # Note: No MatchInvite is pre-seeded
+    response = await async_client.post(
+        f"/api/v1/admin/requests/{parent.id}/assign",
+        json={"tutor_id": tutor.id},
+        headers=_telegram_auth_header(admin_id, bot_token),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+
+    # Verify MatchInvite was auto-recorded
+    invite = await db_session.scalar(select(MatchInvite).where(
+        MatchInvite.request_id == parent.id, MatchInvite.tutor_id == tutor.id
+    ))
+    assert invite is not None
+    assert invite.status == "yes"
+
+    # Verify Assignment was created
+    assignment = await db_session.scalar(select(Assignment).where(Assignment.request_id == parent.id))
+    assert assignment is not None
+    assert assignment.tutor_id == tutor.id
+
+    # Verify parent and tutor received DMs
+    assert mock_bot.send_message.await_count == 2

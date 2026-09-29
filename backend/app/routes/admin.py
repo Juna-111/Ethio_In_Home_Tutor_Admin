@@ -518,13 +518,25 @@ async def assign_admin_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request or tutor not found.")
     if tutor.status != "verified" or tutor.is_paused:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only verified, active tutors can be assigned.")
+
+    # Record or confirm MatchInvite so relationship is tracked
     invite = await db.scalar(select(MatchInvite).where(
         MatchInvite.request_id == request_id,
         MatchInvite.tutor_id == tutor_id,
-        MatchInvite.status == "yes",
     ))
+    now_utc = datetime.now(timezone.utc)
     if not invite:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tutor must confirm availability before assignment.")
+        invite = MatchInvite(
+            request_id=request_id,
+            tutor_id=tutor_id,
+            status="yes",
+            sent_at=now_utc,
+            responded_at=now_utc,
+        )
+        db.add(invite)
+    elif invite.status != "yes":
+        invite.status = "yes"
+        invite.responded_at = now_utc
 
     result = await db.execute(
         update(ParentRequest)
@@ -576,6 +588,26 @@ async def assign_admin_request(
                     "Failed to DM tutor %s on assignment for request #%s (role=tutor): %s",
                     tutor.telegram_user_id, request_id, exc,
                 )
+
+        # Sync assignment to Admin Group forum topic and close topic if open
+        if parent.telegram_topic_id and settings.ADMIN_GROUP_ID:
+            try:
+                await bot.send_message(
+                    chat_id=settings.ADMIN_GROUP_ID,
+                    text=f"✅ Successfully assigned <b>{html.escape(tutor.full_name)}</b> to Parent Request #{request_id} by admin ({admin.telegram_id}).",
+                    parse_mode=ParseMode.HTML,
+                    message_thread_id=parent.telegram_topic_id,
+                )
+            except Exception as exc:
+                logger.debug("Failed to post assignment confirmation in forum topic: %s", exc)
+            if hasattr(bot, "close_forum_topic"):
+                try:
+                    await bot.close_forum_topic(
+                        chat_id=settings.ADMIN_GROUP_ID,
+                        message_thread_id=parent.telegram_topic_id,
+                    )
+                except Exception as exc:
+                    logger.debug("Failed to close forum topic for request #%s: %s", request_id, exc)
     else:
         logger.warning(
             "Bot app not running; assignment notifications skipped for request #%s (tutor #%s).",
