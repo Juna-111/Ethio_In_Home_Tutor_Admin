@@ -1,6 +1,6 @@
 import csv
 import io
-from typing import Any, List, Tuple
+from typing import Any, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

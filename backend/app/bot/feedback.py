@@ -61,9 +61,6 @@ async def get_pending_feedback_assignments(session: AsyncSession) -> list[Assign
     delay_days = await get_feedback_delay_days(session)
     cutoff = datetime.now(timezone.utc) - timedelta(days=delay_days)
 
-    # Subquery: assignment IDs that already have feedback
-    has_feedback = select(SessionFeedback.assignment_id).scalar_subquery()
-
     result = await session.execute(
         select(Assignment).where(
             Assignment.status == "active",

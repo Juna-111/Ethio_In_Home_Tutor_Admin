@@ -11,9 +11,9 @@ from telegram import Update
 
 from app.bot import bot_instance
 from app.bot.topics import ensure_forum_topics
-from app.config import settings, UPLOAD_DIR
+from app.config import settings
 from app.database import engine, Base, AsyncSessionLocal
-import app.models  # noqa: F401
+import app.models as _app_models  # noqa: F401  (registers models on Base.metadata)
 from app.routes.health import router as health_router
 from app.routes.admin import router as admin_router
 from app.routes.parents import router as parents_router

@@ -131,6 +131,7 @@ def format_parent_directory_badge(parent_req) -> str:
     return (
         f"<b>REQ-{parent_req.id:04d}</b> ── {html.escape(parent_req.student_level)}\n"
         f"<b>{html.escape(parent_req.parent_name)}</b> • {html.escape(parent_req.location_subcity)}\n"
+        f"Subjects: {subjects_str} • Schedule: {schedule_str}\n"
         f"Status: <b>{html.escape(parent_req.status)}</b>"
     )
 

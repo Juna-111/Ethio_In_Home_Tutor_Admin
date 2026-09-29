@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   Briefcase, 
   Users, 
-  DollarSign, 
   BookOpen, 
   MapPin, 
   Calendar, 

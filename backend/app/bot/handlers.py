@@ -36,14 +36,13 @@ from app.bot.bot_instance import (
     format_assignment_card_parent,
     format_assignment_card_tutor,
     format_parent_card,
-    format_tutor_card,
 )
 from app.bot.topics import get_parent_topic_id
 from app.config import settings, UPLOAD_DIR
 from app.database import AsyncSessionLocal
 from app.models import AdminUser, AdminWizardState, Assignment, MatchInvite, ParentRequest, SystemSetting, Tutor
 from app.services.export_service import generate_parents_csv, generate_tutors_csv
-from app.services.matcher import find_top_matches, get_tiered_matches
+from app.services.matcher import get_tiered_matches
 
 logger = logging.getLogger("mentorlink.bot.handlers")
 
@@ -684,7 +683,7 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Format Tiered Match Radar (capped at 5 per tier to stay within Telegram message limits)
     subjects_str = _format_subjects(parent.subjects)
     lines = [
-        f"<b>MATCH RADAR</b>",
+        "<b>MATCH RADAR</b>",
         "",
         "<b>REQUEST</b>",
         f"Location: {html.escape(parent.location_subcity)}",
@@ -1095,6 +1094,7 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"<b>{html.escape(tutor.full_name)}</b>.\n"
                 f"<code>{html.escape(tutor.phone_number)}</code>\n"
+                f"Subjects: {subjects_str}\n"
             )
             send_kwargs = {
                 "chat_id": settings.ADMIN_GROUP_ID,

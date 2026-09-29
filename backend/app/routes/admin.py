@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta, timezone
 import hmac
 import html
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -26,7 +26,6 @@ from app.models import (
     NotificationOutbox,
     ParentRequest,
     RegistrationFunnelEvent,
-    ScheduledEventClaim,
     SessionFeedback,
     Tutor,
     TutorIncident,

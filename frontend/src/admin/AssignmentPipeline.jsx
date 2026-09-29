@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { GitPullRequest, Clock, Loader2, AlertCircle, Calendar } from 'lucide-react';
+import { GitPullRequest, Clock, Loader2 } from 'lucide-react';
 import { getAdminAssignmentPipeline } from '../services/api';
 
 const STATUS_CONFIG = {

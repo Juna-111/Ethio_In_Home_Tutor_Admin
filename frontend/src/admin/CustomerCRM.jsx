@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Users, ChevronDown, ChevronUp, Phone, Calendar, BookOpen, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Phone, Loader2 } from 'lucide-react';
 import { getAdminParents } from '../services/api';
 
 export default function CustomerCRM() {
