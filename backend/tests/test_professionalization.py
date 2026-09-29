@@ -315,6 +315,7 @@ async def test_tutor_me_assignments_auth_and_response(async_client: AsyncClient,
     assert "Almaz Parent" in item["student_name_context"] or "Parent For Tutor" in item["student_name_context"]
     assert item["hourly_rate_etb"] == 400.0
     assert "Bole" in item["location"]
+    assert item.get("student_level") == "Grade 10"
 
 
 # AC-11: Parent /me/requests and /me/feedback API

@@ -151,6 +151,14 @@ export default function AdminApp() {
             <p className="eyebrow">RESTRICTED AREA</p>
             <h2>Admin access required</h2>
             <p>Open this app from Telegram with an active administrator account.</p>
+            <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
+              <a href="/index.html?tab=tutor_portal" className="primary-button" style={{ textDecoration: 'none' }}>
+                Go to Tutor Portal (My Teaching)
+              </a>
+              <a href="/index.html?tab=parent_portal" className="quiet-button" style={{ textDecoration: 'none' }}>
+                Go to Parent Portal (My Requests)
+              </a>
+            </div>
           </section>
         ) : view.status === 'error' ? (
           <section className="access-state error-state" role="alert">

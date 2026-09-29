@@ -915,11 +915,14 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
             MatchInvite.tutor_id == tutor_id
         )
         invite = (await session.execute(invite_stmt)).scalar_one_or_none()
-        if not invite or invite.status != "sent":
-            await query.answer("⚠️ This opportunity is no longer available.", show_alert=True)
+        if not invite:
+            await query.answer("⚠️ This opportunity was not found.", show_alert=True)
             return
-        if invite and invite.status in ("yes", "no"):
+        if invite.status in ("yes", "no"):
             await query.answer("You have already responded to this opportunity.", show_alert=True)
+            return
+        if invite.status != "sent":
+            await query.answer("⚠️ This opportunity is no longer available.", show_alert=True)
             return
 
         invite.status = "yes"
@@ -972,9 +975,19 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
             if topic_id is not None:
                 send_kwargs["message_thread_id"] = topic_id
 
-            await context.bot.send_message(**send_kwargs)
+            try:
+                await context.bot.send_message(**send_kwargs)
+            except Exception as exc:
+                if "message_thread_id" in send_kwargs:
+                    try:
+                        send_kwargs.pop("message_thread_id", None)
+                        await context.bot.send_message(**send_kwargs)
+                    except Exception:
+                        logger.error("Failed to send availability alert to admin group: %s", exc)
+                else:
+                    logger.error("Failed to send availability alert to admin group: %s", exc)
         except Exception as exc:
-            logger.error("Failed to send availability alert to admin group: %s", exc)
+            logger.error("Failed to format availability alert for admin group: %s", exc)
 
 
 async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -1009,11 +1022,14 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
             MatchInvite.tutor_id == tutor_id
         )
         invite = (await session.execute(invite_stmt)).scalar_one_or_none()
-        if not invite or invite.status != "sent":
-            await query.answer("⚠️ This opportunity is no longer available.", show_alert=True)
+        if not invite:
+            await query.answer("⚠️ This opportunity was not found.", show_alert=True)
             return
-        if invite and invite.status in ("yes", "no"):
+        if invite.status in ("yes", "no"):
             await query.answer("You have already responded to this opportunity.", show_alert=True)
+            return
+        if invite.status != "sent":
+            await query.answer("⚠️ This opportunity is no longer available.", show_alert=True)
             return
 
         invite.status = "no"
@@ -1049,9 +1065,19 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
             if topic_id is not None:
                 send_kwargs["message_thread_id"] = topic_id
 
-            await context.bot.send_message(**send_kwargs)
+            try:
+                await context.bot.send_message(**send_kwargs)
+            except Exception as exc:
+                if "message_thread_id" in send_kwargs:
+                    try:
+                        send_kwargs.pop("message_thread_id", None)
+                        await context.bot.send_message(**send_kwargs)
+                    except Exception:
+                        logger.error("Failed to send decline alert to admin group: %s", exc)
+                else:
+                    logger.error("Failed to send decline alert to admin group: %s", exc)
         except Exception as exc:
-            logger.error("Failed to send decline alert to admin group: %s", exc)
+            logger.error("Failed to format decline alert for admin group: %s", exc)
 
 
 async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -1084,15 +1110,25 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("⚠️ Only verified tutors can be assigned.", show_alert=True)
             return
 
+        # Record or confirm MatchInvite so the relationship is tracked
         invite_stmt = select(MatchInvite).where(
             MatchInvite.request_id == parent_id,
             MatchInvite.tutor_id == tutor_id,
-            MatchInvite.status == "yes",
         )
         invite = (await session.execute(invite_stmt)).scalar_one_or_none()
+        now_utc = datetime.now(timezone.utc)
         if not invite:
-            await query.answer("⚠️ This tutor has not confirmed availability.", show_alert=True)
-            return
+            invite = MatchInvite(
+                request_id=parent_id,
+                tutor_id=tutor_id,
+                status="yes",
+                sent_at=now_utc,
+                responded_at=now_utc,
+            )
+            session.add(invite)
+        elif invite.status != "yes":
+            invite.status = "yes"
+            invite.responded_at = now_utc
 
         if parent.status != "pending":
             await query.answer(f"⚠️ This Request is already {parent.status}.", show_alert=True)

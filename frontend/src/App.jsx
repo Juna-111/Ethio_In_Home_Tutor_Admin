@@ -11,8 +11,32 @@ import { TRANSLATIONS } from './constants/translations';
 
 const LANGUAGE_STORAGE_KEY = 'mentorlink-language';
 
+function resolveInitialTab() {
+  try {
+    const tg = window.Telegram?.WebApp;
+    const startParam = tg?.initDataUnsafe?.start_param || '';
+    const searchParams = new URLSearchParams(window.location.search);
+    const queryTab = searchParams.get('tab') || searchParams.get('startapp') || searchParams.get('start_param') || '';
+    const hashStr = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    const hashParams = new URLSearchParams(hashStr);
+    const hashTab = hashParams.get('tgWebAppStartParam') || '';
+
+    const param = (startParam || queryTab || hashTab).toLowerCase();
+    if (param.includes('tutor_portal') || param.includes('assignment') || param.includes('teaching')) {
+      return 'tutor_portal';
+    }
+    if (param.includes('parent_portal') || param.includes('my_requests') || param.includes('requests')) {
+      return 'parent_portal';
+    }
+    if (param.includes('tutor') || param.includes('become')) {
+      return 'tutor';
+    }
+  } catch (_) {}
+  return 'parent';
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('parent');
+  const [activeTab, setActiveTab] = useState(resolveInitialTab);
   const [user, setUser] = useState(null);
   const [submissionSuccess, setSubmissionSuccess] = useState(null);
   const [lang, setLang] = useState(() => {
@@ -40,6 +64,16 @@ export default function App() {
         }
         if (tg.initDataUnsafe?.user) {
           setUser(tg.initDataUnsafe.user);
+        }
+        if (tg.initDataUnsafe?.start_param) {
+          const sp = tg.initDataUnsafe.start_param.toLowerCase();
+          if (sp.includes('tutor_portal') || sp.includes('assignment') || sp.includes('teaching')) {
+            setActiveTab('tutor_portal');
+          } else if (sp.includes('parent_portal') || sp.includes('my_requests') || sp.includes('requests')) {
+            setActiveTab('parent_portal');
+          } else if (sp.includes('tutor')) {
+            setActiveTab('tutor');
+          }
         }
       }
 
