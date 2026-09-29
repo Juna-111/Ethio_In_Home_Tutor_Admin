@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Loader2, AlertCircle, Check, Calculator } from 'lucide-react';
 import {
   SUBCITIES,
@@ -34,15 +34,6 @@ export default function ParentForm({ user, lang, onSuccess }) {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [globalError, setGlobalError] = useState(null);
-
-  useEffect(() => {
-    if (user && !formData.parent_name) {
-      const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || '';
-      if (name) {
-        setFormData((prev) => ({ ...prev, parent_name: name }));
-      }
-    }
-  }, [user]);
 
   // Parse numeric duration hours
   const getDurationHours = (durStr) => {
@@ -194,32 +185,23 @@ export default function ParentForm({ user, lang, onSuccess }) {
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-xs font-semibold text-gray-700">
-              {t.parentForm.phone} <span className="text-red-500">*</span>
-            </label>
-            <span className="text-[10px] text-muted font-medium">09... / 07...</span>
-          </div>
-          <div className="relative flex items-center">
-            <div className="absolute left-3 flex items-center space-x-1 text-xs font-bold text-muted pointer-events-none select-none border-r border-line pr-2">
-              <span className="text-sm">🇪🇹</span>
-              <span>+251</span>
-            </div>
-            <input
-              type="tel"
-              placeholder="0911 223 344"
-              value={formData.phone_number}
-              onChange={(e) => {
-                setFormData({ ...formData, phone_number: e.target.value });
-                if (errors.phone_number) setErrors({ ...errors, phone_number: null });
-              }}
-              className={`w-full text-xs pl-[76px] pr-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
-                errors.phone_number
-                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
-                  : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
-              }`}
-            />
-          </div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {t.parentForm.phone} <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="tel"
+            placeholder={t.parentForm.phonePlaceholder}
+            value={formData.phone_number}
+            onChange={(e) => {
+              setFormData({ ...formData, phone_number: e.target.value });
+              if (errors.phone_number) setErrors({ ...errors, phone_number: null });
+            }}
+            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
+              errors.phone_number
+                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
+            }`}
+          />
           {errors.phone_number && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.phone_number}</p>}
         </div>
       </div>
@@ -355,73 +337,51 @@ export default function ParentForm({ user, lang, onSuccess }) {
           {errors.schedule_days && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.schedule_days}</p>}
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-            {t.parentForm.timeSlot} <span className="text-red-500">*</span>
-          </label>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {[
-              { label: lang === 'am' ? 'ከቀኑ 10:30 - 12:30' : '4:30 PM - 6:30 PM', val: '4:30 PM - 6:30 PM' },
-              { label: lang === 'am' ? 'ከጠዋቱ 3:00 - 5:00' : '9:00 AM - 11:00 AM', val: '9:00 AM - 11:00 AM' },
-              { label: lang === 'am' ? 'ቅዳሜ/እሑድ 4:00 - 6:00' : 'Weekend 10 AM - 12 PM', val: 'Weekend 10:00 AM - 12:00 PM' },
-              { label: lang === 'am' ? 'ማታ 12:00 - 2:00' : '6:00 PM - 8:00 PM', val: '6:00 PM - 8:00 PM' }
-            ].map((preset) => (
-              <button
-                key={preset.val}
-                type="button"
-                onClick={() => {
-                  setFormData((prev) => ({ ...prev, time_slot: preset.val }));
-                  if (errors.time_slot) setErrors((errs) => ({ ...errs, time_slot: null }));
-                }}
-                className={`py-1 px-2.5 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
-                  formData.time_slot === preset.val
-                    ? 'border-pine bg-pine/10 text-pine font-bold'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              {t.parentForm.timeSlot} <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder={t.parentForm.timeSlotPlaceholder}
+              value={formData.time_slot}
+              onChange={(e) => {
+                setFormData({ ...formData, time_slot: e.target.value });
+                if (errors.time_slot) setErrors({ ...errors, time_slot: null });
+              }}
+              className={`w-full text-xs px-3 py-2 rounded-xl border transition focus:outline-none ${
+                errors.time_slot
+                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                  : 'border-line focus:border-pine'
+              }`}
+            />
+            {errors.time_slot && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.time_slot}</p>}
           </div>
-          <input
-            type="text"
-            placeholder={t.parentForm.timeSlotPlaceholder}
-            value={formData.time_slot}
-            onChange={(e) => {
-              setFormData({ ...formData, time_slot: e.target.value });
-              if (errors.time_slot) setErrors({ ...errors, time_slot: null });
-            }}
-            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
-              errors.time_slot
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
-                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
-            }`}
-          />
-          {errors.time_slot && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.time_slot}</p>}
-        </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {t.parentForm.duration} <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={formData.session_duration}
-            onChange={(e) => {
-              setFormData({ ...formData, session_duration: e.target.value });
-              if (errors.session_duration) setErrors({ ...errors, session_duration: null });
-            }}
-            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
-              errors.session_duration
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
-                : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10 text-ink'
-            }`}
-          >
-            <option value="">{t.parentForm.selectDurationPlaceholder}</option>
-            {SESSION_DURATIONS.map((dur) => (
-              <option key={dur} value={dur}>{choices.durations?.[dur] || dur}</option>
-            ))}
-          </select>
-          {errors.session_duration && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.session_duration}</p>}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              {t.parentForm.duration} <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={formData.session_duration}
+              onChange={(e) => {
+                setFormData({ ...formData, session_duration: e.target.value });
+                if (errors.session_duration) setErrors({ ...errors, session_duration: null });
+              }}
+              className={`w-full text-xs px-3 py-2 rounded-xl border transition focus:outline-none bg-white font-medium ${
+                errors.session_duration
+                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                  : 'border-line focus:border-pine text-ink'
+              }`}
+            >
+              <option value="">{t.parentForm.selectDurationPlaceholder}</option>
+              {SESSION_DURATIONS.map((dur) => (
+                <option key={dur} value={dur}>{choices.durations?.[dur] || dur}</option>
+              ))}
+            </select>
+            {errors.session_duration && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.session_duration}</p>}
+          </div>
         </div>
 
         {/* Budget per Hour with Dynamic Monthly Estimation */}

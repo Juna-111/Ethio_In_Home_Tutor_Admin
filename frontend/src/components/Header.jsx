@@ -33,12 +33,12 @@ export default function Header({ user, lang, onToggleLang }) {
           </button>
 
           {user ? (
-            <div className="flex items-center space-x-1.5 bg-white/10 backdrop-blur-sm px-2.5 py-1.5 rounded-full border border-white/15 text-xs font-medium text-paper">
+            <div className="hidden sm:flex items-center space-x-1.5 bg-white/10 backdrop-blur-sm px-2.5 py-1.5 rounded-full border border-white/15 text-xs font-medium text-paper">
               <User className="w-3.5 h-3.5 text-paper/80" />
-              <span className="truncate max-w-[90px]">{user.first_name || user.username}</span>
+              <span className="truncate max-w-[80px]">{user.first_name || user.username}</span>
             </div>
           ) : (
-            <div className="bg-white/10 px-2 py-1 rounded-full text-[10px] text-paper/80 font-medium border border-white/15">
+            <div className="hidden sm:block bg-white/10 px-2 py-1 rounded-full text-[10px] text-paper/80 font-medium border border-white/15">
               {t.webPreview}
             </div>
           )}
