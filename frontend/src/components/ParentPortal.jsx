@@ -11,11 +11,12 @@ import {
   CheckCircle2, 
   AlertCircle,
   Loader2,
+  RotateCw,
   X
 } from 'lucide-react';
 import { getParentMyRequests, submitParentFeedback, submitParentContactAdmin } from '../services/api';
 
-export default function ParentPortal({ user, lang }) {
+export default function ParentPortal({ user, lang, onSelectTab }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -125,16 +126,27 @@ export default function ParentPortal({ user, lang }) {
 
   return (
     <div className="px-4 pb-12 space-y-4">
-      <div className="bg-paper p-4 rounded-2xl border border-line shadow-sm">
-        <h2 className="text-sm font-bold text-ink flex items-center space-x-2">
-          <ClipboardList className="w-4 h-4 text-pine" />
-          <span>{lang === 'am' ? 'የእኔ ጥያቄዎች' : 'My Tutoring Requests'}</span>
-        </h2>
-        <p className="text-xs text-muted mt-1">
-          {lang === 'am' 
-            ? 'ያስገቧቸውን የማጠናከሪያ ትምህርት ጥያቄዎች ሁኔታ እዚህ ይከታተሉ።' 
-            : 'Track the status and matched tutors for your submitted requests.'}
-        </p>
+      <div className="bg-paper p-4 rounded-2xl border border-line shadow-sm flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-ink flex items-center space-x-2">
+            <ClipboardList className="w-4 h-4 text-pine" />
+            <span>{lang === 'am' ? 'የእኔ ጥያቄዎች' : 'My Tutoring Requests'}</span>
+          </h2>
+          <p className="text-xs text-muted mt-1">
+            {lang === 'am' 
+              ? 'ያስገቧቸውን የማጠናከሪያ ትምህርት ጥያቄዎች ሁኔታ እዚህ ይከታተሉ።' 
+              : 'Track the status and matched tutors for your submitted requests.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={loadRequests}
+          disabled={loading}
+          className="p-2 rounded-xl border border-line hover:bg-line/40 text-muted hover:text-ink transition cursor-pointer shrink-0 ml-2"
+          title={lang === 'am' ? 'አድስ' : 'Refresh'}
+        >
+          <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-pine' : ''}`} />
+        </button>
       </div>
 
       {loading ? (
@@ -143,18 +155,64 @@ export default function ParentPortal({ user, lang }) {
           <span className="text-xs">{lang === 'am' ? 'በመጫን ላይ...' : 'Loading your requests...'}</span>
         </div>
       ) : error ? (
-        <div className="p-4 bg-coral/10 rounded-2xl border border-coral/20 text-coral text-xs flex items-center space-x-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
+        <div className="p-5 bg-paper rounded-2xl border border-line text-center space-y-3 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-coral/10 text-coral mx-auto flex items-center justify-center">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <p className="text-xs font-bold text-ink">
+            {error.includes('authentication') || error.includes('401')
+              ? (lang === 'am' ? 'የቴሌግራም ማረጋገጫ ያስፈልጋል' : 'Telegram Mini App Account Needed')
+              : (lang === 'am' ? 'ጥያቄዎችን ማምጣት አልተቻለም' : 'Could Not Load Requests')}
+          </p>
+          <p className="text-xs text-muted leading-relaxed">
+            {error.includes('authentication') || error.includes('401')
+              ? (lang === 'am' 
+                  ? 'የእርስዎን ጥያቄዎች ለማየት እባክዎ ይህን መተግበሪያ በቴሌግራም ውስጥ ይክፈቱት።' 
+                  : 'Open MentorLink directly inside Telegram to view your account requests.')
+              : error}
+          </p>
+          <div className="flex items-center justify-center space-x-2 pt-1">
+            <button
+              type="button"
+              onClick={loadRequests}
+              className="py-2 px-4 rounded-xl font-bold text-xs bg-pine text-paper hover:bg-ink transition shadow-sm cursor-pointer"
+            >
+              {lang === 'am' ? 'እንደገና ይሞክሩ' : 'Retry'}
+            </button>
+            {onSelectTab && (
+              <button
+                type="button"
+                onClick={() => onSelectTab('parent')}
+                className="py-2 px-4 rounded-xl font-bold text-xs border border-line text-ink hover:bg-line/40 transition cursor-pointer"
+              >
+                {lang === 'am' ? 'አዲስ ጥያቄ ያስገቡ' : 'Post Request'}
+              </button>
+            )}
+          </div>
         </div>
       ) : requests.length === 0 ? (
         <div className="p-8 bg-paper rounded-2xl border border-line text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-line/60 text-muted mx-auto flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-pine/10 text-pine mx-auto flex items-center justify-center">
             <ClipboardList className="w-6 h-6" />
           </div>
-          <p className="text-xs text-muted font-medium">
-            {lang === 'am' ? 'እስካሁን ምንም ጥያቄ አላስገቡም።' : 'You have not submitted any tutoring requests yet.'}
+          <p className="text-xs text-ink font-bold">
+            {lang === 'am' ? 'እስካሁን ምንም ጥያቄ አላስገቡም።' : 'No Tutoring Requests Yet'}
           </p>
+          <p className="text-xs text-muted">
+            {lang === 'am'
+              ? 'ለልጅዎ ብቁ አስጠኚ ለማግኘት አዲስ ጥያቄ ያስገቡ።'
+              : 'Post a request to find a vetted university tutor for your student.'}
+          </p>
+          {onSelectTab && (
+            <button
+              type="button"
+              onClick={() => onSelectTab('parent')}
+              className="mt-2 inline-flex items-center space-x-1.5 py-2.5 px-4 rounded-xl font-bold text-xs bg-pine text-paper hover:bg-ink transition shadow-sm cursor-pointer"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>{lang === 'am' ? 'አስጠኚ ፈልግ (አዲስ ጥያቄ)' : 'Find a Tutor Now'}</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
