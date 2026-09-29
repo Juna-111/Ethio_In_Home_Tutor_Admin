@@ -5,6 +5,7 @@ import ParentForm from './components/ParentForm';
 import TutorForm from './components/TutorForm';
 import ParentPortal from './components/ParentPortal';
 import TutorPortal from './components/TutorPortal';
+import UserProfile from './components/UserProfile';
 import SuccessModal from './components/SuccessModal';
 import { getTelegramInitData } from './services/api';
 import { TRANSLATIONS } from './constants/translations';
@@ -116,6 +117,13 @@ export default function App() {
       {/* Brand Header */}
       <Header user={user} lang={lang} onToggleLang={toggleLanguage} />
 
+      {/* User Profile Card */}
+      <UserProfile
+        user={user}
+        lang={lang}
+        role={activeTab === 'tutor' || activeTab === 'tutor_portal' ? 'tutor' : 'parent'}
+      />
+
       {/* Tab Navigation */}
       <TabNavigation activeTab={activeTab} onSelectTab={setActiveTab} lang={lang} />
 
@@ -125,13 +133,13 @@ export default function App() {
           <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />
         )}
         {activeTab === 'parent_portal' && (
-          <ParentPortal user={user} lang={lang} />
+          <ParentPortal user={user} lang={lang} onSelectTab={setActiveTab} />
         )}
         {activeTab === 'tutor' && (
           <TutorForm user={user} lang={lang} onSuccess={handleSuccess} />
         )}
         {activeTab === 'tutor_portal' && (
-          <TutorPortal user={user} lang={lang} />
+          <TutorPortal user={user} lang={lang} onSelectTab={setActiveTab} />
         )}
       </main>
 

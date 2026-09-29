@@ -703,6 +703,31 @@ async def test_webhook_rejects_invalid_secret(async_client: AsyncClient, monkeyp
     assert response.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_webhook_header_authentication(async_client: AsyncClient, monkeypatch):
+    """Webhook requests with valid header secret are authenticated (giving 503 if bot offline, not 404)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "BOT_MODE", "webhook")
+    monkeypatch.setattr(settings, "WEBHOOK_SECRET", "test-secret")
+    
+    # Invalid header token should return 404
+    resp_invalid = await async_client.post(
+        "/telegram/webhook",
+        json={"update_id": 1},
+        headers={"X-Telegram-Bot-Api-Secret-Token": "bad-secret"},
+    )
+    assert resp_invalid.status_code == 404
+
+    # Valid header token passes auth check (reaches bot check -> 503 Service Unavailable)
+    resp_valid = await async_client.post(
+        "/telegram/webhook",
+        json={"update_id": 1},
+        headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+    )
+    assert resp_valid.status_code == 503
+
+
 def test_get_webapp_url_prioritizes_actual_web_hosting_domain(monkeypatch):
     """
     Verifies that _get_webapp_url prioritizes direct web URLs over t.me links,
