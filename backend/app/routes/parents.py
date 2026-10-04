@@ -465,6 +465,8 @@ async def discover_tutors(
         is_verified = bool(verification and verification.id_verified and verification.entrance_result_verified and verification.phone_confirmed and verification.claims_plausible)
         if verified_only and not is_verified:
             continue
+        if favorite_only and tutor.id not in favorite_ids:
+            continue
 
         avg_rating, review_count = ratings.get(tutor.id, (None, 0))
         if min_rating is not None and (avg_rating is None or float(avg_rating) < min_rating):
