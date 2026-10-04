@@ -677,7 +677,21 @@ async def test_admin_assignment_is_idempotently_rejected_after_request_is_matche
 def test_extracted_admin_analytics_router_is_registered():
     from app.main import app
 
-    paths = {route.path for route in app.routes}
+    # FastAPI may expose an included router wrapper in app.routes depending on
+    # the Starlette/FastAPI version. Inspect actual Route objects and recurse into
+    # mounted/included routers instead of assuming every top-level entry has .path.
+    def collect_paths(routes):
+        paths = set()
+        for route in routes:
+            route_path = getattr(route, "path", None)
+            if route_path:
+                paths.add(route_path)
+            nested = getattr(route, "routes", None)
+            if nested:
+                paths.update(collect_paths(nested))
+        return paths
+
+    paths = collect_paths(app.routes)
     assert "/api/v1/admin/analytics/funnel" in paths
     assert "/api/v1/admin/analytics/availability-mismatch" in paths
     assert "/api/v1/admin/analytics/coverage-gaps" in paths
