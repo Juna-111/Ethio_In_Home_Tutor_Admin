@@ -1,4 +1,4 @@
-from app.models import ParentRequest, Tutor
+from types import SimpleNamespace
 
 
 def test_marketplace_router_contract():
@@ -12,37 +12,22 @@ def test_marketplace_router_contract():
 
 def test_marketplace_match_scoring():
     from app.routes.parents import _match_tutor
-    request = ParentRequest(
-        telegram_user_id=9001,
-        parent_name="Parent",
-        phone_number="+251911111111",
+    request = SimpleNamespace(
         student_level="High School 9-10",
         subjects=["Math"],
         preferred_gender="No preference",
-        preferred_experience="Any",
         location_subcity="Bole",
         schedule_days=["Mon"],
-        time_slot="5 PM - 7 PM",
-        session_duration="2 hrs",
         budget_etb=500,
-        status="pending",
     )
-    tutor = Tutor(
-        full_name="Match",
+    tutor = SimpleNamespace(
         gender="Female",
-        phone_number="+251922222222",
-        university="AAU",
-        department="Mathematics",
-        education_year="4th Year",
         subjects_qualified=["Math"],
         grades_qualified=["High School 9-10"],
-        years_of_experience=2,
         expected_fee_etb=400,
         base_subcity="Bole",
         coverage_areas=["Bole"],
         availability_schedule={"Mon": "5 PM - 8 PM"},
-        status="verified",
-        is_paused=False,
     )
     score, reasons = _match_tutor(tutor, request)
     assert score == 95.0
