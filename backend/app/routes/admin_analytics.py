@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+from collections import Counter, defaultdict
+
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +10,7 @@ from app.models import ParentRequest, RegistrationFunnelEvent, Tutor
 from app.schemas import (
     AdminAvailabilityMismatchItem,
     AdminAvailabilityMismatchResponse,
+    AdminCoverageGapResponse,
     AdminFunnelResponse,
 )
 
@@ -126,3 +129,51 @@ async def get_admin_availability_mismatch(
         total_supply=total_supply,
         items=items,
     )
+
+@router.get("/analytics/coverage-gaps", response_model=list[AdminCoverageGapResponse], summary="Tutor coverage gaps")
+async def get_admin_coverage_gaps(
+    _admin: AdminPrincipal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminCoverageGapResponse]:
+    # Fetch only the JSON/text columns needed for aggregation rather than
+    # materializing full ORM entities for every pending request/tutor.
+    request_result = await db.execute(
+        select(ParentRequest.location_subcity, ParentRequest.subjects)
+        .where(ParentRequest.status == "pending")
+    )
+    demand: Counter[tuple[str, str]] = Counter()
+    subcity_names: dict[str, str] = {}
+    subject_names: dict[str, str] = {}
+    for subcity, subjects in request_result.all():
+        subcity_key = subcity.strip().casefold()
+        subcity_names[subcity_key] = subcity
+        for subject in set(subjects or []):
+            subject_key = str(subject).strip().casefold()
+            subject_names[subject_key] = str(subject)
+            demand[(subcity_key, subject_key)] += 1
+
+    tutor_result = await db.execute(
+        select(Tutor.id, Tutor.subjects_qualified, Tutor.coverage_areas, Tutor.base_subcity)
+        .where(Tutor.status == "verified", Tutor.is_paused.is_(False))
+    )
+    supply: dict[tuple[str, str], set[int]] = defaultdict(set)
+    for tutor_id, subjects_qualified, coverage_areas, base_subcity in tutor_result.all():
+        tutor_subjects = {str(subject).strip().casefold() for subject in (subjects_qualified or [])}
+        areas = {str(area).strip().casefold() for area in (coverage_areas or [])}
+        areas.add(base_subcity.strip().casefold())
+        for area in areas:
+            for subject in tutor_subjects:
+                supply[(area, subject)].add(tutor_id)
+
+    gaps = []
+    for (subcity_key, subject_key), pending_count in demand.items():
+        tutor_count = len(supply[(subcity_key, subject_key)])
+        gap_ratio = max(0.0, (pending_count - tutor_count) / pending_count)
+        gaps.append(AdminCoverageGapResponse(
+            subcity=subcity_names[subcity_key],
+            subject=subject_names[subject_key],
+            pending_requests=pending_count,
+            approved_tutors=tutor_count,
+            gap_ratio=round(gap_ratio, 3),
+        ))
+    return sorted(gaps, key=lambda gap: (-gap.gap_ratio, -gap.pending_requests, gap.subcity, gap.subject))
