@@ -671,6 +671,12 @@ async def assign_admin_request(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already has an assignment.")
 
+    # The bulk UPDATE above can expire ORM attributes even with expire_on_commit=False.
+    # Refresh before building Telegram cards so async SQLAlchemy never attempts implicit IO.
+    await db.refresh(parent)
+    await db.refresh(tutor)
+    await db.refresh(assignment)
+
     if bot_instance.bot_app:
         bot = bot_instance.bot_app.bot
         parent_card = bot_instance.format_assignment_card_parent(parent, tutor, assignment.id)
