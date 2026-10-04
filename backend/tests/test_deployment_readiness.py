@@ -302,6 +302,35 @@ async def test_cron_mini_app_fallback_passes_authorization_header(monkeypatch, a
     assert response.json()["ok"] is True
 
 
+@pytest.mark.asyncio
+async def test_cron_mini_app_fallback_passes_authorization_header(monkeypatch, async_client: AsyncClient):
+    """Mini App fallback must validate the actual Authorization header, not the Request object."""
+    import app.routes.admin as admin_routes
+
+    seen = {}
+
+    async def fake_get_optional_telegram_user(authorization):
+        seen["authorization"] = authorization
+        return 4242
+
+    async def fake_run_all_scheduled_tasks(db, bot=None):
+        return {"ok": True, "processed": 0}
+
+    monkeypatch.setattr(settings, "CRON_SECRET", None)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", 4242)
+    monkeypatch.setattr(admin_routes, "get_optional_telegram_user", fake_get_optional_telegram_user)
+    monkeypatch.setattr(admin_routes, "run_all_scheduled_tasks", fake_run_all_scheduled_tasks)
+
+    response = await async_client.post(
+        "/api/v1/admin/cron/run",
+        headers={"Authorization": "tma signed-init-data"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert seen["authorization"] == "tma signed-init-data"
+    assert response.json()["ok"] is True
+
+
 # Review buttons: direct link + always-working bot fallback
 # --------------------------------------------------------------------------
 
