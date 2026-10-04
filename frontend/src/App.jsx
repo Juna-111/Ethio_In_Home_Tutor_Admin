@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import TabNavigation from './components/TabNavigation';
+import CustomerHome from './components/CustomerHome';
 import ParentForm from './components/ParentForm';
 import TutorForm from './components/TutorForm';
 import ParentPortal from './components/ParentPortal';
@@ -23,17 +24,12 @@ function resolveInitialTab() {
     const hashTab = hashParams.get('tgWebAppStartParam') || '';
 
     const param = (startParam || queryTab || hashTab).toLowerCase();
-    if (param.includes('tutor_portal') || param.includes('assignment') || param.includes('teaching')) {
-      return 'tutor_portal';
-    }
-    if (param.includes('parent_portal') || param.includes('my_requests') || param.includes('requests')) {
-      return 'parent_portal';
-    }
-    if (param.includes('tutor') || param.includes('become')) {
-      return 'tutor';
-    }
+    if (param.includes('tutor_portal') || param.includes('assignment') || param.includes('teaching')) return 'tutor_portal';
+    if (param.includes('parent_portal') || param.includes('my_requests') || param.includes('requests')) return 'parent_portal';
+    if (param.includes('tutor') || param.includes('become')) return 'tutor';
+    if (param.includes('parent') || param.includes('find_tutor')) return 'parent';
   } catch (_) {}
-  return 'parent';
+  return 'home';
 }
 
 export default function App() {
@@ -48,9 +44,11 @@ export default function App() {
     }
   });
 
-  const toggleLanguage = () => {
-    setLang((prev) => (prev === 'en' ? 'am' : 'en'));
-  };
+  const isHome = activeTab === 'home';
+  const isTutor = activeTab === 'tutor' || activeTab === 'tutor_portal';
+  const role = isTutor ? 'tutor' : 'parent';
+
+  const toggleLanguage = () => setLang((prev) => (prev === 'en' ? 'am' : 'en'));
 
   useEffect(() => {
     try {
@@ -59,31 +57,24 @@ export default function App() {
         tg.ready();
         tg.expand();
         if (tg.initData) {
-          try {
-            sessionStorage.setItem("tma_init_data", tg.initData);
-          } catch (_) {}
+          try { sessionStorage.setItem('tma_init_data', tg.initData); } catch (_) {}
         }
-        if (tg.initDataUnsafe?.user) {
-          setUser(tg.initDataUnsafe.user);
-        }
+        if (tg.initDataUnsafe?.user) setUser(tg.initDataUnsafe.user);
+
         if (tg.initDataUnsafe?.start_param) {
           const sp = tg.initDataUnsafe.start_param.toLowerCase();
-          if (sp.includes('tutor_portal') || sp.includes('assignment') || sp.includes('teaching')) {
-            setActiveTab('tutor_portal');
-          } else if (sp.includes('parent_portal') || sp.includes('my_requests') || sp.includes('requests')) {
-            setActiveTab('parent_portal');
-          } else if (sp.includes('tutor')) {
-            setActiveTab('tutor');
-          }
+          if (sp.includes('tutor_portal') || sp.includes('assignment') || sp.includes('teaching')) setActiveTab('tutor_portal');
+          else if (sp.includes('parent_portal') || sp.includes('my_requests') || sp.includes('requests')) setActiveTab('parent_portal');
+          else if (sp.includes('tutor')) setActiveTab('tutor');
+          else if (sp.includes('parent')) setActiveTab('parent');
         }
       }
 
-      // If user is not yet populated via tg.initDataUnsafe, attempt extraction from raw initData
       const rawInitData = getTelegramInitData();
       if (rawInitData) {
         try {
           const params = new URLSearchParams(rawInitData);
-          const userStr = params.get("user");
+          const userStr = params.get('user');
           if (userStr) {
             const parsedUser = JSON.parse(userStr);
             setUser((prev) => prev || parsedUser);
@@ -91,7 +82,7 @@ export default function App() {
         } catch (_) {}
       }
     } catch (e) {
-      console.info("Telegram WebApp initialization skipped (running in standard browser mode).");
+      console.info('Telegram WebApp initialization skipped (running in standard browser mode).');
     }
   }, []);
 
@@ -99,68 +90,57 @@ export default function App() {
     const tg = window.Telegram?.WebApp;
     const backButton = tg?.BackButton;
     if (!backButton) return undefined;
-    if (activeTab !== 'parent') {
+
+    if (!isHome) {
       backButton.show();
-      const handleBack = () => setActiveTab('parent');
+      const handleBack = () => setActiveTab('home');
       backButton.onClick(handleBack);
       return () => {
         backButton.offClick(handleBack);
         backButton.hide();
       };
     }
+
     backButton.hide();
     return undefined;
-  }, [activeTab]);
+  }, [isHome]);
 
   useEffect(() => {
     const translation = TRANSLATIONS[lang] || TRANSLATIONS.en;
     document.documentElement.lang = lang;
-    document.title = `${translation.appTitle} - ${translation.appSubtitle}`;
-    try {
-      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
-    } catch {}
+    document.title = translation.appTitle + ' - ' + translation.appSubtitle;
+    try { window.localStorage.setItem(LANGUAGE_STORAGE_KEY, lang); } catch {}
   }, [lang]);
 
-  const handleSuccess = (result, type) => {
-    setSubmissionSuccess({ data: result, type });
-  };
-
-  const handleCloseModal = () => {
-    setSubmissionSuccess(null);
-  };
+  const handleSuccess = (result, type) => setSubmissionSuccess({ data: result, type });
+  const handleCloseModal = () => setSubmissionSuccess(null);
+  const goHome = () => setActiveTab('home');
 
   return (
     <div className="min-h-screen bg-[#f1f3ef] flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans text-ink">
-      {/* Brand Header */}
-      <Header user={user} lang={lang} onToggleLang={toggleLanguage} />
-
-      {/* User Profile Card */}
-      <UserProfile
+      <Header
         user={user}
         lang={lang}
-        role={activeTab === 'tutor' || activeTab === 'tutor_portal' ? 'tutor' : 'parent'}
+        onToggleLanguage={toggleLanguage}
+        showHome={!isHome}
+        onHome={goHome}
       />
 
-      {/* Tab Navigation */}
-      <TabNavigation activeTab={activeTab} onSelectTab={setActiveTab} lang={lang} />
+      {!isHome && (
+        <>
+          <UserProfile user={user} lang={lang} role={role} />
+          <TabNavigation activeTab={activeTab} onSelectTab={setActiveTab} lang={lang} />
+        </>
+      )}
 
-      {/* Main Content Area */}
       <main className="flex-1">
-        {activeTab === 'parent' && (
-          <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />
-        )}
-        {activeTab === 'parent_portal' && (
-          <ParentPortal user={user} lang={lang} onSelectTab={setActiveTab} />
-        )}
-        {activeTab === 'tutor' && (
-          <TutorForm user={user} lang={lang} onSuccess={handleSuccess} />
-        )}
-        {activeTab === 'tutor_portal' && (
-          <TutorPortal user={user} lang={lang} onSelectTab={setActiveTab} />
-        )}
+        {isHome && <CustomerHome user={user} lang={lang} onSelectTab={setActiveTab} />}
+        {activeTab === 'parent' && <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />}
+        {activeTab === 'parent_portal' && <ParentPortal user={user} lang={lang} onSelectTab={setActiveTab} />}
+        {activeTab === 'tutor' && <TutorForm user={user} lang={lang} onSuccess={handleSuccess} />}
+        {activeTab === 'tutor_portal' && <TutorPortal user={user} lang={lang} onSelectTab={setActiveTab} />}
       </main>
 
-      {/* Confirmation Modal */}
       {submissionSuccess && (
         <SuccessModal
           data={submissionSuccess.data}
