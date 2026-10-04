@@ -400,6 +400,12 @@ export async function getTutorMyAssignments() {
   return request('/api/v1/tutors/me/assignments');
 }
 
+export async function cancelParentRequest(requestId) {
+  return request(`/api/v1/parents/me/requests/${encodeURIComponent(requestId)}/cancel`, {
+    method: 'POST',
+  });
+}
+
 export async function getParentMyRequests() {
   return request('/api/v1/parents/me/requests');
 }
