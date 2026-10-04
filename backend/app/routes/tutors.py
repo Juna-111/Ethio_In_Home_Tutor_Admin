@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timezone
 from collections import defaultdict, deque
 from typing import Optional
 import uuid
@@ -438,7 +439,7 @@ async def respond_to_tutor_opportunity(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This opportunity is no longer available.")
 
     invite.status = decision
-    invite.responded_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    invite.responded_at = datetime.now(timezone.utc)
     await db.commit()
     return TutorOpportunityActionResponse(ok=True, invite_id=invite.id, status=decision)
 
