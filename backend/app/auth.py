@@ -32,6 +32,12 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict
     try:
         # Parse query string preserving original values
         parsed_pairs = urllib.parse.parse_qsl(init_data, keep_blank_values=True)
+        if not parsed_pairs:
+            return None
+        keys = [key for key, _ in parsed_pairs]
+        if len(keys) != len(set(keys)):
+            logger.warning("Telegram initData contains duplicate parameters.")
+            return None
         data_dict = dict(parsed_pairs)
 
         received_hash = data_dict.pop("hash", None)
