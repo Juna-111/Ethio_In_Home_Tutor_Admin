@@ -109,12 +109,21 @@ async def upload_tutor_document(
         if os.path.exists(file_path):
             os.remove(file_path)
         raise
-    except Exception as exc:
+    except Exception:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        logger.exception("Failed to save tutor upload")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save uploaded file. Please try again."
+        )
+
+    if first_chunk or bytes_written == 0:
         if os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save uploaded file: {str(exc)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty."
         )
 
     file_url = f"/uploads/{safe_filename}"
