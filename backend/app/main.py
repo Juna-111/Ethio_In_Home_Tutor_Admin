@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from time import perf_counter
 import hmac
 import logging
 from typing import Optional
@@ -88,14 +89,30 @@ async def security_headers_middleware(request: Request, call_next):
 async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or uuid4().hex
     request.state.request_id = request_id
+    started_at = perf_counter()
     logger.info("request_started method=%s path=%s request_id=%s", request.method, request.url.path, request_id)
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = (perf_counter() - started_at) * 1000
+        logger.exception(
+            "request_failed method=%s path=%s duration_ms=%.2f request_id=%s",
+            request.method,
+            request.url.path,
+            duration_ms,
+            request_id,
+        )
+        raise
+
+    duration_ms = (perf_counter() - started_at) * 1000
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-Ms"] = f"{duration_ms:.2f}"
     logger.info(
-        "request_finished method=%s path=%s status=%s request_id=%s",
+        "request_finished method=%s path=%s status=%s duration_ms=%.2f request_id=%s",
         request.method,
         request.url.path,
         response.status_code,
+        duration_ms,
         request_id,
     )
     return response
