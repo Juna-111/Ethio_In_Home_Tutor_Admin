@@ -474,6 +474,7 @@ class AdminCronRunResponse(BaseModel):
 
 class AdminParentRequestHistoryItem(BaseModel):
     id: int
+    parent_name: str
     student_level: str
     subjects: List[str]
     location_subcity: str
