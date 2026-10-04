@@ -574,12 +574,7 @@ async def test_admin_direct_assignment_without_prior_invite_succeeds(
 
 def test_assignment_and_invite_relationships_are_database_foreign_keys():
     """Business records must not outlive the request or tutor they reference."""
-    from sqlalchemy import inspect
-
     assignment_fks = {
-        (fk.parent.name, fk.column.table.name, fk.column.name)
-        for fk in inspect(Assignment).relationships
-    } if False else {
         (fk.parent.name, fk.column.table.name, fk.column.name)
         for fk in Assignment.__table__.foreign_keys
     }
