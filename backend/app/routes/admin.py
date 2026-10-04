@@ -660,6 +660,11 @@ async def assign_admin_request(
     )
     if result.rowcount != 1:
         await db.rollback()
+        # Rollback expires ORM instances in the caller's session. Refresh the
+        # objects before raising so API tests and subsequent request handling
+        # never trigger implicit async IO when reading their identifiers.
+        await db.refresh(parent)
+        await db.refresh(tutor)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request is no longer pending.")
 
     assignment = Assignment(request_id=request_id, tutor_id=tutor_id, assigned_by=str(admin.telegram_id))
