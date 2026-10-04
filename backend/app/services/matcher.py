@@ -270,9 +270,7 @@ async def get_tiered_matches(
     tutors_query = select(Tutor).where(
         Tutor.status == "verified",
         Tutor.is_paused.is_(False),
-    ).order_by(Tutor.id.asc())
-    tutors_result = await session.execute(tutors_query)
-    verified_tutors = tutors_result.scalars().all()
+    )
 
     parent_pref_gender = _normalize_str(parent.preferred_gender)
     gender_strict = parent_pref_gender and parent_pref_gender not in ("no preference", "none")
@@ -281,11 +279,24 @@ async def get_tiered_matches(
     parent_subjects_norm = _normalize_list(parent.subjects)
     budget = float(parent.budget_etb or 0.0)
 
+    # Only the best two candidates per tier are needed. Stream tutors so large
+    # verified-tutor tables are not materialized or globally sorted in Python.
     tier1_candidates: List[Dict[str, Any]] = []
     tier2_candidates: List[Dict[str, Any]] = []
     tier3_candidates: List[Dict[str, Any]] = []
 
-    for tutor in verified_tutors:
+    def _keep_top_two(candidates: List[Dict[str, Any]], candidate: Dict[str, Any]) -> None:
+        candidates.append(candidate)
+        candidates.sort(
+            key=lambda c: (-c["years_of_experience"], c["expected_fee_etb"], c["tutor"].id)
+        )
+        if len(candidates) > 2:
+            candidates.pop()
+
+    tutors_stream = await session.stream_scalars(
+        tutors_query.execution_options(yield_per=500)
+    )
+    async for tutor in tutors_stream:
         # Mandatory Baseline: Grade level compatibility check
         tutor_grades_norm = _normalize_list(tutor.grades_qualified)
         if not _are_grades_compatible(parent_level, tutor_grades_norm):
@@ -337,14 +348,14 @@ async def get_tiered_matches(
         # Check Tier 1: Perfect Fit
         # Sub-city matches directly, gender matches, fee <= budget
         if is_base_subcity and gender_matches and (fee <= budget or budget == 0.0):
-            tier1_candidates.append(candidate_data)
+            _keep_top_two(tier1_candidates, candidate_data)
             continue
 
         # Check Tier 2: Commute / Proximity
         # Sub-city in coverage, gender matches, fee <= budget * 1.20
         max_budget_tier2 = budget * 1.20 if budget > 0.0 else fee
         if (is_in_coverage or is_base_subcity) and gender_matches and (fee <= max_budget_tier2):
-            tier2_candidates.append(candidate_data)
+            _keep_top_two(tier2_candidates, candidate_data)
             continue
 
         # Check Tier 3: Flexible Alternatives
@@ -357,13 +368,7 @@ async def get_tiered_matches(
             if budget > 0.0 and fee > budget:
                 notes.append(f"+{((fee - budget) / budget * 100):.0f}% budget")
             candidate_data["flex_note"] = ", ".join(notes) if notes else "Flex match"
-            tier3_candidates.append(candidate_data)
-
-    # Sort each tier by years_of_experience DESC, expected_fee_etb ASC, tutor ID.
-    sort_key = lambda c: (-c["years_of_experience"], c["expected_fee_etb"], c["tutor"].id)
-    tier1_candidates.sort(key=sort_key)
-    tier2_candidates.sort(key=sort_key)
-    tier3_candidates.sort(key=sort_key)
+            _keep_top_two(tier3_candidates, candidate_data)
 
     tiered_matches = {
         "tier1": tier1_candidates[:2],
