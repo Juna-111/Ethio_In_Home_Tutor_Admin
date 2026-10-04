@@ -131,8 +131,8 @@ class MatchInvite(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
-    request_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    tutor_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("parent_requests.id"), nullable=False, index=True)
+    tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="sent", index=True)  # sent, yes, no, expired
     sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -147,7 +147,7 @@ class Assignment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
     request_id: Mapped[int] = mapped_column(ForeignKey("parent_requests.id"), nullable=False, index=True, unique=True)
-    tutor_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), nullable=False, index=True)
     assigned_by: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
