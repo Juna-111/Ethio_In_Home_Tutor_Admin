@@ -659,6 +659,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
