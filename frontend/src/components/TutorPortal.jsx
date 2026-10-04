@@ -220,7 +220,7 @@ export default function TutorPortal({ user, lang, onSelectTab }) {
                     )}
 
                     <a
-                      href="https://t.me/MentorLinkAdmin"
+                      href="https://t.me/hobbie111"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2 px-3 rounded-xl font-semibold text-xs border border-line text-muted hover:text-ink hover:bg-white/60 transition flex items-center justify-center space-x-1"
