@@ -570,3 +570,59 @@ async def test_admin_direct_assignment_without_prior_invite_succeeds(
 
     # Verify parent and tutor received DMs
     assert mock_bot.send_message.await_count == 2
+
+
+def test_assignment_and_invite_relationships_are_database_foreign_keys():
+    """Business records must not outlive the request or tutor they reference."""
+    from sqlalchemy import inspect
+
+    assignment_fks = {
+        (fk.parent.name, fk.column.table.name, fk.column.name)
+        for fk in inspect(Assignment).relationships
+    } if False else {
+        (fk.parent.name, fk.column.table.name, fk.column.name)
+        for fk in Assignment.__table__.foreign_keys
+    }
+    invite_fks = {
+        (fk.parent.name, fk.column.table.name, fk.column.name)
+        for fk in MatchInvite.__table__.foreign_keys
+    }
+
+    assert ("request_id", "parent_requests", "id") in assignment_fks
+    assert ("tutor_id", "tutors", "id") in assignment_fks
+    assert ("request_id", "parent_requests", "id") in invite_fks
+    assert ("tutor_id", "tutors", "id") in invite_fks
+
+
+@pytest.mark.asyncio
+async def test_admin_assignment_is_idempotently_rejected_after_request_is_matched(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    bot_token = "123456:admin-test-token"
+    admin_id = 700013
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+
+    parent = _parent_request("Already Assigned Parent", status="matched")
+    tutor = _tutor("Already Assigned Tutor", status="verified")
+    db_session.add_all([AdminUser(telegram_id=admin_id, role="admin", is_active=True), parent, tutor])
+    await db_session.flush()
+    db_session.add(Assignment(request_id=parent.id, tutor_id=tutor.id, status="active"))
+    await db_session.commit()
+
+    response = await async_client.post(
+        f"/api/v1/admin/requests/{parent.id}/assign",
+        json={"tutor_id": tutor.id},
+        headers=_telegram_auth_header(admin_id, bot_token),
+    )
+
+    assert response.status_code == 409
+    assignments = (
+        await db_session.execute(
+            select(Assignment).where(Assignment.request_id == parent.id)
+        )
+    ).scalars().all()
+    assert len(assignments) == 1
