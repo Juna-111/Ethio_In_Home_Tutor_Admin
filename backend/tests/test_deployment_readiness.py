@@ -397,3 +397,45 @@ async def test_start_review_payload_refuses_non_admins_and_bad_payloads(monkeypa
     update.message.reply_text.reset_mock()
     assert await bh._handle_review_deeplink(update, "tutor_1;drop") is False
     update.message.reply_text.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_readiness_fails_when_database_schema_is_behind(async_client: AsyncClient, db_session: AsyncSession):
+    await db_session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+    await db_session.execute(text("INSERT INTO alembic_version (version_num) VALUES ('20260925_01')"))
+    await db_session.commit()
+    try:
+        response = await async_client.get("/api/v1/health/ready")
+    finally:
+        await db_session.execute(text("DROP TABLE alembic_version"))
+        await db_session.commit()
+
+    assert response.status_code == 503
+    assert "alembic upgrade head" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_succeeds_when_database_schema_is_current(async_client: AsyncClient, db_session: AsyncSession):
+    from app.services.schema_check import get_migration_head
+
+    head = get_migration_head()
+    assert head
+    await db_session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+    await db_session.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": head})
+    await db_session.commit()
+    try:
+        response = await async_client.get("/api/v1/health/ready")
+    finally:
+        await db_session.execute(text("DROP TABLE alembic_version"))
+        await db_session.commit()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_requests_expose_trace_and_timing_headers(async_client: AsyncClient):
+    response = await async_client.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"]
+    assert float(response.headers["x-process-time-ms"]) >= 0
