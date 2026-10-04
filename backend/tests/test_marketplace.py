@@ -70,8 +70,11 @@ async def test_marketplace_discovery_ranks_and_filters_verified_tutors(async_cli
         ),
     ])
     await db_session.flush()
-    db_session.add(TutorVerification(tutor_id=2, id_verified=True, entrance_result_verified=True, phone_confirmed=True, claims_plausible=True))
-    db_session.add(TutorVerification(tutor_id=1, id_verified=False, entrance_result_verified=False, phone_confirmed=False, claims_plausible=False))
+    tutors = (await db_session.execute(__import__("sqlalchemy").select(Tutor))).scalars().all()
+    verified_tutor = next(t for t in tutors if t.full_name == "Verified Match")
+    unverified_tutor = next(t for t in tutors if t.full_name == "Unverified Tutor")
+    db_session.add(TutorVerification(tutor_id=verified_tutor.id, id_verified=True, entrance_result_verified=True, phone_confirmed=True, claims_plausible=True))
+    db_session.add(TutorVerification(tutor_id=unverified_tutor.id, id_verified=False, entrance_result_verified=False, phone_confirmed=False, claims_plausible=False))
     await db_session.commit()
 
     async def identity():
