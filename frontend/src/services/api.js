@@ -426,3 +426,27 @@ export async function respondToTutorOpportunity(inviteId, decision) {
 export async function getTutorMyAssignments() {
   return request('/api/v1/tutors/me/assignments');
 }
+
+export async function cancelParentRequest(requestId) {
+  return request(`/api/v1/parents/me/requests/${encodeURIComponent(requestId)}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function getParentMyRequests() {
+  return request('/api/v1/parents/me/requests');
+}
+
+export async function submitParentFeedback(data) {
+  return request('/api/v1/parents/me/feedback', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function submitParentContactAdmin(data) {
+  return request('/api/v1/parents/me/contact-admin', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
