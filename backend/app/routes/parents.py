@@ -71,6 +71,49 @@ async def create_parent_request(
     return parent_req
 
 
+@router.post(
+    "/me/requests/{request_id}/cancel",
+    status_code=status.HTTP_200_OK,
+    summary="Cancel an authenticated parent's unassigned request"
+)
+async def cancel_parent_request(
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+):
+    """Cancel only a pending/reviewing request owned by the authenticated parent."""
+    if verified_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Telegram Mini App authentication is required.",
+        )
+
+    parent_req = await db.scalar(
+        select(ParentRequest).where(
+            ParentRequest.id == request_id,
+            ParentRequest.telegram_user_id == verified_user_id,
+        )
+    )
+    if not parent_req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found.")
+
+    if parent_req.status not in {"pending", "reviewing"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending or reviewing requests can be cancelled.",
+        )
+
+    parent_req.status = "cancelled"
+    await db.commit()
+
+    return {
+        "ok": True,
+        "request_id": parent_req.id,
+        "status": parent_req.status,
+        "message": "Your tutoring request has been cancelled.",
+    }
+
+
 @router.get(
     "/me/requests",
     response_model=ParentMyRequestsResponse,
