@@ -60,7 +60,7 @@ function statusLabel(status, lang) {
   return map[(status || '').toLowerCase()] || status || '—';
 }
 
-export default function TutorPortal({ user, lang, onSelectTab }) {
+export default function TutorPortal({ lang, onSelectTab }) {
   const isAm = lang === 'am';
   const [profile, setProfile] = useState(null);
   const [assignments, setAssignments] = useState([]);
@@ -69,7 +69,6 @@ export default function TutorPortal({ user, lang, onSelectTab }) {
   const [actionError, setActionError] = useState(null);
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [respondingInvite, setRespondingInvite] = useState(null);
-  const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const [selectedDays, setSelectedDays] = useState([]);
   const [timeWindow, setTimeWindow] = useState('');
 
@@ -127,7 +126,6 @@ export default function TutorPortal({ user, lang, onSelectTab }) {
         time: timeWindow.trim(),
       });
       setProfile(updated);
-      setAvailabilityOpen(false);
     } catch (err) {
       setActionError(err.message || (isAm ? 'የጊዜ ሰሌዳውን ማስቀመጥ አልተቻለም።' : 'Could not save availability.'));
     } finally {
