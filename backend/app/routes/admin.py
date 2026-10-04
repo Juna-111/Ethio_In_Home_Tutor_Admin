@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, time, timedelta, timezone
+from time import perf_counter
 import hmac
 import html
 import logging
@@ -1386,7 +1387,21 @@ async def run_cron_endpoint(
         )
 
     bot_app = bot_instance.bot_app.bot if bot_instance.bot_app else None
-    result = await run_all_scheduled_tasks(db, bot=bot_app)
+    started_at = perf_counter()
+    try:
+        result = await run_all_scheduled_tasks(db, bot=bot_app)
+    except Exception:
+        logger.exception(
+            "scheduled_tasks_failed request_id=%s",
+            getattr(request.state, "request_id", None),
+        )
+        raise
+    logger.info(
+        "scheduled_tasks_completed request_id=%s duration_ms=%.2f result=%s",
+        getattr(request.state, "request_id", None),
+        (perf_counter() - started_at) * 1000,
+        result,
+    )
 
     return AdminCronRunResponse(
         ok=True,
