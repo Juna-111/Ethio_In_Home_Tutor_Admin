@@ -1380,7 +1380,7 @@ async def run_cron_endpoint(
     if not is_authenticated:
         # Fallback to Mini App admin auth if available
         try:
-            user_id = await get_optional_telegram_user(request)
+            user_id = await get_optional_telegram_user(authorization)
             if user_id:
                 admin_user = await db.get(AdminUser, user_id)
                 if (admin_user and admin_user.is_active) or (
