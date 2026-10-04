@@ -146,7 +146,6 @@ async def list_admin_parents(
     _admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminParentCRMResponse:
-    query = select(ParentRequest).order_by(ParentRequest.created_at.desc())
     filters = []
     if request_status and request_status.strip().lower() != "all":
         filters.append(ParentRequest.status == request_status.strip())
@@ -157,17 +156,62 @@ async def list_admin_parents(
             | func.lower(ParentRequest.phone_number).like(term)
             | func.lower(ParentRequest.location_subcity).like(term)
         )
+
+    # Page parent identities in SQL first. The old implementation loaded every
+    # matching request before grouping by phone, which made CRM memory usage
+    # grow with the entire dataset rather than the requested page.
+    parent_groups_query = (
+        select(
+            ParentRequest.phone_number,
+            func.max(ParentRequest.created_at).label("latest_request_date"),
+        )
+        .group_by(ParentRequest.phone_number)
+        .order_by(
+            func.max(ParentRequest.created_at).desc(),
+            ParentRequest.phone_number.asc(),
+        )
+    )
+    parent_count_query = select(func.count(distinct(ParentRequest.phone_number)))
     if filters:
-        query = query.where(*filters)
+        parent_groups_query = parent_groups_query.where(*filters)
+        parent_count_query = parent_count_query.where(*filters)
 
-    result = await db.execute(query)
-    all_matching_requests = result.scalars().all()
+    total_parents = int(await db.scalar(parent_count_query) or 0)
+    parent_groups_result = await db.execute(
+        parent_groups_query
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    paged_phones = [phone for phone, _ in parent_groups_result.all()]
 
-    req_ids = [r.id for r in all_matching_requests]
+    if not paged_phones:
+        return AdminParentCRMResponse(
+            items=[],
+            total=total_parents,
+            page=page,
+            page_size=page_size,
+        )
+
+    # Fetch only the request history belonging to the parent groups on this
+    # page. Reapply the same filters so search/status semantics remain exact.
+    request_query = (
+        select(ParentRequest)
+        .where(ParentRequest.phone_number.in_(paged_phones))
+        .order_by(ParentRequest.created_at.desc(), ParentRequest.id.desc())
+    )
+    if filters:
+        request_query = request_query.where(*filters)
+
+    result = await db.execute(request_query)
+    matching_requests = result.scalars().all()
+
+    req_ids = [r.id for r in matching_requests]
     assignments_map = {}
     tutors_map = {}
     if req_ids:
-        asmts_res = await db.execute(select(Assignment).where(Assignment.request_id.in_(req_ids)))
+        asmts_res = await db.execute(
+            select(Assignment).where(Assignment.request_id.in_(req_ids))
+        )
         asmts = asmts_res.scalars().all()
         assignments_map = {a.request_id: a for a in asmts}
         tutor_ids = [a.tutor_id for a in asmts]
@@ -176,35 +220,45 @@ async def list_admin_parents(
             tutors_map = {t.id: t for t in tutors_res.scalars().all()}
 
     parents_grouped: dict[str, list[ParentRequest]] = defaultdict(list)
-    for r in all_matching_requests:
-        parents_grouped[r.phone_number].append(r)
-
-    total_parents = len(parents_grouped)
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    paged_phones = list(parents_grouped.keys())[start_idx:end_idx]
+    for request in matching_requests:
+        parents_grouped[request.phone_number].append(request)
 
     items = []
     for phone in paged_phones:
-        reqs = parents_grouped[phone]
+        reqs = parents_grouped.get(phone, [])
+        if not reqs:
+            continue
+
         latest_req = reqs[0]
-        active_cnt = sum(1 for r in reqs if r.status in ("pending", "matched", "waitlisted"))
-        completed_cnt = sum(1 for r in reqs if assignments_map.get(r.id) and assignments_map[r.id].status == "active")
+        active_cnt = sum(
+            1 for request in reqs
+            if request.status in ("pending", "matched", "waitlisted")
+        )
+        completed_cnt = sum(
+            1
+            for request in reqs
+            if assignments_map.get(request.id)
+            and assignments_map[request.id].status == "active"
+        )
 
         history_items = []
-        for r in reqs:
-            asmt = assignments_map.get(r.id)
+        for request in reqs:
+            asmt = assignments_map.get(request.id)
             tut = tutors_map.get(asmt.tutor_id) if asmt else None
             history_items.append(
                 AdminParentRequestHistoryItem(
-                    id=r.id,
-                    student_level=r.student_level,
-                    subjects=r.subjects if isinstance(r.subjects, list) else [str(r.subjects)],
-                    location_subcity=r.location_subcity,
-                    location_landmark=r.location_landmark,
-                    budget_etb=r.budget_etb,
-                    status=r.status,
-                    created_at=r.created_at,
+                    id=request.id,
+                    student_level=request.student_level,
+                    subjects=(
+                        request.subjects
+                        if isinstance(request.subjects, list)
+                        else [str(request.subjects)]
+                    ),
+                    location_subcity=request.location_subcity,
+                    location_landmark=request.location_landmark,
+                    budget_etb=request.budget_etb,
+                    status=request.status,
+                    created_at=request.created_at,
                     assignment_id=asmt.id if asmt else None,
                     assigned_tutor_id=tut.id if tut else None,
                     assigned_tutor_name=tut.full_name if tut else None,
