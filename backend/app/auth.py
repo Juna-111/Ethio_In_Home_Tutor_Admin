@@ -23,7 +23,7 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> Optional[dict
     5. Compare calculated HMAC_SHA256(secret_key, data_check_string) against received hash.
     6. Verify auth_date freshness (< 24 hours / 86400s) to prevent replay attacks.
     """
-    if not init_data or not bot_token:
+    if not init_data or not bot_token or len(init_data) > 16384:
         return None
 
     bot_token = bot_token.strip().strip("'\"")
