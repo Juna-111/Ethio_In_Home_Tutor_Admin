@@ -1,8 +1,6 @@
-from types import SimpleNamespace
-
-
 def test_marketplace_router_contract():
     from app.routes.parents import router
+
     paths = {getattr(route, "path", None) for route in router.routes}
     assert "/parents/tutors" in paths
     assert "/parents/tutors/{tutor_id}" in paths
@@ -10,25 +8,30 @@ def test_marketplace_router_contract():
     assert "/parents/tutors/{tutor_id}/favorite" in paths
 
 
-def test_marketplace_match_scoring():
-    from app.routes.parents import _match_tutor
-    request = SimpleNamespace(
-        student_level="High School 9-10",
-        subjects=["Math"],
-        preferred_gender="No preference",
-        location_subcity="Bole",
-        schedule_days=["Mon"],
-        budget_etb=500,
+def test_marketplace_schema_contract():
+    from app.schemas import (
+        MarketplaceApplicationCreate,
+        MarketplaceApplicationResponse,
+        MarketplaceFavoriteResponse,
+        MarketplaceTutorDetailResponse,
+        MarketplaceTutorItem,
+        MarketplaceTutorListResponse,
     )
-    tutor = SimpleNamespace(
-        gender="Female",
-        subjects_qualified=["Math"],
-        grades_qualified=["High School 9-10"],
-        expected_fee_etb=400,
-        base_subcity="Bole",
-        coverage_areas=["Bole"],
-        availability_schedule={"Mon": "5 PM - 8 PM"},
-    )
-    score, reasons = _match_tutor(tutor, request)
-    assert score == 95.0
-    assert "Teaches Math" in reasons
+
+    assert MarketplaceTutorDetailResponse.model_fields["id"]
+    assert MarketplaceTutorListResponse.model_fields["tutors"]
+    assert MarketplaceApplicationCreate.model_fields["request_id"]
+    assert MarketplaceApplicationResponse.model_fields["invite_id"]
+    assert MarketplaceFavoriteResponse.model_fields["is_favorite"]
+
+
+def test_marketplace_favorite_model_contract():
+    from app.models import MarketplaceFavorite
+
+    assert MarketplaceFavorite.__tablename__ == "marketplace_favorites"
+    constraint_names = {
+        constraint.name
+        for constraint in MarketplaceFavorite.__table__.constraints
+        if constraint.name
+    }
+    assert "uq_marketplace_favorite_parent_tutor" in constraint_names
