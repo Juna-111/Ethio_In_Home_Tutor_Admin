@@ -45,3 +45,19 @@ def test_malformed_telegram_hash_is_rejected():
 def test_oversized_telegram_init_data_is_rejected():
     token = "123456:test-token"
     assert validate_telegram_init_data("a=" + "x" * 20000, token) is None
+
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from app.main import app
+
+
+@pytest.mark.asyncio
+async def test_security_headers_are_present():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
