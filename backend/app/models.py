@@ -169,7 +169,7 @@ class TutorIncident(Base):
     __tablename__ = "tutor_incidents"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tutor_id: Mapped[int] = mapped_column(Integer, ForeignKey("tutors.id"), nullable=False, index=True)
-    request_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    request_id: Mapped[Optional[int]] = mapped_column(ForeignKey("parent_requests.id"), nullable=True, index=True)
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="low")  # low|medium|high
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
