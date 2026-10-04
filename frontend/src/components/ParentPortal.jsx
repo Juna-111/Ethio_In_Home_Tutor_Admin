@@ -1,10 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, 
   Clock, 
   MapPin, 
   BookOpen, 
   Star, 
+  Bell, 
+  CalendarDays, 
+  ChevronRight, 
+  GraduationCap, 
+  Plus, 
+  ShieldCheck, 
+  UsersRound, 
   MessageSquare, 
   Send, 
   Phone, 
@@ -37,6 +44,75 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
   const [contactMsg, setContactMsg] = useState('');
   const [submittingContact, setSubmittingContact] = useState(false);
   const [contactSuccess, setContactSuccess] = useState(false);
+
+
+  const isAm = lang === 'am';
+
+  const learners = useMemo(() => {
+    const seen = new Map();
+    requests.forEach((req) => {
+      const name = req.student_name || req.child_name || req.learner_name || '';
+      const key = name || `${req.student_level || ''}|${(req.subjects || []).join(',')}|${req.location_subcity || ''}`;
+      if (!seen.has(key)) {
+        seen.set(key, {
+          key,
+          name: name || `${isAm ? 'ተማሪ' : 'Learner'} ${seen.size + 1}`,
+          level: req.student_level || '—',
+          subjects: req.subjects || [],
+          location: req.location_subcity || '',
+          requests: 0,
+        });
+      }
+      seen.get(key).requests += 1;
+    });
+    return Array.from(seen.values());
+  }, [requests, isAm]);
+
+  const matchedRequests = useMemo(() => requests.filter((req) => req.tutor_name || req.assignment), [requests]);
+  const activeRequests = useMemo(
+    () => requests.filter((req) => !['closed', 'cancelled'].includes((req.status || '').toLowerCase())),
+    [requests]
+  );
+  const openRequests = useMemo(
+    () => requests.filter((req) => ['pending', 'reviewing'].includes((req.status || '').toLowerCase())),
+    [requests]
+  );
+  const activeTutor = matchedRequests.length
+    ? (matchedRequests[0].tutor_name || matchedRequests[0].assignment?.tutor_name || '')
+    : '';
+
+  const schedules = useMemo(
+    () => matchedRequests.map((req) => ({
+      id: req.id,
+      tutor: req.tutor_name || req.assignment?.tutor_name || 'Tutor',
+      days: req.schedule_days || req.assignment?.schedule_days || [],
+      time: req.time_slot || req.assignment?.time_slot || '—',
+      duration: req.session_duration || req.assignment?.session_duration || '—',
+      subjects: req.subjects || req.assignment?.tutor_subjects || [],
+    })),
+    [matchedRequests]
+  );
+
+  const notifications = useMemo(
+    () => requests
+      .slice()
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+      .slice(0, 4)
+      .map((req) => {
+        const status = (req.status || 'pending').toLowerCase();
+        const tutor = req.tutor_name || req.assignment?.tutor_name;
+        let title = isAm ? 'የጥያቄዎ ሁኔታ ተዘምኗል' : 'Request status updated';
+        let body = isAm ? `ጥያቄ #${req.id}` : `Request #${req.id}`;
+        if (status === 'matched' && tutor) {
+          title = isAm ? 'አስጠኚ ተመድቧል' : 'Tutor matched';
+          body = isAm ? `${tutor} ለጥያቄ #${req.id} ተመድቧል።` : `${tutor} was matched to Request #${req.id}.`;
+        } else if (status === 'reviewing') {
+          title = isAm ? 'ጥያቄዎ እየተገመገመ ነው' : 'Your request is being reviewed';
+        }
+        return { id: `${req.id}-${status}`, title, body, requestId: req.id, date: req.updated_at || req.created_at };
+      }),
+    [requests, isAm]
+  );
 
   const loadRequests = async () => {
     setLoading(true);
@@ -155,29 +231,130 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
 
   return (
     <div className="px-4 pb-12 space-y-4">
-      <div className="bg-paper p-4 rounded-2xl border border-line shadow-sm flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-ink flex items-center space-x-2">
-            <ClipboardList className="w-4 h-4 text-pine" />
-            <span>{lang === 'am' ? 'የእኔ ጥያቄዎች' : 'My Tutoring Requests'}</span>
-          </h2>
-          <p className="text-xs text-muted mt-1">
-            {lang === 'am' 
-              ? 'ያስገቧቸውን የማጠናከሪያ ትምህርት ጥያቄዎች ሁኔታ እዚህ ይከታተሉ።' 
-              : 'Track the status and matched tutors for your submitted requests.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={loadRequests}
-          disabled={loading}
-          className="p-2 rounded-xl border border-line hover:bg-line/40 text-muted hover:text-ink transition cursor-pointer shrink-0 ml-2"
-          title={lang === 'am' ? 'አድስ' : 'Refresh'}
-        >
-          <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-pine' : ''}`} />
-        </button>
-      </div>
 
+      {/* Parent Portal 1.0 family dashboard */}
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-pine via-pine to-ink p-5 text-paper shadow-xl">
+        <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-citrus/15 blur-2xl" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-paper/80">
+              <UsersRound className="h-3 w-3 text-citrus" />
+              {isAm ? 'የቤተሰብ ፖርታል' : 'Family portal'}
+            </div>
+            <h2 className="text-xl font-black tracking-tight">
+              {user?.first_name
+                ? (isAm ? `እንኳን ደህና መጡ, ${user.first_name}!` : `Welcome back, ${user.first_name}.`)
+                : (isAm ? 'የቤተሰብዎን ትምህርት ያስተዳድሩ' : 'Manage your family learning')}
+            </h2>
+            <p className="mt-1.5 max-w-[310px] text-[11px] leading-relaxed text-paper/70">
+              {isAm ? 'ጥያቄዎች፣ አስጠኚዎች እና የትምህርት ጊዜዎችዎ አንድ ቦታ ላይ።' : 'Requests, matched tutors and learning schedules in one private place.'}
+            </p>
+          </div>
+          <button type="button" onClick={loadRequests} disabled={loading} className="rounded-xl border border-white/15 bg-white/10 p-2.5 text-paper/80">
+            <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          {[
+            { value: learners.length, label: isAm ? 'ተማሪዎች' : 'Learners' },
+            { value: activeRequests.length, label: isAm ? 'ንቁ ጥያቄዎች' : 'Active' },
+            { value: matchedRequests.length, label: isAm ? 'የተመደቡ' : 'Matched' },
+          ].map((item) => (
+            <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2.5 text-center">
+              <div className="text-lg font-black text-citrus">{item.value}</div>
+              <div className="text-[8px] font-bold text-paper/65">{item.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-2 gap-2.5">
+        <button type="button" onClick={() => onSelectTab?.('parent')} className="flex items-center gap-2.5 rounded-2xl border border-pine/15 bg-paper p-3 text-left shadow-sm">
+          <span className="rounded-xl bg-pine/10 p-2 text-pine"><Plus className="h-4 w-4" /></span>
+          <span><strong className="block text-[11px] font-black text-ink">{isAm ? 'አስጠኚ ፈልግ' : 'Find a tutor'}</strong><small className="block text-[9px] text-muted">{isAm ? 'አዲስ ጥያቄ' : 'Start a request'}</small></span>
+        </button>
+        <button type="button" onClick={() => document.getElementById('parent-request-list')?.scrollIntoView({ behavior: 'smooth' })} className="flex items-center gap-2.5 rounded-2xl border border-line bg-paper p-3 text-left shadow-sm">
+          <span className="rounded-xl bg-citrus/15 p-2 text-citrus"><ClipboardList className="h-4 w-4" /></span>
+          <span><strong className="block text-[11px] font-black text-ink">{isAm ? 'ጥያቄዎቼ' : 'My requests'}</strong><small className="block text-[9px] text-muted">{openRequests.length} {isAm ? 'ክፍት' : 'open'}</small></span>
+        </button>
+      </section>
+
+      <section className="rounded-3xl border border-line bg-paper p-4 shadow-sm">
+        <div className="mb-3 flex items-start gap-2.5">
+          <div className="rounded-xl bg-pine/10 p-2 text-pine"><UsersRound className="h-4 w-4" /></div>
+          <div><h3 className="text-sm font-black text-ink">{isAm ? 'ልጆች / ተማሪዎች' : 'Children & learners'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'በጥያቄዎችዎ ውስጥ የተገኙ ተማሪዎች።' : 'Learners represented by your tutoring requests.'}</p></div>
+        </div>
+        {learners.length ? (
+          <div className="space-y-2">
+            {learners.map((learner, index) => (
+              <div key={learner.key} className="flex items-center gap-3 rounded-2xl border border-line bg-white/70 p-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pine/10 text-xs font-black text-pine">{index + 1}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-black text-ink">{learner.name}</p>
+                  <p className="mt-0.5 truncate text-[10px] text-muted">{learner.level} · {learner.subjects.join(', ') || '—'}</p>
+                  {learner.location && <p className="mt-0.5 flex items-center gap-1 text-[9px] text-muted"><MapPin className="h-2.5 w-2.5" />{learner.location}</p>}
+                </div>
+                <span className="shrink-0 rounded-full bg-pine/5 px-2 py-1 text-[8px] font-bold text-pine">{learner.requests} {isAm ? 'ጥያቄ' : learner.requests === 1 ? 'request' : 'requests'}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-line p-4 text-center text-[10px] text-muted">{isAm ? 'የመጀመሪያውን ጥያቄ ሲያስገቡ ተማሪዎ እዚህ ይታያል።' : 'Your learners will appear here after you post a tutoring request.'}</div>
+        )}
+        <button type="button" onClick={() => onSelectTab?.('parent')} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-line py-2 text-[10px] font-black text-pine">
+          <Plus className="h-3 w-3" />{isAm ? 'ሌላ ተማሪ ጥያቄ ያክሉ' : 'Add another learner request'}<ChevronRight className="h-3 w-3" />
+        </button>
+      </section>
+
+      {activeTutor && (
+        <section className="rounded-3xl border border-pine/15 bg-gradient-to-br from-pine/5 to-paper p-4 shadow-sm">
+          <div className="mb-3 flex items-start gap-2.5">
+            <div className="rounded-xl bg-pine/10 p-2 text-pine"><GraduationCap className="h-4 w-4" /></div>
+            <div><h3 className="text-sm font-black text-ink">{isAm ? 'የእኔ አስጠኚ' : 'My matched tutor'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'አሁን ከቤተሰብዎ ጋር የተገናኘው አስጠኚ።' : 'Your current tutor match.'}</p></div>
+          </div>
+          <div className="flex items-center gap-3 rounded-2xl border border-pine/10 bg-white/70 p-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-pine text-paper"><GraduationCap className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-black text-ink">{activeTutor}</p>
+              <p className="mt-0.5 text-[10px] text-muted">{matchedRequests[0].tutor_university || matchedRequests[0].assignment?.tutor_university || (isAm ? 'የተረጋገጠ አስጠኚ' : 'Verified tutor')}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">{(matchedRequests[0].tutor_subjects || matchedRequests[0].assignment?.tutor_subjects || matchedRequests[0].subjects || []).slice(0, 4).map((subject) => <span key={subject} className="rounded-lg bg-pine/5 px-2 py-1 text-[8px] font-bold text-pine">{subject}</span>)}</div>
+            </div>
+            {(matchedRequests[0].tutor_phone || matchedRequests[0].assignment?.tutor_phone) && <a href={`tel:${matchedRequests[0].tutor_phone || matchedRequests[0].assignment?.tutor_phone}`} className="shrink-0 rounded-xl bg-pine p-2.5 text-paper"><Phone className="h-3.5 w-3.5" /></a>}
+          </div>
+        </section>
+      )}
+
+      <section className="rounded-3xl border border-line bg-paper p-4 shadow-sm">
+        <div className="mb-3 flex items-start gap-2.5">
+          <div className="rounded-xl bg-citrus/15 p-2 text-citrus"><CalendarDays className="h-4 w-4" /></div>
+          <div><h3 className="text-sm font-black text-ink">{isAm ? 'የትምህርት ጊዜ ሰሌዳ' : 'Learning schedule'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'የተመደቡ አስጠኚዎችዎ የተጠየቁት ጊዜ።' : 'Your requested schedule for matched tutors.'}</p></div>
+        </div>
+        {schedules.length ? (
+          <div className="space-y-2">{schedules.map((schedule) => (
+            <div key={schedule.id} className="rounded-2xl border border-line bg-white/70 p-3">
+              <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-black text-pine">{schedule.tutor}</p><span className="text-[8px] font-bold text-muted">#{schedule.id}</span></div>
+              <div className="mt-2 grid grid-cols-2 gap-2"><div className="rounded-xl bg-[#f1f3ef] p-2"><p className="text-[8px] font-bold text-muted">{isAm ? 'ቀናት' : 'Days'}</p><p className="mt-0.5 text-[10px] font-black text-ink">{schedule.days.length ? schedule.days.join(' · ') : '—'}</p></div><div className="rounded-xl bg-[#f1f3ef] p-2"><p className="text-[8px] font-bold text-muted">{isAm ? 'ሰዓት' : 'Time'}</p><p className="mt-0.5 text-[10px] font-black text-ink">{schedule.time}</p></div></div>
+              <div className="mt-2 flex items-center gap-3 text-[9px] text-muted"><span className="flex items-center gap-1"><Clock className="h-3 w-3" />{schedule.duration}</span><span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{schedule.subjects.join(', ') || '—'}</span></div>
+            </div>
+          ))}</div>
+        ) : <div className="rounded-2xl bg-[#f1f3ef] p-4 text-center text-[10px] text-muted">{isAm ? 'አስጠኚ ሲመደብ የጊዜ ሰሌዳው እዚህ ይታያል።' : 'Your schedule will appear here once a tutor is matched.'}</div>}
+      </section>
+
+      <section className="rounded-3xl border border-line bg-paper p-4 shadow-sm">
+        <div className="mb-3 flex items-start gap-2.5">
+          <div className="rounded-xl bg-citrus/15 p-2 text-citrus"><Bell className="h-4 w-4" /></div>
+          <div><h3 className="text-sm font-black text-ink">{isAm ? 'ማሳወቂያዎች' : 'Notifications'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'በጥያቄዎችዎ ላይ የቅርብ ጊዜ እንቅስቃሴ።' : 'Recent activity from your tutoring requests.'}</p></div>
+        </div>
+        {notifications.length ? <div className="space-y-1">{notifications.map((item) => (
+          <button key={item.id} type="button" onClick={() => { setSelectedRequestId(item.requestId); setTimeout(() => document.getElementById('parent-request-list')?.scrollIntoView({ behavior: 'smooth' }), 0); }} className="flex w-full items-start gap-2.5 rounded-2xl p-2.5 text-left hover:bg-[#f1f3ef]">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-citrus/15 text-citrus"><Bell className="h-3.5 w-3.5" /></span>
+            <span className="min-w-0 flex-1"><strong className="block text-[10px] font-black text-ink">{item.title}</strong><small className="mt-0.5 block text-[9px] text-muted">{item.body}</small><small className="mt-1 block text-[8px] font-bold text-muted">{item.date ? new Date(item.date).toLocaleDateString() : '—'}</small></span>
+            <ChevronRight className="mt-2 h-3.5 w-3.5 shrink-0 text-muted" />
+          </button>
+        ))}</div> : <div className="rounded-2xl bg-[#f1f3ef] p-4 text-center text-[10px] text-muted">{isAm ? 'አዲስ ማሳወቂያ የለም።' : 'No notifications yet.'}</div>}
+      </section>
+
+      <div id="parent-request-list">
       {actionError && <div className="p-3 rounded-2xl bg-coral/10 border border-coral/20 text-coral text-xs" role="alert">{actionError}</div>}
 
       {loading ? (
