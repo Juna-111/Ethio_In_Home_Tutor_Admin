@@ -672,3 +672,21 @@ async def test_admin_assignment_is_idempotently_rejected_after_request_is_matche
         )
     ).scalars().all()
     assert len(assignments) == 1
+
+
+def test_extracted_admin_analytics_router_is_registered():
+    from app.main import app
+
+    paths = {route.path for route in app.routes}
+    assert "/api/v1/admin/analytics/funnel" in paths
+    assert "/api/v1/admin/analytics/availability-mismatch" in paths
+    assert "/api/v1/admin/analytics/coverage-gaps" in paths
+
+
+def test_extracted_bot_modules_import_cleanly():
+    from app.bot.formatters import _format_schedule, _format_subjects
+    from app.services.bot_analytics import render_analytics_card
+
+    assert _format_subjects(["Maths", "Physics"]) == "Maths, Physics"
+    assert _format_schedule(["Monday", "Tuesday"]) == "Monday, Tuesday"
+    assert callable(render_analytics_card)
