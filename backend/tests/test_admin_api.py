@@ -734,13 +734,7 @@ async def test_parent_can_cancel_only_owned_unassigned_requests(
     db_session.add_all([owned, matched, other])
     await db_session.commit()
 
-    header = {"Authorization": "tma invalid"}
-    monkeypatch.setattr(
-        "app.routes.parents.get_optional_telegram_user",
-        lambda: parent_user_id,
-    )
-
-    # Dependency overrides are easier to express through the existing app override.
+    # Override the authentication dependency with the test parent account.
     from app.auth import get_optional_telegram_user
     from app.main import app
     app.dependency_overrides[get_optional_telegram_user] = lambda: parent_user_id
