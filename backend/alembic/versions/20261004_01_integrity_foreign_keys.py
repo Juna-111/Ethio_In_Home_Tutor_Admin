@@ -32,6 +32,10 @@ def _assert_no_orphans() -> None:
             "match_invites.tutor_id",
             "SELECT COUNT(*) FROM match_invites i LEFT JOIN tutors t ON t.id = i.tutor_id WHERE t.id IS NULL",
         ),
+        (
+            "tutor_incidents.request_id",
+            "SELECT COUNT(*) FROM tutor_incidents i LEFT JOIN parent_requests r ON r.id = i.request_id WHERE i.request_id IS NOT NULL AND r.id IS NULL",
+        ),
     )
     for label, query in checks:
         count = connection.execute(sa.text(query)).scalar_one()
@@ -59,6 +63,14 @@ def upgrade() -> None:
             ["id"],
         )
 
+    with op.batch_alter_table("tutor_incidents") as batch:
+        batch.create_foreign_key(
+            "fk_tutor_incidents_request_id_parent_requests",
+            "parent_requests",
+            ["request_id"],
+            ["id"],
+        )
+
     with op.batch_alter_table("match_invites") as batch:
         batch.create_foreign_key(
             "fk_match_invites_request_id_parent_requests",
@@ -75,6 +87,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("tutor_incidents") as batch:
+        batch.drop_constraint("fk_tutor_incidents_request_id_parent_requests", type_="foreignkey")
+
     with op.batch_alter_table("match_invites") as batch:
         batch.drop_constraint("fk_match_invites_tutor_id_tutors", type_="foreignkey")
         batch.drop_constraint("fk_match_invites_request_id_parent_requests", type_="foreignkey")
