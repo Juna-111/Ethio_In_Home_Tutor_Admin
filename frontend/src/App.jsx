@@ -96,6 +96,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (!backButton) return undefined;
+    if (activeTab !== 'parent') {
+      backButton.show();
+      const handleBack = () => setActiveTab('parent');
+      backButton.onClick(handleBack);
+      return () => {
+        backButton.offClick(handleBack);
+        backButton.hide();
+      };
+    }
+    backButton.hide();
+    return undefined;
+  }, [activeTab]);
+
+  useEffect(() => {
     const translation = TRANSLATIONS[lang] || TRANSLATIONS.en;
     document.documentElement.lang = lang;
     document.title = `${translation.appTitle} - ${translation.appSubtitle}`;

@@ -272,7 +272,7 @@ button, a { font: inherit; }
 .section-title-row .eyebrow { margin-bottom: 6px; }
 .section-title-row h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: 0; }
 .queue-total { padding: 6px 8px; color: var(--metric-copy); background: var(--border-thin); border-radius: 3px; font-size: 9px; }
-.queue-item { min-height: 68px; display: flex; align-items: center; gap: 13px; border-top: 1px solid var(--border-base); }
+.queue-item { min-height: 68px; width: 100%; display: flex; align-items: center; gap: 13px; padding: 0; border: 0; border-top: 1px solid var(--border-base); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .queue-icon { width: 34px; height: 34px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 5px; }
 .queue-icon-coral { color: var(--coral); background: var(--coral-subtle); }
 .queue-icon-green { color: var(--green); background: var(--green-track); }

@@ -20,6 +20,7 @@ export default function TutorVerificationModal({ tutorId, onClose, onUpdated }) 
   });
 
   useEffect(() => {
+    if (!tutorId) return undefined;
     let active = true;
     setLoading(true);
     Promise.all([
@@ -48,6 +49,14 @@ export default function TutorVerificationModal({ tutorId, onClose, onUpdated }) 
 
     return () => { active = false; };
   }, [tutorId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const allComplete = checklist.id_verified && checklist.entrance_result_verified && checklist.phone_confirmed && checklist.claims_plausible;
 
@@ -90,11 +99,11 @@ export default function TutorVerificationModal({ tutorId, onClose, onUpdated }) 
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="tutor-verification-title" onClick={(e) => e.stopPropagation()}>
         <header className="modal-header">
           <div>
             <p className="eyebrow">TUTOR VERIFICATION · ID #{tutorId}</p>
-            <h2>{tutor ? tutor.full_name : 'Loading Tutor...'}</h2>
+            <h2 id="tutor-verification-title">{tutor ? tutor.full_name : 'Loading Tutor...'}</h2>
           </div>
           <button className="modal-close-btn" type="button" onClick={onClose} aria-label="Close">
             <X size={20} />

@@ -14,7 +14,7 @@ export default function OpsQueue({ onSelectTutor }) {
   const [cronRunning, setCronRunning] = useState(false);
   const [cronResult, setCronResult] = useState(null);
   const [error, setError] = useState(null);
-  const [actionError, setActionError] = useState(null);
+  const [actionError, setActionError] = useState(null);\n  const [resolvingId, setResolvingId] = useState(null);
 
   const loadData = (page = incidentPage) => {
     setLoading(true);
@@ -50,6 +50,7 @@ export default function OpsQueue({ onSelectTutor }) {
 
   const handleResolveIncident = async (incidentId) => {
     setActionError(null);
+    setResolvingId(incidentId);
     try {
       await updateAdminIncident(incidentId, { status: 'resolved' });
       setIncidents((prev) =>
@@ -57,6 +58,8 @@ export default function OpsQueue({ onSelectTutor }) {
       );
     } catch (err) {
       setActionError(err.message || 'Could not resolve incident.');
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -192,8 +195,10 @@ export default function OpsQueue({ onSelectTutor }) {
                 </td>
                 <td>
                   {inc.status !== 'resolved' ? (
-                    <button className="row-action-btn" type="button" onClick={() => handleResolveIncident(inc.id)}>
-                      Resolve
+                    <button className="row-action-btn" type="button" onClick={() => handleResolveIncident(inc.id)}
+                      disabled={resolvingId === inc.id}
+                    >
+                      {resolvingId === inc.id ? 'Resolving…' : 'Resolve'}
                     </button>
                   ) : (
                     <small className="text-muted">Resolved</small>

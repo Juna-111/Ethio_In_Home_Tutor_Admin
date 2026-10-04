@@ -718,30 +718,35 @@ async def test_extracted_bot_analytics_uses_the_test_database(db_session: AsyncS
     assert "500" in card
     assert "Bole (1)" in card
 
-@pytest.mark.asyncio
-
 
 @pytest.mark.asyncio
 async def test_super_admin_can_add_large_telegram_id_and_audit_it(
+    async_client: AsyncClient,
     db_session: AsyncSession,
     monkeypatch,
 ):
-    """Telegram IDs must fit the audit target column when adding admins."""
-    from app.routes.admin import create_admin_user
-    from app.schemas import AdminUserCreate
-
+    """The real admin endpoint must accept a Telegram ID beyond signed 32-bit range."""
+    bot_token = "123456:admin-test-token"
     actor_id = 900000001
     telegram_id = 2147483647 + 123456
-    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", actor_id)
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
 
-    admin = AdminPrincipal(telegram_id=actor_id, role="super_admin")
-    response = await create_admin_user(
-        AdminUserCreate(telegram_id=telegram_id, role="admin"),
-        admin,
-        db_session,
+    db_session.add(AdminUser(telegram_id=actor_id, role="super_admin", is_active=True))
+    await db_session.commit()
+
+    response = await async_client.post(
+        "/api/v1/admin/admins",
+        json={"telegram_id": telegram_id, "role": "admin"},
+        headers=_telegram_auth_header(actor_id, bot_token),
     )
 
-    assert response.telegram_id == telegram_id
+    assert response.status_code == 201
+    assert response.json()["telegram_id"] == telegram_id
+
+    stored_admin = await db_session.get(AdminUser, telegram_id)
+    assert stored_admin is not None
     audit = await db_session.scalar(
         select(AuditLog).where(
             AuditLog.action == "add_admin",
@@ -750,6 +755,9 @@ async def test_super_admin_can_add_large_telegram_id_and_audit_it(
     )
     assert audit is not None
     assert audit.target_id == telegram_id
+
+
+@pytest.mark.asyncio
 async def test_parent_can_cancel_only_owned_unassigned_requests(
     async_client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):

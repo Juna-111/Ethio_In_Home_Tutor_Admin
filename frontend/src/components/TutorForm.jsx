@@ -160,6 +160,10 @@ export default function TutorForm({ user, lang, onSuccess }) {
       newErrors.expected_fee_etb = tVal.feeMin;
     }
 
+    if (formData.entrance_result !== '' && (!Number.isFinite(Number(formData.entrance_result)) || Number(formData.entrance_result) < 0)) {
+      newErrors.entrance_result = lang === 'am' ? 'የመግቢያ ፈተና ውጤት 0 ወይም ከዚያ በላይ የሆነ ቁጥር መሆን አለበት።' : 'Entrance result must be a number greater than or equal to 0.';
+    }
+
     if (!formData.base_subcity) newErrors.base_subcity = tVal.required;
     if (formData.coverage_areas.length === 0) newErrors.coverage_areas = tVal.atLeastOneCoverage;
     if (!formData.availability_schedule.trim()) newErrors.availability_schedule = tVal.required;
@@ -248,7 +252,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-12 space-y-5">
       {globalError && (
-        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
+        <div role="alert" aria-live="polite" className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
           <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <span className="leading-relaxed whitespace-pre-line font-medium">{globalError}</span>
         </div>
@@ -290,6 +294,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                     key={genderOption}
                     type="button"
                     onClick={() => handleFieldChange('gender', genderOption)}
+                    aria-pressed={selected}
                     className={`py-2 px-2 text-xs rounded-xl font-medium border text-center transition cursor-pointer ${
                       selected
                         ? 'border-pine bg-pine/10 text-pine font-semibold'
@@ -400,8 +405,15 @@ export default function TutorForm({ user, lang, onSuccess }) {
             inputMode="decimal"
             value={formData.entrance_result}
             onChange={(e) => handleFieldChange('entrance_result', e.target.value)}
-            className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-line focus:outline-none focus:border-pine"
+            className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
+              errors.entrance_result
+                ? "border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500"
+                : "border-line focus:outline-none focus:border-pine"
+            }`}
           />
+          {errors.entrance_result && (
+            <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.entrance_result}</p>
+          )}
         </div>
 
       </div>
@@ -429,6 +441,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   key={subject}
                   type="button"
                   onClick={() => toggleSubject(subject)}
+                  aria-pressed={selected}
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 cursor-pointer ${
                     selected
                       ? 'bg-pine text-paper shadow-sm'
@@ -465,6 +478,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   key={level}
                   type="button"
                   onClick={() => toggleGrade(level)}
+                  aria-pressed={selected}
                   className={`py-2 px-2.5 rounded-xl text-xs font-medium border text-left transition cursor-pointer ${
                     selected
                       ? 'border-pine bg-pine/10 text-pine font-semibold'
@@ -572,6 +586,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   key={subcity}
                   type="button"
                   onClick={() => toggleCoverage(subcity)}
+                  aria-pressed={selected}
                   className={`py-1.5 px-2.5 rounded-xl text-[11px] font-medium transition cursor-pointer ${
                     selected
                       ? 'bg-pine text-paper shadow-sm font-semibold'
@@ -650,6 +665,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
               <button
                 type="button"
                 onClick={removeSelectedFile}
+                aria-label={lang === 'am' ? 'የተመረጠውን ፋይል አስወግድ' : 'Remove selected file'}
                 className="p-1 hover:bg-pine/20 rounded-lg text-pine transition"
               >
                 <X className="w-4 h-4" />

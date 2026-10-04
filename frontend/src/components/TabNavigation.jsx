@@ -8,7 +8,14 @@ export default function TabNavigation({ activeTab, onSelectTab, lang }) {
   // Determine current active role from activeTab
   const isTutorMode = activeTab === 'tutor' || activeTab === 'tutor_portal';
 
+  const triggerSelectionHaptic = () => {
+    try {
+      window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+    } catch (_) {}
+  };
+
   const handleRoleChange = (role) => {
+    triggerSelectionHaptic();
     if (role === 'parent') {
       onSelectTab('parent');
     } else {
@@ -68,7 +75,7 @@ export default function TabNavigation({ activeTab, onSelectTab, lang }) {
             <button
               key={tab.id}
               type="button"
-              onClick={() => onSelectTab(tab.id)}
+              onClick={() => { triggerSelectionHaptic(); onSelectTab(tab.id); }}
               className={`py-2 px-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
                 isActive
                   ? 'bg-citrus/25 text-ink border border-citrus/50 shadow-xs'

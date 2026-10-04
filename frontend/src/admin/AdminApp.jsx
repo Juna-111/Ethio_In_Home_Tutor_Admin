@@ -94,6 +94,23 @@ export default function AdminApp() {
     ] : []),
   ];
 
+  useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (!backButton) return undefined;
+    if (activeSection !== 'overview' && view.status === 'ready') {
+      backButton.show();
+      const handleBack = () => setActiveSection('overview');
+      backButton.onClick(handleBack);
+      return () => {
+        backButton.offClick(handleBack);
+        backButton.hide();
+      };
+    }
+    backButton.hide();
+    return undefined;
+  }, [activeSection, view.status]);
+
   return (
     <div className="admin-app">
       <header className="admin-topbar">
@@ -205,16 +222,16 @@ export default function AdminApp() {
                     </span>
                   </div>
                   <div className="queue-list">
-                    <div className="queue-item clickable" onClick={() => setActiveSection('tutors')}>
+                    <button className="queue-item clickable" type="button" onClick={() => setActiveSection('tutors')}>
                       <span className="queue-icon queue-icon-coral"><GraduationCap size={18} /></span>
                       <span className="queue-label"><strong>Tutor verification</strong><small>Profiles awaiting checklist review</small></span>
                       <strong className="queue-count">{formatCount(dashboard.pending_tutors)}</strong>
-                    </div>
-                    <div className="queue-item clickable" onClick={() => setActiveSection('requests')}>
+                    </button>
+                    <button className="queue-item clickable" type="button" onClick={() => setActiveSection('requests')}>
                       <span className="queue-icon queue-icon-green"><ClipboardList size={18} /></span>
                       <span className="queue-label"><strong>Parent requests</strong><small>Students waiting for workbench matching</small></span>
                       <strong className="queue-count">{formatCount(dashboard.pending_requests)}</strong>
-                    </div>
+                    </button>
                   </div>
                 </section>
               </>

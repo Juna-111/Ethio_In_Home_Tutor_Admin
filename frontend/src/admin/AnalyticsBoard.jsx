@@ -12,8 +12,8 @@ export default function AnalyticsBoard() {
     let active = true;
     setLoading(true);
     Promise.all([
-      getAdminFunnelAnalytics().catch(() => null),
-      getAdminAvailabilityMismatch().catch(() => null),
+      getAdminFunnelAnalytics(),
+      getAdminAvailabilityMismatch(),
     ])
       .then(([funnelData, mismatchData]) => {
         if (!active) return;

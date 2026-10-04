@@ -54,17 +54,20 @@ export default function AdminManagement() {
       setFeedback({ type: 'error', message: 'Enter a valid numeric Telegram ID.' });
       return;
     }
-    const telegramId = Number(rawId);
-    if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+    let telegramId;
+    try {
+      telegramId = BigInt(rawId);
+      if (telegramId <= 0n || telegramId > 9223372036854775807n) throw new Error('range');
+    } catch {
       setFeedback({ type: 'error', message: 'Telegram ID is outside the supported range.' });
       return;
     }
 
     setSaving(true);
     try {
-      await createAdminUser({ telegram_id: telegramId, role: newRole });
+      await createAdminUser({ telegram_id: rawId, role: newRole });
       setNewTelegramId('');
-      setFeedback({ type: 'success', message: `${newRole === 'super_admin' ? 'Super Admin' : 'Admin'} ${telegramId} was added successfully.` });
+      setFeedback({ type: 'success', message: `${newRole === 'super_admin' ? 'Super Admin' : 'Admin'} ${rawId} was added successfully.` });
       await loadData();
     } catch (err) {
       const message = err.status === 409
@@ -135,7 +138,9 @@ export default function AdminManagement() {
         <div>
           <form className="add-admin-form" onSubmit={handleAddAdmin}>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               placeholder="Telegram ID (e.g. 123456789)"
               value={newTelegramId}
               onChange={(e) => setNewTelegramId(e.target.value)}

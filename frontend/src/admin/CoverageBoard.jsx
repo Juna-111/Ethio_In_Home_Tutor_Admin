@@ -24,7 +24,7 @@ export default function CoverageBoard() {
         <button className="refresh-button" type="button" aria-label="Refresh coverage gaps" onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw size={17} /></button>
       </div>
       <div className="coverage-intro"><BarChart3 size={20} /><span>Gap ratio is the share of pending demand without a verified, active tutor covering the same subject and subcity.</span></div>
-      {error && <div className="inline-message inline-error"><AlertTriangle size={16} />{error}</div>}
+      {error && <div className="inline-message inline-error" role="alert"><AlertTriangle size={16} />{error}</div>}
       <div className="data-table-wrap">
         <table className="data-table coverage-table">
           <thead><tr><th>AREA</th><th>SUBJECT</th><th>PENDING REQUESTS</th><th>ACTIVE TUTORS</th><th>SUPPLY GAP</th></tr></thead>

@@ -56,7 +56,13 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
   }, []);
 
   const handleCancelRequest = async (req) => {
-    if (!window.confirm(lang === 'am' ? 'ይህን ጥያቄ መሰረዝ ይፈልጋሉ?' : 'Cancel this tutoring request?')) return;
+    const confirmText = lang === 'am' ? 'ይህን ጥያቄ መሰረዝ ይፈልጋሉ?' : 'Cancel this tutoring request?';
+    const tg = window.Telegram?.WebApp;
+    const confirmed = tg?.showConfirm
+      ? await new Promise((resolve) => tg.showConfirm(confirmText, resolve))
+      : window.confirm(confirmText);
+    if (!confirmed) return;
+    try { tg?.HapticFeedback?.impactOccurred?.('light'); } catch (_) {}
     setActionError(null);
     setCancellingRequestId(req.id);
     try {
@@ -309,7 +315,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   </button>
                 )}
 
-                {(req.status === 'matched' || req.status === 'closed') && (
+                {(req.status === 'matched' || req.status === 'closed') && !req.has_feedback && (
                   <button
                     type="button"
                     onClick={() => handleOpenFeedback(req)}
@@ -335,7 +341,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
 
       {/* Feedback Modal */}
       {feedbackModal && (
-        <div className="fixed inset-0 z-50 bg-ink/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-ink/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="parent-feedback-title">
           <div className="bg-paper w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border border-line text-left">
             <button
               onClick={() => setFeedbackModal(null)}
@@ -344,17 +350,17 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="text-base font-bold text-ink mb-1">
-              Rate {feedbackModal.tutorName}
+            <h3 id="parent-feedback-title" className="text-base font-bold text-ink mb-1">
+              {lang === 'am' ? `${feedbackModal.tutorName} ደረጃ ይስጡ` : `Rate ${feedbackModal.tutorName}`}
             </h3>
             <p className="text-xs text-muted mb-4">
-              Your honest feedback helps us maintain top quality tutoring.
+              {lang === 'am' ? 'የእርስዎ አስተያየት የትምህርት ጥራታችንን ለማሻሻል ይረዳናል።' : 'Your honest feedback helps us maintain top quality tutoring.'}
             </p>
 
             {feedbackSuccess ? (
               <div className="p-4 bg-green/10 border border-green/20 rounded-2xl text-center space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-green mx-auto" />
-                <p className="text-xs font-bold text-green">Thank you! Your feedback has been recorded.</p>
+                <p className="text-xs font-bold text-green">{lang === 'am' ? 'እናመሰግናለን! አስተያየትዎ ተመዝግቧል።' : 'Thank you! Your feedback has been recorded.'}</p>
               </div>
             ) : (
               <form onSubmit={handleSendFeedback} className="space-y-4">
@@ -364,7 +370,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-2">Rating</label>
+                  <label className="block text-xs font-semibold text-ink mb-2">{lang === 'am' ? 'ደረጃ' : 'Rating'}</label>
                   <div className="flex items-center space-x-2">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
@@ -380,15 +386,15 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                         />
                       </button>
                     ))}
-                    <span className="text-xs font-bold text-citrus ml-2">{rating}/5 Stars</span>
+                    <span className="text-xs font-bold text-citrus ml-2">{rating}/5 {lang === 'am' ? 'ኮከቦች' : 'Stars'}</span>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1">Comments / Review</label>
+                  <label className="block text-xs font-semibold text-ink mb-1">{lang === 'am' ? 'አስተያየት / ግምገማ' : 'Comments / Review'}</label>
                   <textarea
                     rows={3}
-                    placeholder="How was your tutor's punctuality, subject mastery, and communication?"
+                    placeholder={lang === 'am' ? 'የአስጠኚው ሰዓት አክባሪነት፣ የትምህርት ብቃት እና ግንኙነት እንዴት ነበር?' : "How was your tutor's punctuality, subject mastery, and communication?"}
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     className="w-full text-xs p-3 rounded-xl border border-line focus:outline-none focus:border-pine bg-white text-ink"
@@ -405,7 +411,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   ) : (
                     <>
                       <Send className="w-3.5 h-3.5" />
-                      <span>Submit Review</span>
+                      <span>{lang === 'am' ? 'ግምገማ ይላኩ' : 'Submit Review'}</span>
                     </>
                   )}
                 </button>
@@ -417,7 +423,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
 
       {/* Contact Admin Modal */}
       {contactModal && (
-        <div className="fixed inset-0 z-50 bg-ink/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-ink/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="parent-contact-title">
           <div className="bg-paper w-full max-w-sm rounded-3xl p-6 shadow-2xl relative border border-line text-left">
             <button
               onClick={() => setContactModal(null)}
@@ -426,17 +432,17 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
               <X className="w-4 h-4" />
             </button>
 
-            <h3 className="text-base font-bold text-ink mb-1">
-              Contact Support
+            <h3 id="parent-contact-title" className="text-base font-bold text-ink mb-1">
+              {lang === 'am' ? 'ድጋፍን ያነጋግሩ' : 'Contact Support'}
             </h3>
             <p className="text-xs text-muted mb-4">
-              Need to change your schedule, subjects, or report an issue with Request #{contactModal.requestId}?
+              {lang === 'am' ? `የጊዜ ሰሌዳዎን ወይም የትምህርት ዓይነቶችን ለመቀየር ወይም በጥያቄ #${contactModal.requestId} ላይ ችግር ለማሳወቅ ይህን ቦታ ይጠቀሙ።` : `Need to change your schedule, subjects, or report an issue with Request #${contactModal.requestId}?`}
             </p>
 
             {contactSuccess ? (
               <div className="p-4 bg-green/10 border border-green/20 rounded-2xl text-center space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-green mx-auto" />
-                <p className="text-xs font-bold text-green">Message delivered to our support team.</p>
+                <p className="text-xs font-bold text-green">{lang === 'am' ? 'መልዕክትዎ ለድጋፍ ቡድናችን ተልኳል።' : 'Message delivered to our support team.'}</p>
               </div>
             ) : (
               <form onSubmit={handleSendContact} className="space-y-4">
@@ -446,11 +452,11 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1">Message</label>
+                  <label className="block text-xs font-semibold text-ink mb-1">{lang === 'am' ? 'መልዕክት' : 'Message'}</label>
                   <textarea
                     rows={4}
                     required
-                    placeholder="Type your message here..."
+                    placeholder={lang === 'am' ? 'መልዕክትዎን እዚህ ይጻፉ...' : 'Type your message here...'}
                     value={contactMsg}
                     onChange={(e) => setContactMsg(e.target.value)}
                     className="w-full text-xs p-3 rounded-xl border border-line focus:outline-none focus:border-pine bg-white text-ink"
@@ -467,7 +473,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   ) : (
                     <>
                       <Send className="w-3.5 h-3.5" />
-                      <span>Send to Support</span>
+                      <span>{lang === 'am' ? 'ለድጋፍ ይላኩ' : 'Send to Support'}</span>
                     </>
                   )}
                 </button>
