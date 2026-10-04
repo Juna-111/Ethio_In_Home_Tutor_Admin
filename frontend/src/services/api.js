@@ -402,7 +402,57 @@ export async function getAdminAssignmentPipeline() {
   return request('/api/v1/admin/assignments/pipeline');
 }
 
+export async function getTutorProfile() {
+  return request("/api/v1/tutors/me/profile");
+}
+
+export async function updateTutorAvailability(availability_schedule) {
+  return request("/api/v1/tutors/me/availability", {
+    method: "PATCH",
+    body: JSON.stringify({ availability_schedule }),
+  });
+}
+
+export async function getTutorOpportunities() {
+  return request("/api/v1/tutors/me/opportunities");
+}
+
+export async function respondToTutorOpportunity(inviteId, decision) {
+  return request(`/api/v1/tutors/me/opportunities/${inviteId}/respond?decision=${encodeURIComponent(decision)}`, {
+    method: "POST",
+  });
+}
+
 export async function getTutorMyAssignments() {
+  return request('/api/v1/tutors/me/assignments');
+}
+
+export async function cancelParentRequest(requestId) {
+  return request(`/api/v1/parents/me/requests/${encodeURIComponent(requestId)}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function getParentMyRequests() {
+  return request('/api/v1/parents/me/requests');
+}
+
+export async function submitParentFeedback(data) {
+  return request('/api/v1/parents/me/feedback', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function submitParentContactAdmin(data) {
+  return request('/api/v1/parents/me/contact-admin', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+
+() {
   return request('/api/v1/tutors/me/assignments');
 }
 
