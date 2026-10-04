@@ -16,6 +16,7 @@ from app.database import engine, Base, AsyncSessionLocal
 import app.models as _app_models  # noqa: F401  (registers models on Base.metadata)
 from app.routes.health import router as health_router
 from app.routes.admin import router as admin_router
+from app.routes.admin_analytics import router as admin_analytics_router
 from app.routes.parents import router as parents_router
 from app.routes.tutors import router as tutors_router
 from app.services.schema_check import get_schema_status
@@ -213,6 +214,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # Mount API v1 Routers
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(admin_analytics_router, prefix="/api/v1")
 app.include_router(parents_router, prefix="/api/v1")
 app.include_router(tutors_router, prefix="/api/v1")
 
