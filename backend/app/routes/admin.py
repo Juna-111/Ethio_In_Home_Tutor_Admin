@@ -243,6 +243,7 @@ async def list_admin_parents(
             history_items.append(
                 AdminParentRequestHistoryItem(
                     id=request.id,
+                    parent_name=request.parent_name,
                     student_level=request.student_level,
                     subjects=(
                         request.subjects
