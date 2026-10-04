@@ -1,12 +1,12 @@
 from sqlalchemy import func, select
 
-from app.database import AsyncSessionLocal
+import app.database as database
 from app.models import ParentRequest, Tutor
 
 
 async def render_analytics_card() -> str:
     """Calculates KPI statistics across tutors and requests, returning HTML formatted text."""
-    async with AsyncSessionLocal() as session:
+    async with database.AsyncSessionLocal() as session:
         # Tutors breakdown
         total_tutors = await session.scalar(select(func.count(Tutor.id))) or 0
         verified_tutors = await session.scalar(select(func.count(Tutor.id)).where(Tutor.status == "verified")) or 0
