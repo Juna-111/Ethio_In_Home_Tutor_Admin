@@ -239,53 +239,117 @@ async def get_admin_assignment_pipeline(
     _admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminAssignmentPipelineResponse:
+    """Return pipeline metrics without loading the entire request table into memory."""
     now = datetime.now(timezone.utc)
-    all_requests_res = await db.execute(select(ParentRequest).order_by(ParentRequest.created_at.asc()))
-    all_requests = all_requests_res.scalars().all()
 
-    status_counts: dict[str, int] = defaultdict(int)
-    status_ages: dict[str, list[float]] = defaultdict(list)
-    oldest_per_status_lists: dict[str, list[AdminPipelineOldestItem]] = defaultdict(list)
-
-    for req in all_requests:
-        st = req.status or "pending"
-        status_counts[st] += 1
-        req_dt = req.created_at
-        if req_dt.tzinfo is None:
-            req_dt = req_dt.replace(tzinfo=timezone.utc)
-        age = max(0.0, round((now - req_dt).total_seconds() / 86400.0, 2))
-        status_ages[st].append(age)
-        if len(oldest_per_status_lists[st]) < 10:
-            oldest_per_status_lists[st].append(
-                AdminPipelineOldestItem(
-                    id=req.id,
-                    parent_name=req.parent_name,
-                    phone_number=req.phone_number,
-                    student_level=req.student_level,
-                    location_subcity=req.location_subcity,
-                    budget_etb=req.budget_etb,
-                    status=st,
-                    created_at=req.created_at,
-                    age_days=age,
-                )
-            )
+    status_result = await db.execute(
+        select(
+            ParentRequest.status,
+            func.count(ParentRequest.id),
+        )
+        .group_by(ParentRequest.status)
+    )
+    status_counts = {
+        status or "pending": int(count)
+        for status, count in status_result.all()
+    }
 
     median_age_days: dict[str, float] = {}
-    for st, ages in status_ages.items():
-        if not ages:
-            median_age_days[st] = 0.0
+    oldest_per_status: dict[str, list[AdminPipelineOldestItem]] = {}
+
+    for status, count in status_counts.items():
+        if count <= 0:
+            median_age_days[status] = 0.0
+            oldest_per_status[status] = []
+            continue
+
+        # Fetch only the rows needed for the median timestamp rather than
+        # materializing every request in Python.
+        median_offset = (count - 1) // 2
+        median_result = await db.execute(
+            select(ParentRequest.created_at)
+            .where(ParentRequest.status == status)
+            .order_by(ParentRequest.created_at.asc(), ParentRequest.id.asc())
+            .offset(median_offset)
+            .limit(1)
+        )
+        median_created_at = median_result.scalar_one_or_none()
+        if median_created_at is None:
+            median_age_days[status] = 0.0
         else:
-            sorted_ages = sorted(ages)
-            mid = len(sorted_ages) // 2
-            if len(sorted_ages) % 2 == 1:
-                median_age_days[st] = round(sorted_ages[mid], 2)
-            else:
-                median_age_days[st] = round((sorted_ages[mid - 1] + sorted_ages[mid]) / 2.0, 2)
+            if median_created_at.tzinfo is None:
+                median_created_at = median_created_at.replace(tzinfo=timezone.utc)
+            median_age_days[status] = round(
+                max(0.0, (now - median_created_at).total_seconds() / 86400.0),
+                2,
+            )
+
+        # For even-sized groups, average the two middle timestamps.
+        if count % 2 == 0:
+            upper_result = await db.execute(
+                select(ParentRequest.created_at)
+                .where(ParentRequest.status == status)
+                .order_by(ParentRequest.created_at.asc(), ParentRequest.id.asc())
+                .offset(count // 2)
+                .limit(1)
+            )
+            upper_created_at = upper_result.scalar_one_or_none()
+            if upper_created_at is not None:
+                if upper_created_at.tzinfo is None:
+                    upper_created_at = upper_created_at.replace(tzinfo=timezone.utc)
+                median_created_at = median_created_at.replace(tzinfo=timezone.utc) if median_created_at.tzinfo is None else median_created_at
+                median_age_days[status] = round(
+                    max(
+                        0.0,
+                        (now - median_created_at).total_seconds() / 86400.0,
+                    )
+                    + max(
+                        0.0,
+                        (now - upper_created_at).total_seconds() / 86400.0,
+                    )
+                    / 2.0,
+                    2,
+                )
+
+        oldest_result = await db.execute(
+            select(ParentRequest)
+            .where(ParentRequest.status == status)
+            .order_by(ParentRequest.created_at.asc(), ParentRequest.id.asc())
+            .limit(10)
+        )
+        oldest_per_status[status] = [
+            AdminPipelineOldestItem(
+                id=req.id,
+                parent_name=req.parent_name,
+                phone_number=req.phone_number,
+                student_level=req.student_level,
+                location_subcity=req.location_subcity,
+                budget_etb=req.budget_etb,
+                status=status,
+                created_at=req.created_at,
+                age_days=round(
+                    max(
+                        0.0,
+                        (
+                            now
+                            - (
+                                req.created_at.replace(tzinfo=timezone.utc)
+                                if req.created_at.tzinfo is None
+                                else req.created_at
+                            )
+                        ).total_seconds()
+                        / 86400.0,
+                    ),
+                    2,
+                ),
+            )
+            for req in oldest_result.scalars().all()
+        ]
 
     return AdminAssignmentPipelineResponse(
-        status_counts=dict(status_counts),
+        status_counts=status_counts,
         median_age_days=median_age_days,
-        oldest_per_status=dict(oldest_per_status_lists),
+        oldest_per_status=oldest_per_status,
     )
 
 
