@@ -295,13 +295,6 @@ export default function RequestWorkbench({ initialRequestId }) {
                       <div className="candidate-score">
                         <strong>{Math.round(candidate.overall_score)}</strong><small>MATCH</small>
                       </div>
-                      <div className="factor-grid">
-                        {Object.entries(candidate.score_breakdown).map(([key, factor]) => (
-                          <span className="factor-item" key={key} title={factor.explanation}>
-                            <small>{FACTOR_LABELS[key]}</small><strong>{factor.score === null ? '—' : `${Math.round(factor.score)}%`}</strong>
-                          </span>
-                        ))}
-                      </div>
                       <div className="candidate-actions">
                         {!candidate.telegram_available && <span className="muted-caption">No Telegram</span>}
                         {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status === 'no' ? 'Unavailable' : candidate.invite_status}</span>}
