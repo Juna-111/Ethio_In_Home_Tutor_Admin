@@ -717,3 +717,45 @@ async def test_extracted_bot_analytics_uses_the_test_database(db_session: AsyncS
     assert "1</code> Total" in card
     assert "500" in card
     assert "Bole (1)" in card
+
+@pytest.mark.asyncio
+async def test_parent_can_cancel_only_owned_unassigned_requests(
+    async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    parent_user_id = 812345
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+
+    owned = _parent_request("Cancelable Parent", status="pending")
+    owned.telegram_user_id = parent_user_id
+    matched = _parent_request("Matched Parent", status="matched")
+    matched.telegram_user_id = parent_user_id
+    other = _parent_request("Other Parent", status="pending")
+    other.telegram_user_id = parent_user_id + 1
+    db_session.add_all([owned, matched, other])
+    await db_session.commit()
+
+    header = {"Authorization": "tma invalid"}
+    monkeypatch.setattr(
+        "app.routes.parents.get_optional_telegram_user",
+        lambda: parent_user_id,
+    )
+
+    # Dependency overrides are easier to express through the existing app override.
+    from app.auth import get_optional_telegram_user
+    from app.main import app
+    app.dependency_overrides[get_optional_telegram_user] = lambda: parent_user_id
+    try:
+        response = await async_client.post(f"/api/v1/parents/me/requests/{owned.id}/cancel")
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelled"
+
+        response = await async_client.post(f"/api/v1/parents/me/requests/{matched.id}/cancel")
+        assert response.status_code == 409
+
+        response = await async_client.post(f"/api/v1/parents/me/requests/{other.id}/cancel")
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_optional_telegram_user, None)
+
+    await db_session.refresh(owned)
+    assert owned.status == "cancelled"
