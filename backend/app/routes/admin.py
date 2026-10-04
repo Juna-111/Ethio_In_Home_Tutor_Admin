@@ -188,15 +188,14 @@ async def list_admin_parents(
             page_size=page_size,
         )
 
-    # Fetch only the request history belonging to the parent groups on this
-    # page. Reapply the same filters so search/status semantics remain exact.
+    # Once a parent identity is selected for the page, return that parent's
+    # complete request history. Search/status filters decide which parent groups
+    # qualify; they must not erase older requests from the group's history.
     request_query = (
         select(ParentRequest)
         .where(ParentRequest.phone_number.in_(paged_phones))
         .order_by(ParentRequest.created_at.desc(), ParentRequest.id.desc())
     )
-    if filters:
-        request_query = request_query.where(*filters)
 
     result = await db.execute(request_query)
     matching_requests = result.scalars().all()
