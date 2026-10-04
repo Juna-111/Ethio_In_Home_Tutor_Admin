@@ -8,6 +8,7 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select, update as sql_update
+from sqlalchemy.exc import IntegrityError
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -1190,7 +1191,15 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
             assigned_by=admin_name
         )
         session.add(assignment)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await query.answer(
+                "⚠️ This request was assigned by another admin. Please refresh the match list.",
+                show_alert=True,
+            )
+            return
         await session.refresh(parent)
 
     await query.answer(f"Assigned {tutor.full_name} to Request #{parent_id}!")
