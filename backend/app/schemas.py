@@ -189,6 +189,57 @@ class TutorOpportunityActionResponse(BaseModel):
     status: str
 
 
+
+class MarketplaceTutorItem(BaseModel):
+    id: int
+    full_name: str
+    gender: str
+    university: str
+    department: str
+    education_year: str
+    subjects_qualified: List[str]
+    grades_qualified: List[str]
+    years_of_experience: float
+    expected_fee_etb: float
+    base_subcity: str
+    coverage_areas: List[str]
+    availability_schedule: Any
+    status: str
+    verification_complete: bool
+    avg_rating: Optional[float] = None
+    review_count: int = 0
+    is_favorite: bool = False
+    match_score: float = 0.0
+    match_reasons: List[str] = []
+
+
+class MarketplaceTutorListResponse(BaseModel):
+    tutors: List[MarketplaceTutorItem]
+    total: int
+    request_id: Optional[int] = None
+
+
+class MarketplaceTutorDetailResponse(MarketplaceTutorItem):
+    pass
+
+
+class MarketplaceApplicationCreate(BaseModel):
+    request_id: int = Field(..., gt=0)
+
+
+class MarketplaceApplicationResponse(BaseModel):
+    ok: bool
+    invite_id: int
+    request_id: int
+    tutor_id: int
+    status: str
+
+
+class MarketplaceFavoriteResponse(BaseModel):
+    ok: bool
+    tutor_id: int
+    is_favorite: bool
+
 # ==========================================
 # Health Schema
 # ==========================================

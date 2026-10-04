@@ -1,8 +1,8 @@
 import html
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_optional_telegram_user
@@ -10,7 +10,7 @@ from app.bot import bot_instance
 from app.bot.bot_instance import send_parent_request_card
 from app.config import settings
 from app.database import get_db
-from app.models import Assignment, ParentRequest, SessionFeedback, Tutor
+from app.models import Assignment, MarketplaceFavorite, MatchInvite, ParentRequest, SessionFeedback, Tutor, TutorVerification
 from app.schemas import (
     ParentContactAdminCreate,
     ParentFeedbackCreate,
@@ -18,6 +18,12 @@ from app.schemas import (
     ParentRequestCreate,
     ParentRequestItem,
     ParentRequestResponse,
+    MarketplaceApplicationCreate,
+    MarketplaceApplicationResponse,
+    MarketplaceFavoriteResponse,
+    MarketplaceTutorDetailResponse,
+    MarketplaceTutorItem,
+    MarketplaceTutorListResponse,
 )
 
 logger = logging.getLogger("mentorlink.routes.parents")
@@ -282,3 +288,320 @@ async def contact_admin_support(
 
     return {"ok": True, "success": True, "message": "Your message has been delivered to our administrative team."}
 
+
+
+def _json_list(value):
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [str(value)]
+
+
+def _availability_text(value) -> str:
+    if isinstance(value, dict):
+        return " ".join(f"{k} {v}" for k, v in value.items()).lower()
+    if isinstance(value, list):
+        return " ".join(str(v) for v in value).lower()
+    return str(value or "").lower()
+
+
+def _match_tutor(tutor: Tutor, request: Optional[ParentRequest]):
+    if not request:
+        return 0.0, []
+
+    tutor_subjects = {str(v).strip().lower() for v in _json_list(tutor.subjects_qualified)}
+    requested_subjects = {str(v).strip().lower() for v in _json_list(request.subjects)}
+    subject_hits = tutor_subjects & requested_subjects
+
+    tutor_grades = {str(v).strip().lower() for v in _json_list(tutor.grades_qualified)}
+    grade_match = request.student_level.strip().lower() in tutor_grades
+    location_match = (
+        request.location_subcity.strip().lower() == str(tutor.base_subcity).strip().lower()
+        or request.location_subcity.strip().lower() in {str(v).strip().lower() for v in _json_list(tutor.coverage_areas)}
+    )
+    budget_match = float(tutor.expected_fee_etb or 0) <= float(request.budget_etb or 0)
+    availability = _availability_text(tutor.availability_schedule)
+    requested_days = [str(v).strip().lower() for v in _json_list(request.schedule_days)]
+    availability_match = bool(requested_days) and any(day in availability for day in requested_days)
+    gender_match = request.preferred_gender in {"No preference", "", None} or request.preferred_gender.lower() == str(tutor.gender).lower()
+
+    score = 0.0
+    reasons = []
+    if subject_hits:
+        score += 35.0 * min(1.0, len(subject_hits) / max(1, len(requested_subjects)))
+        reasons.append(f"Teaches {', '.join(sorted(subject_hits))}")
+    if grade_match:
+        score += 20.0
+        reasons.append("Matches the requested grade")
+    if location_match:
+        score += 15.0
+        reasons.append("Covers the requested area")
+    if budget_match:
+        score += 10.0
+        reasons.append("Within the requested budget")
+    if availability_match:
+        score += 10.0
+        reasons.append("Availability overlaps")
+    if gender_match:
+        score += 5.0
+        reasons.append("Matches gender preference")
+    return round(score, 1), reasons[:3]
+
+
+def _marketplace_item(tutor, verification, avg_rating, review_count, is_favorite, score, reasons):
+    return MarketplaceTutorItem(
+        id=tutor.id,
+        full_name=tutor.full_name,
+        gender=tutor.gender,
+        university=tutor.university,
+        department=tutor.department,
+        education_year=tutor.education_year,
+        subjects_qualified=_json_list(tutor.subjects_qualified),
+        grades_qualified=_json_list(tutor.grades_qualified),
+        years_of_experience=float(tutor.years_of_experience or 0),
+        expected_fee_etb=float(tutor.expected_fee_etb or 0),
+        base_subcity=tutor.base_subcity,
+        coverage_areas=_json_list(tutor.coverage_areas),
+        availability_schedule=tutor.availability_schedule,
+        status=tutor.status,
+        verification_complete=bool(verification and verification.id_verified and verification.entrance_result_verified and verification.phone_confirmed and verification.claims_plausible),
+        avg_rating=round(float(avg_rating), 1) if avg_rating is not None else None,
+        review_count=int(review_count or 0),
+        is_favorite=is_favorite,
+        match_score=score,
+        match_reasons=reasons,
+    )
+
+
+async def _marketplace_context(db, tutor_ids):
+    if not tutor_ids:
+        return {}, {}
+    verification_rows = await db.execute(
+        select(TutorVerification).where(TutorVerification.tutor_id.in_(tutor_ids))
+    )
+    verifications = {row.tutor_id: row for row in verification_rows.scalars().all()}
+
+    rating_rows = await db.execute(
+        select(Assignment.tutor_id, func.avg(SessionFeedback.rating), func.count(SessionFeedback.id))
+        .join(SessionFeedback, SessionFeedback.assignment_id == Assignment.id)
+        .where(Assignment.tutor_id.in_(tutor_ids))
+        .group_by(Assignment.tutor_id)
+    )
+    ratings = {row[0]: (row[1], row[2]) for row in rating_rows.all()}
+    return verifications, ratings
+
+
+@router.get(
+    "/tutors",
+    response_model=MarketplaceTutorListResponse,
+    summary="Discover verified tutors for the parent marketplace",
+)
+async def discover_tutors(
+    subject: Optional[str] = Query(None),
+    grade: Optional[str] = Query(None),
+    subcity: Optional[str] = Query(None),
+    max_fee: Optional[float] = Query(None, gt=0),
+    min_rating: Optional[float] = Query(None, ge=1, le=5),
+    verified_only: bool = Query(True),
+    available_day: Optional[str] = Query(None),
+    favorite_only: bool = Query(False),
+    request_id: Optional[int] = Query(None, gt=0),
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> MarketplaceTutorListResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+
+    request = None
+    if request_id:
+        request = await db.scalar(
+            select(ParentRequest).where(
+                ParentRequest.id == request_id,
+                ParentRequest.telegram_user_id == verified_user_id,
+            )
+        )
+        if not request:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutoring request not found.")
+    else:
+        request = await db.scalar(
+            select(ParentRequest)
+            .where(
+                ParentRequest.telegram_user_id == verified_user_id,
+                ParentRequest.status.in_({"pending", "reviewing"}),
+            )
+            .order_by(ParentRequest.created_at.desc())
+        )
+
+    query = select(Tutor).where(Tutor.status.in_({"verified", "probation"}), Tutor.is_paused.is_(False))
+    if subcity:
+        query = query.where(Tutor.base_subcity == subcity)
+    if max_fee is not None:
+        query = query.where(Tutor.expected_fee_etb <= max_fee)
+
+    tutors = (await db.execute(query.order_by(Tutor.created_at.desc()))).scalars().all()
+    tutor_ids = [t.id for t in tutors]
+    verifications, ratings = await _marketplace_context(db, tutor_ids)
+    favorite_rows = await db.execute(
+        select(MarketplaceFavorite.tutor_id).where(
+            MarketplaceFavorite.parent_telegram_user_id == verified_user_id,
+            MarketplaceFavorite.tutor_id.in_(tutor_ids or [-1]),
+        )
+    )
+    favorite_ids = set(favorite_rows.scalars().all())
+
+    items = []
+    for tutor in tutors:
+        subjects = {str(v).strip().lower() for v in _json_list(tutor.subjects_qualified)}
+        grades = {str(v).strip().lower() for v in _json_list(tutor.grades_qualified)}
+        if subject and subject.strip().lower() not in subjects:
+            continue
+        if grade and grade.strip().lower() not in grades:
+            continue
+        if available_day and available_day.strip().lower() not in _availability_text(tutor.availability_schedule):
+            continue
+
+        verification = verifications.get(tutor.id)
+        is_verified = bool(verification and verification.id_verified and verification.entrance_result_verified and verification.phone_confirmed and verification.claims_plausible)
+        if verified_only and not is_verified:
+            continue
+
+        avg_rating, review_count = ratings.get(tutor.id, (None, 0))
+        if min_rating is not None and (avg_rating is None or float(avg_rating) < min_rating):
+            continue
+
+        score, reasons = _match_tutor(tutor, request)
+        items.append(_marketplace_item(tutor, verification, avg_rating, review_count, tutor.id in favorite_ids, score, reasons))
+
+    items.sort(key=lambda item: (item.match_score, item.avg_rating or 0, item.review_count, item.years_of_experience), reverse=True)
+    return MarketplaceTutorListResponse(tutors=items, total=len(items), request_id=request.id if request else None)
+
+
+@router.get(
+    "/tutors/{tutor_id}",
+    response_model=MarketplaceTutorDetailResponse,
+    summary="View a tutor marketplace profile",
+)
+async def get_marketplace_tutor(
+    tutor_id: int,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> MarketplaceTutorDetailResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+    tutor = await db.scalar(
+        select(Tutor).where(Tutor.id == tutor_id, Tutor.status.in_({"verified", "probation"}), Tutor.is_paused.is_(False))
+    )
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor not found.")
+
+    request = await db.scalar(
+        select(ParentRequest)
+        .where(ParentRequest.telegram_user_id == verified_user_id, ParentRequest.status.in_({"pending", "reviewing"}))
+        .order_by(ParentRequest.created_at.desc())
+    )
+    verifications, ratings = await _marketplace_context(db, [tutor.id])
+    favorite = await db.scalar(
+        select(MarketplaceFavorite).where(
+            MarketplaceFavorite.parent_telegram_user_id == verified_user_id,
+            MarketplaceFavorite.tutor_id == tutor.id,
+        )
+    )
+    avg_rating, review_count = ratings.get(tutor.id, (None, 0))
+    score, reasons = _match_tutor(tutor, request)
+    return _marketplace_item(tutor, verifications.get(tutor.id), avg_rating, review_count, favorite is not None, score, reasons)
+
+
+@router.post(
+    "/tutors/{tutor_id}/apply",
+    response_model=MarketplaceApplicationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Apply to a tutor from the marketplace",
+)
+async def apply_to_tutor(
+    tutor_id: int,
+    payload: MarketplaceApplicationCreate,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> MarketplaceApplicationResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+
+    request = await db.scalar(
+        select(ParentRequest).where(
+            ParentRequest.id == payload.request_id,
+            ParentRequest.telegram_user_id == verified_user_id,
+        )
+    )
+    if not request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutoring request not found.")
+    if request.status not in {"pending", "reviewing"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only an active tutoring request can receive applications.")
+
+    tutor = await db.scalar(
+        select(Tutor).where(Tutor.id == tutor_id, Tutor.status.in_({"verified", "probation"}), Tutor.is_paused.is_(False))
+    )
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor is not currently available in the marketplace.")
+
+    verification = await db.scalar(select(TutorVerification).where(TutorVerification.tutor_id == tutor.id))
+    if not verification or not all([verification.id_verified, verification.entrance_result_verified, verification.phone_confirmed, verification.claims_plausible]):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor is not fully verified yet.")
+
+    if request.preferred_gender not in {"No preference", "", None} and request.preferred_gender.lower() != str(tutor.gender).lower():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor does not match the gender preference on your request.")
+
+    existing = await db.scalar(
+        select(MatchInvite).where(MatchInvite.request_id == request.id, MatchInvite.tutor_id == tutor.id)
+    )
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"You already applied to this tutor ({existing.status}).")
+
+    invite = MatchInvite(request_id=request.id, tutor_id=tutor.id, status="sent")
+    db.add(invite)
+    await db.commit()
+    await db.refresh(invite)
+    return MarketplaceApplicationResponse(ok=True, invite_id=invite.id, request_id=request.id, tutor_id=tutor.id, status=invite.status)
+
+
+@router.post(
+    "/tutors/{tutor_id}/favorite",
+    response_model=MarketplaceFavoriteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Favorite a tutor",
+)
+async def favorite_tutor(
+    tutor_id: int,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> MarketplaceFavoriteResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+    tutor = await db.scalar(select(Tutor).where(Tutor.id == tutor_id, Tutor.status.in_({"verified", "probation"}), Tutor.is_paused.is_(False)))
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor not found.")
+    existing = await db.scalar(select(MarketplaceFavorite).where(MarketplaceFavorite.parent_telegram_user_id == verified_user_id, MarketplaceFavorite.tutor_id == tutor_id))
+    if not existing:
+        db.add(MarketplaceFavorite(parent_telegram_user_id=verified_user_id, tutor_id=tutor_id))
+        await db.commit()
+    return MarketplaceFavoriteResponse(ok=True, tutor_id=tutor_id, is_favorite=True)
+
+
+@router.delete(
+    "/tutors/{tutor_id}/favorite",
+    response_model=MarketplaceFavoriteResponse,
+    summary="Remove a tutor from favorites",
+)
+async def unfavorite_tutor(
+    tutor_id: int,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> MarketplaceFavoriteResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+    favorite = await db.scalar(select(MarketplaceFavorite).where(MarketplaceFavorite.parent_telegram_user_id == verified_user_id, MarketplaceFavorite.tutor_id == tutor_id))
+    if not favorite:
+        return MarketplaceFavoriteResponse(ok=True, tutor_id=tutor_id, is_favorite=False)
+    await db.delete(favorite)
+    await db.commit()
+    return MarketplaceFavoriteResponse(ok=True, tutor_id=tutor_id, is_favorite=False)

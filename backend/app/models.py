@@ -219,3 +219,19 @@ class RegistrationFunnelEvent(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+
+
+class MarketplaceFavorite(Base):
+    __tablename__ = "marketplace_favorites"
+    __table_args__ = (
+        UniqueConstraint("parent_telegram_user_id", "tutor_id", name="uq_marketplace_favorite_parent_tutor"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parent_telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )

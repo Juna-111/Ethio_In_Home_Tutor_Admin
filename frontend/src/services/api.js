@@ -450,3 +450,32 @@ export async function submitParentContactAdmin(data) {
     body: JSON.stringify(data),
   });
 }
+
+
+export async function getMarketplaceTutors(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return request(`/api/v1/parents/tutors${suffix}`);
+}
+
+export async function getMarketplaceTutor(tutorId) {
+  return request(`/api/v1/parents/tutors/${encodeURIComponent(tutorId)}`);
+}
+
+export async function applyToMarketplaceTutor(tutorId, requestId) {
+  return request(`/api/v1/parents/tutors/${encodeURIComponent(tutorId)}/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ request_id: requestId }),
+  });
+}
+
+export async function favoriteMarketplaceTutor(tutorId) {
+  return request(`/api/v1/parents/tutors/${encodeURIComponent(tutorId)}/favorite`, { method: 'POST' });
+}
+
+export async function unfavoriteMarketplaceTutor(tutorId) {
+  return request(`/api/v1/parents/tutors/${encodeURIComponent(tutorId)}/favorite`, { method: 'DELETE' });
+}

@@ -5,6 +5,7 @@ import CustomerHome from './components/CustomerHome';
 import ParentForm from './components/ParentForm';
 import TutorForm from './components/TutorForm';
 import ParentPortal from './components/ParentPortal';
+import MarketplaceDiscovery from './components/MarketplaceDiscovery';
 import TutorPortal from './components/TutorPortal';
 import UserProfile from './components/UserProfile';
 import SuccessModal from './components/SuccessModal';
@@ -27,6 +28,7 @@ function resolveInitialTab() {
     if (param.includes('tutor_portal') || param.includes('assignment') || param.includes('teaching')) return 'tutor_portal';
     if (param.includes('parent_portal') || param.includes('my_requests') || param.includes('requests')) return 'parent_portal';
     if (param.includes('tutor') || param.includes('become')) return 'tutor';
+    if (param.includes('parent_form') || param.includes('request_tutor')) return 'parent_form';
     if (param.includes('parent') || param.includes('find_tutor')) return 'parent';
   } catch (_) {}
   return 'home';
@@ -135,7 +137,8 @@ export default function App() {
 
       <main className="flex-1">
         {isHome && <CustomerHome user={user} lang={lang} onSelectTab={setActiveTab} />}
-        {activeTab === 'parent' && <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />}
+        {activeTab === 'parent' && <MarketplaceDiscovery user={user} lang={lang} onSelectTab={setActiveTab} />}
+        {activeTab === 'parent_form' && <ParentForm user={user} lang={lang} onSuccess={handleSuccess} />}
         {activeTab === 'parent_portal' && <ParentPortal user={user} lang={lang} onSelectTab={setActiveTab} />}
         {activeTab === 'tutor' && <TutorForm user={user} lang={lang} onSuccess={handleSuccess} />}
         {activeTab === 'tutor_portal' && <TutorPortal user={user} lang={lang} onSelectTab={setActiveTab} />}
