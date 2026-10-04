@@ -80,13 +80,13 @@ export default function AdminApp() {
   ] : [];
 
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'requests', label: 'Requests', icon: ClipboardList },
+    { id: 'overview', label: 'Home', icon: LayoutDashboard },
+    { id: 'requests', label: 'Match & Assign', icon: ClipboardList },
     { id: 'tutors', label: 'Tutors', icon: GraduationCap },
-    { id: 'crm', label: 'Parent CRM', icon: Contact },
+    { id: 'crm', label: 'Parents', icon: Contact },
     { id: 'pipeline', label: 'Pipeline', icon: GitPullRequest },
-    { id: 'ops', label: 'Ops Queue', icon: ShieldAlert },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'ops', label: 'Needs Review', icon: ShieldAlert },
+    { id: 'analytics', label: 'Insights', icon: BarChart3 },
     { id: 'coverage', label: 'Coverage', icon: UsersRound },
     { id: 'export', label: 'Export', icon: Download },
     ...(dashboard?.admin_role === 'super_admin' ? [
@@ -114,14 +114,14 @@ export default function AdminApp() {
   return (
     <div className="admin-app">
       <header className="admin-topbar">
-        <a className="admin-brand" href="/admin.html" aria-label="MentorLink Admin home">
-          <span className="brand-mark"><span /></span>
-          <span>mentorlink<span className="brand-admin"> / admin</span></span>
+        <a className="admin-brand" href="/admin.html" aria-label="Ethio In-Home Tutor Admin home">
+          <span className="brand-mark" aria-hidden="true"><span>E</span></span>
+          <span className="brand-copy"><strong>Ethio In-Home Tutor</strong><span className="brand-admin">ADMIN CONSOLE</span></span>
         </a>
         <div className="topbar-status"><span className="status-dot" />
           {dashboard
             ? `SIGNED IN · ${(dashboard.admin_role || 'ADMIN').toUpperCase()}${dashboard.admin_telegram_id ? ` · ${dashboard.admin_telegram_id}` : ''}`
-            : 'OPERATIONS'}
+            : 'ADMIN OPERATIONS'}
         </div>
       </header>
 
@@ -265,7 +265,7 @@ export default function AdminApp() {
             {view.status === 'ready' && (
               <footer className="admin-footer">
                 <span><span className="status-dot" /> LIVE DATA CONNECTED</span>
-                <span>MENTORLINK ADMIN <i>·</i> PHASE 5 (FULL CAPABILITIES)</span>
+                <span>ETHIO IN-HOME TUTOR <i>·</i> ADMIN OPERATIONS</span>
               </footer>
             )}
           </>
