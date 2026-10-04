@@ -299,13 +299,15 @@ async def get_admin_assignment_pipeline(
                     upper_created_at = upper_created_at.replace(tzinfo=timezone.utc)
                 median_created_at = median_created_at.replace(tzinfo=timezone.utc) if median_created_at.tzinfo is None else median_created_at
                 median_age_days[status] = round(
-                    max(
-                        0.0,
-                        (now - median_created_at).total_seconds() / 86400.0,
-                    )
-                    + max(
-                        0.0,
-                        (now - upper_created_at).total_seconds() / 86400.0,
+                    (
+                        max(
+                            0.0,
+                            (now - median_created_at).total_seconds() / 86400.0,
+                        )
+                        + max(
+                            0.0,
+                            (now - upper_created_at).total_seconds() / 86400.0,
+                        )
                     )
                     / 2.0,
                     2,
