@@ -132,6 +132,63 @@ class TutorResponse(TutorCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TutorVerificationStatus(BaseModel):
+    id_verified: bool = False
+    entrance_result_verified: bool = False
+    phone_confirmed: bool = False
+    claims_plausible: bool = False
+    last_verified_at: Optional[datetime] = None
+    verified_by: Optional[int] = None
+    checklist_complete: bool = False
+
+
+class TutorProfilePortalResponse(BaseModel):
+    id: int
+    full_name: str
+    gender: str
+    phone_number: str
+    university: str
+    department: str
+    education_year: str
+    subjects_qualified: List[str]
+    grades_qualified: List[str]
+    years_of_experience: float
+    expected_fee_etb: float
+    base_subcity: str
+    coverage_areas: List[str]
+    availability_schedule: Union[dict, List[str], str]
+    status: str
+    is_paused: bool
+    profile_completion_pct: int
+    verification: TutorVerificationStatus
+
+
+class TutorOpportunityItem(BaseModel):
+    invite_id: int
+    request_id: int
+    student_level: str
+    subjects: List[str]
+    location: str
+    schedule: str
+    budget_etb: float
+    sent_at: datetime
+    status: str
+
+
+class TutorOpportunityResponse(BaseModel):
+    opportunities: List[TutorOpportunityItem]
+
+
+class TutorAvailabilityUpdate(BaseModel):
+    availability_schedule: Union[dict, List[str], str]
+
+
+class TutorOpportunityActionResponse(BaseModel):
+    ok: bool
+    invite_id: int
+    status: str
+
+
 # ==========================================
 # Health Schema
 # ==========================================
