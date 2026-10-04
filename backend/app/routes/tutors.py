@@ -13,7 +13,7 @@ from app.auth import get_optional_telegram_user
 from app.bot.bot_instance import format_schedule, send_tutor_registration_card
 from app.config import UPLOAD_DIR
 from app.database import get_db
-from app.models import Assignment, ParentRequest, RegistrationFunnelEvent, SessionFeedback, Tutor
+from app.models import Assignment, MatchInvite, ParentRequest, RegistrationFunnelEvent, SessionFeedback, Tutor, TutorVerification
 from app.schemas import (
     FunnelStartRequest,
     FunnelStartResponse,
@@ -21,6 +21,12 @@ from app.schemas import (
     TutorCreate,
     TutorMyAssignmentsResponse,
     TutorResponse,
+    TutorProfilePortalResponse,
+    TutorVerificationStatus,
+    TutorOpportunityItem,
+    TutorOpportunityResponse,
+    TutorAvailabilityUpdate,
+    TutorOpportunityActionResponse,
 )
 
 logger = logging.getLogger("mentorlink.routes.tutors")
@@ -222,6 +228,219 @@ async def start_funnel_event(
     db.add(event)
     await db.commit()
     return FunnelStartResponse(ok=True, session_id=payload.session_id)
+
+
+@router.get(
+    "/me/profile",
+    response_model=TutorProfilePortalResponse,
+    summary="Get the authenticated tutor's professional profile and verification status",
+)
+async def get_tutor_profile(
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> TutorProfilePortalResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+
+    tutor = await db.scalar(select(Tutor).where(Tutor.telegram_user_id == verified_user_id))
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor profile not found for this Telegram account.")
+
+    verification = await db.scalar(
+        select(TutorVerification).where(TutorVerification.tutor_id == tutor.id)
+    )
+    verification = verification or TutorVerification(tutor_id=tutor.id)
+
+    required_fields = [
+        tutor.full_name,
+        tutor.phone_number,
+        tutor.university,
+        tutor.department,
+        tutor.education_year,
+        tutor.subjects_qualified,
+        tutor.grades_qualified,
+        tutor.expected_fee_etb,
+        tutor.base_subcity,
+        tutor.coverage_areas,
+        tutor.availability_schedule,
+        tutor.id_document_url,
+    ]
+    completion = round(sum(bool(value) for value in required_fields) / len(required_fields) * 100)
+
+    checklist = [
+        verification.id_verified,
+        verification.entrance_result_verified,
+        verification.phone_confirmed,
+        verification.claims_plausible,
+    ]
+
+    return TutorProfilePortalResponse(
+        id=tutor.id,
+        full_name=tutor.full_name,
+        gender=tutor.gender,
+        phone_number=tutor.phone_number,
+        university=tutor.university,
+        department=tutor.department,
+        education_year=tutor.education_year,
+        subjects_qualified=tutor.subjects_qualified or [],
+        grades_qualified=tutor.grades_qualified or [],
+        years_of_experience=tutor.years_of_experience,
+        expected_fee_etb=tutor.expected_fee_etb,
+        base_subcity=tutor.base_subcity,
+        coverage_areas=tutor.coverage_areas or [],
+        availability_schedule=tutor.availability_schedule,
+        status=tutor.status,
+        is_paused=tutor.is_paused,
+        profile_completion_pct=completion,
+        verification=TutorVerificationStatus(
+            id_verified=verification.id_verified,
+            entrance_result_verified=verification.entrance_result_verified,
+            phone_confirmed=verification.phone_confirmed,
+            claims_plausible=verification.claims_plausible,
+            last_verified_at=verification.last_verified_at,
+            verified_by=verification.verified_by,
+            checklist_complete=all(checklist),
+        ),
+    )
+
+
+@router.patch(
+    "/me/availability",
+    response_model=TutorProfilePortalResponse,
+    summary="Update the authenticated tutor's availability schedule",
+)
+async def update_tutor_availability(
+    payload: TutorAvailabilityUpdate,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> TutorProfilePortalResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+
+    tutor = await db.scalar(select(Tutor).where(Tutor.telegram_user_id == verified_user_id))
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor profile not found for this Telegram account.")
+
+    tutor.availability_schedule = payload.availability_schedule
+    await db.commit()
+    await db.refresh(tutor)
+
+    # Reuse the canonical profile response so the UI immediately reflects the saved schedule.
+    verification = await db.scalar(select(TutorVerification).where(TutorVerification.tutor_id == tutor.id))
+    verification = verification or TutorVerification(tutor_id=tutor.id)
+    required_fields = [
+        tutor.full_name, tutor.phone_number, tutor.university, tutor.department,
+        tutor.education_year, tutor.subjects_qualified, tutor.grades_qualified,
+        tutor.expected_fee_etb, tutor.base_subcity, tutor.coverage_areas,
+        tutor.availability_schedule, tutor.id_document_url,
+    ]
+    completion = round(sum(bool(value) for value in required_fields) / len(required_fields) * 100)
+    checklist = [
+        verification.id_verified, verification.entrance_result_verified,
+        verification.phone_confirmed, verification.claims_plausible,
+    ]
+    return TutorProfilePortalResponse(
+        id=tutor.id, full_name=tutor.full_name, gender=tutor.gender,
+        phone_number=tutor.phone_number, university=tutor.university,
+        department=tutor.department, education_year=tutor.education_year,
+        subjects_qualified=tutor.subjects_qualified or [], grades_qualified=tutor.grades_qualified or [],
+        years_of_experience=tutor.years_of_experience, expected_fee_etb=tutor.expected_fee_etb,
+        base_subcity=tutor.base_subcity, coverage_areas=tutor.coverage_areas or [],
+        availability_schedule=tutor.availability_schedule, status=tutor.status,
+        is_paused=tutor.is_paused, profile_completion_pct=completion,
+        verification=TutorVerificationStatus(
+            id_verified=verification.id_verified,
+            entrance_result_verified=verification.entrance_result_verified,
+            phone_confirmed=verification.phone_confirmed,
+            claims_plausible=verification.claims_plausible,
+            last_verified_at=verification.last_verified_at,
+            verified_by=verification.verified_by,
+            checklist_complete=all(checklist),
+        ),
+    )
+
+
+@router.get(
+    "/me/opportunities",
+    response_model=TutorOpportunityResponse,
+    summary="Get tutoring opportunities sent to the authenticated tutor",
+)
+async def get_tutor_opportunities(
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> TutorOpportunityResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+
+    tutor = await db.scalar(select(Tutor).where(Tutor.telegram_user_id == verified_user_id))
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor profile not found for this Telegram account.")
+
+    result = await db.execute(
+        select(MatchInvite, ParentRequest)
+        .join(ParentRequest, MatchInvite.request_id == ParentRequest.id)
+        .where(
+            MatchInvite.tutor_id == tutor.id,
+            MatchInvite.status.in_(["sent", "yes", "no"]),
+            ParentRequest.status == "pending",
+        )
+        .order_by(MatchInvite.sent_at.desc())
+    )
+    opportunities = []
+    for invite, request in result.all():
+        schedule_days = request.schedule_days if isinstance(request.schedule_days, list) else [str(request.schedule_days)]
+        schedule = f"{', '.join(str(day) for day in schedule_days)} · {request.time_slot} · {request.session_duration}"
+        opportunities.append(
+            TutorOpportunityItem(
+                invite_id=invite.id,
+                request_id=request.id,
+                student_level=request.student_level,
+                subjects=request.subjects if isinstance(request.subjects, list) else [str(request.subjects)],
+                location=request.location_subcity,
+                schedule=schedule,
+                budget_etb=request.budget_etb,
+                sent_at=invite.sent_at,
+                status=invite.status,
+            )
+        )
+    return TutorOpportunityResponse(opportunities=opportunities)
+
+
+@router.post(
+    "/me/opportunities/{invite_id}/respond",
+    response_model=TutorOpportunityActionResponse,
+    summary="Accept or decline a tutoring opportunity",
+)
+async def respond_to_tutor_opportunity(
+    invite_id: int,
+    decision: str,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+) -> TutorOpportunityActionResponse:
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+    if decision not in {"yes", "no"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Decision must be 'yes' or 'no'.")
+
+    tutor = await db.scalar(select(Tutor).where(Tutor.telegram_user_id == verified_user_id))
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor profile not found for this Telegram account.")
+
+    invite = await db.scalar(
+        select(MatchInvite).where(
+            MatchInvite.id == invite_id,
+            MatchInvite.tutor_id == tutor.id,
+        )
+    )
+    if not invite:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found.")
+    if invite.status not in {"sent", "yes", "no"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This opportunity is no longer available.")
+
+    invite.status = decision
+    invite.responded_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    await db.commit()
+    return TutorOpportunityActionResponse(ok=True, invite_id=invite.id, status=decision)
 
 
 @router.get(
