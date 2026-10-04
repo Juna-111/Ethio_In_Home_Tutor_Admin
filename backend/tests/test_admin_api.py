@@ -690,3 +690,30 @@ def test_extracted_bot_modules_import_cleanly():
     assert _format_subjects(["Maths", "Physics"]) == "Maths, Physics"
     assert _format_schedule(["Monday", "Tuesday"]) == "Monday, Tuesday"
     assert callable(render_analytics_card)
+
+@pytest.mark.asyncio
+async def test_extracted_bot_analytics_uses_the_test_database(db_session: AsyncSession):
+    from app.models import ParentRequest, Tutor
+    from app.services.bot_analytics import render_analytics_card
+
+    db_session.add(Tutor(
+        full_name="Analytics Tutor", gender="female", phone_number="0911000000",
+        university="Test University", department="Mathematics", education_year="2026",
+        subjects_qualified=["Maths"], grades_qualified=["Grade 8"], years_of_experience=3,
+        expected_fee_etb=500, base_subcity="Bole", coverage_areas=["Bole"],
+        availability_schedule=["Monday"], status="verified", is_paused=False,
+    ))
+    db_session.add(ParentRequest(
+        parent_name="Analytics Parent", phone_number="0911222222", student_level="Grade 8",
+        subjects=["Maths"], preferred_gender="No preference", preferred_experience="Any",
+        location_subcity="Bole", schedule_days=["Monday"], time_slot="17:00",
+        session_duration="1 hour", budget_etb=600, status="pending",
+    ))
+    await db_session.commit()
+
+    card = await render_analytics_card()
+
+    assert "Analytics Tutor" not in card
+    assert "1</code> Total" in card
+    assert "500" in card
+    assert "Bole (1)" in card
