@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Send, UserRoundCheck } from 'lucide-react';
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Send, UserRoundCheck, ShieldCheck, RefreshCw } from 'lucide-react';
 import { SUBCITIES } from '../constants/options';
 import {
   assignAdminTutor,
@@ -36,6 +36,7 @@ export default function RequestWorkbench({ initialRequestId }) {
   const [notice, setNotice] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [confirmState, setConfirmState] = useState(null);
 
   useEffect(() => {
     if (initialRequestId) setSelectedId(initialRequestId);
@@ -100,10 +101,44 @@ export default function RequestWorkbench({ initialRequestId }) {
       const result = await action();
       setNotice(result.message);
       setSelectedTutorIds([]);
+      setConfirmState(null);
       setReloadKey((key) => key + 1);
     } catch (actionError) {
       setError(actionError.message || 'Action could not be completed.');
     } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const requestConfirmation = (action, title, description, summary, type = 'standard', tutorId = null) => {
+    setConfirmState({ action, title, description, summary, type, tutorId });
+  };
+
+  const confirmAction = async () => {
+    if (!confirmState) return;
+    setActionBusy(true);
+    setError('');
+    try {
+      // Recheck the live request immediately before any state-changing action.
+      const latestRequest = await getAdminRequest(selectedId);
+      if (latestRequest.status !== 'pending') {
+        throw new Error('This request changed while you were reviewing it. Please reload before taking another action.');
+      }
+
+      if (confirmState.type === 'assign') {
+        const latestMatches = await getAdminCandidates(selectedId);
+        const stillAvailable = latestMatches.candidates?.some(
+          (candidate) => candidate.tutor_id === confirmState.tutorId
+        );
+        if (!stillAvailable) {
+          throw new Error('That tutor is no longer an available match. The candidate list has been refreshed.');
+        }
+      }
+
+      await runAction(confirmState.action);
+    } catch (actionError) {
+      setConfirmState(null);
+      setError(actionError.message || 'The action could not be rechecked.');
       setActionBusy(false);
     }
   };
@@ -223,18 +258,39 @@ export default function RequestWorkbench({ initialRequestId }) {
             </div>
             {candidates.length === 0 ? <div className="empty-panel">No verified tutors currently match this request.</div> : (
               <div className="candidate-list">
-                {candidates.map((candidate) => {
+                {candidates.map((candidate, candidateIndex) => {
                   const canPing = candidate.telegram_available && !['sent', 'yes', 'no'].includes(candidate.invite_status);
                   const canAssign = request.status === 'pending';
                   return (
-                    <article className="candidate-row" key={candidate.tutor_id}>
+                    <article className={`candidate-row ${candidateIndex === 0 ? 'candidate-recommended' : ''}`} key={candidate.tutor_id}>
                       <div className="candidate-select">
                         <input type="checkbox" aria-label={`Select ${candidate.full_name} for ping`} checked={selectedTutorIds.includes(candidate.tutor_id)} disabled={!canPing || actionBusy || request.status !== 'pending'} onChange={() => toggleTutor(candidate.tutor_id)} />
                       </div>
                       <div className="candidate-identity">
-                        <div className="candidate-name-line"><strong>{candidate.full_name}</strong><span className={`tier-tag tier-${candidate.tier}`}>{candidate.tier.replace('tier', 'TIER ')}</span></div>
+                        <div className="candidate-name-line"><strong>{candidate.full_name}</strong>{candidateIndex === 0 && <span className="recommended-badge">Best match</span>}<span className={`tier-tag tier-${candidate.tier}`}>{candidate.tier.replace('tier', 'TIER ')}</span></div>
                         <p>{candidate.university} · {candidate.department} · {candidate.base_subcity}</p>
                         <small>{candidate.matched_subjects.join(', ')} · {candidate.years_of_experience} yrs experience · {money(candidate.expected_fee_etb)}/hr</small>
+                        <div className="match-reasons">
+                          {Object.entries(candidate.score_breakdown)
+                            .filter(([, factor]) => factor.score !== null)
+                            .sort(([, a], [, b]) => Number(b.score) - Number(a.score))
+                            .slice(0, 3)
+                            .map(([key, factor]) => (
+                              <span className="match-reason" key={key}>
+                                {FACTOR_LABELS[key]} <strong>{Math.round(factor.score)}%</strong>
+                              </span>
+                            ))}
+                        </div>
+                        <details className="match-details">
+                          <summary>See all match factors</summary>
+                          <div className="factor-grid">
+                            {Object.entries(candidate.score_breakdown).map(([key, factor]) => (
+                              <span className="factor-item" key={key} title={factor.explanation}>
+                                <small>{FACTOR_LABELS[key]}</small><strong>{factor.score === null ? '—' : `${Math.round(factor.score)}%`}</strong>
+                              </span>
+                            ))}
+                          </div>
+                        </details>
                       </div>
                       <div className="candidate-score">
                         <strong>{Math.round(candidate.overall_score)}</strong><small>MATCH</small>
@@ -249,7 +305,14 @@ export default function RequestWorkbench({ initialRequestId }) {
                       <div className="candidate-actions">
                         {!candidate.telegram_available && <span className="muted-caption">No Telegram</span>}
                         {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status === 'no' ? 'Unavailable' : candidate.invite_status}</span>}
-                        <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => runAction(() => assignAdminTutor(request.id, candidate.tutor_id))}>
+                        <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => requestConfirmation(
+                          () => assignAdminTutor(request.id, candidate.tutor_id),
+                          'Assign this tutor?',
+                          'We will recheck the request and tutor match immediately before assigning.',
+                          `${candidate.full_name} → Request #${request.id}`,
+                          'assign',
+                          candidate.tutor_id
+                        )}>
                           <UserRoundCheck size={15} /> Assign
                         </button>
                       </div>
@@ -261,12 +324,41 @@ export default function RequestWorkbench({ initialRequestId }) {
           </section>
           {request.status === 'pending' && (
             <div className="request-admin-actions">
-              <button className="quiet-button" type="button" disabled={actionBusy} onClick={() => runAction(() => waitlistAdminRequest(request.id))}>Move to waitlist</button>
-              <button className="danger-button" type="button" disabled={actionBusy} onClick={() => runAction(() => closeAdminRequest(request.id))}>Close request</button>
+              <button className="quiet-button" type="button" disabled={actionBusy} onClick={() => requestConfirmation(
+                () => waitlistAdminRequest(request.id),
+                'Move request to waitlist?',
+                'The request will leave the active matching queue until it is backfilled.',
+                `Request #${request.id} · ${request.parent_name}`
+              )}>Move to waitlist</button>
+              <button className="danger-button" type="button" disabled={actionBusy} onClick={() => requestConfirmation(
+                () => closeAdminRequest(request.id),
+                'Close this request?',
+                'Closing is a deliberate end-state action. Recheck the request before confirming.',
+                `Request #${request.id} · ${request.parent_name}`
+              )}>Close request</button>
             </div>
           )}
         </>
       ) : null}
+
+      {confirmState && (
+        <div className="modal-backdrop confirm-backdrop" role="presentation">
+          <div className="confirm-card" role="dialog" aria-modal="true" aria-labelledby="confirm-action-title">
+            <div className="confirm-icon"><ShieldCheck size={21} /></div>
+            <h3 id="confirm-action-title">{confirmState.title}</h3>
+            <p>{confirmState.description}</p>
+            <div className="confirm-summary"><strong>{confirmState.summary}</strong></div>
+            <div className="recheck-note"><RefreshCw size={12} /> Live data will be rechecked before this action is sent.</div>
+            <div className="confirm-actions">
+              <button className="quiet-button" type="button" disabled={actionBusy} onClick={() => setConfirmState(null)}>Cancel</button>
+              <button className="primary-button" type="button" disabled={actionBusy} onClick={confirmAction}>
+                {actionBusy ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}
+                {actionBusy ? 'Rechecking…' : 'Confirm action'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
