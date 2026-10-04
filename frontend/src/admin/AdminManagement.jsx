@@ -14,24 +14,26 @@ export default function AdminManagement() {
   const [newRole, setNewRole] = useState('admin');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
 
-  const loadData = (page = auditPage) => {
+  const loadData = async (page = auditPage) => {
     setLoading(true);
     setError(null);
-    Promise.all([
-      getAdminUsers().catch((err) => ({ items: [], error: err })),
-      getAdminAuditLog({ page, page_size: AUDIT_PAGE_SIZE }).catch((err) => ({ items: [], total: 0, error: err })),
-    ])
-      .then(([adminsData, auditData]) => {
-        setAdmins(adminsData.items || []);
-        setAuditLogs(auditData.items || []);
-        setAuditTotal(auditData.total || 0);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to load admin management.');
-        setLoading(false);
-      });
+    try {
+      const [adminsData, auditData] = await Promise.all([
+        getAdminUsers(),
+        getAdminAuditLog({ page, page_size: AUDIT_PAGE_SIZE }),
+      ]);
+      setAdmins(adminsData.items || []);
+      setAuditLogs(auditData.items || []);
+      setAuditTotal(auditData.total || 0);
+    } catch (err) {
+      setError(err.message || 'Failed to load admin management.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -46,23 +48,55 @@ export default function AdminManagement() {
 
   const handleAddAdmin = async (e) => {
     e.preventDefault();
-    if (!newTelegramId.trim()) return;
+    setFeedback(null);
+    const rawId = newTelegramId.trim();
+    if (!/^\d+$/.test(rawId)) {
+      setFeedback({ type: 'error', message: 'Enter a valid numeric Telegram ID.' });
+      return;
+    }
+    const telegramId = Number(rawId);
+    if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+      setFeedback({ type: 'error', message: 'Telegram ID is outside the supported range.' });
+      return;
+    }
+
+    setSaving(true);
     try {
-      await createAdminUser({ telegram_id: Number(newTelegramId.trim()), role: newRole });
+      await createAdminUser({ telegram_id: telegramId, role: newRole });
       setNewTelegramId('');
-      loadData();
+      setFeedback({ type: 'success', message: `${newRole === 'super_admin' ? 'Super Admin' : 'Admin'} ${telegramId} was added successfully.` });
+      await loadData();
     } catch (err) {
-      alert(`Could not add admin: ${err.message}`);
+      const message = err.status === 409
+        ? 'That Telegram ID is already an admin.'
+        : err.status === 403
+          ? 'You do not have permission to manage admins.'
+          : `Could not add admin: ${err.message}`;
+      setFeedback({ type: 'error', message });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDeleteAdmin = async (telegramId) => {
-    if (!window.confirm(`Are you sure you want to remove admin ${telegramId}?`)) return;
+    const confirmed = window.confirm(`Remove admin ${telegramId}? This cannot be undone from this screen.`);
+    if (!confirmed) return;
+
+    setRemovingId(telegramId);
+    setFeedback(null);
     try {
       await deleteAdminUser(telegramId);
-      loadData();
+      setFeedback({ type: 'success', message: `Admin ${telegramId} was removed.` });
+      await loadData();
     } catch (err) {
-      alert(`Could not remove admin: ${err.message}`);
+      setFeedback({
+        type: 'error',
+        message: err.status === 409
+          ? 'You cannot remove your own admin account.'
+          : `Could not remove admin: ${err.message}`,
+      });
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -87,6 +121,12 @@ export default function AdminManagement() {
         </div>
       </div>
 
+      {feedback && (
+        <div className={feedback.type === 'success' ? 'form-feedback form-feedback-success' : 'form-feedback form-feedback-error'} role={feedback.type === 'success' ? 'status' : 'alert'}>
+          {feedback.message}
+        </div>
+      )}
+
       {loading ? (
         <div className="loading-state"><Loader2 className="spin" size={24} /><span>Loading admin settings...</span></div>
       ) : error ? (
@@ -105,9 +145,9 @@ export default function AdminManagement() {
               <option value="admin">Admin</option>
               <option value="super_admin">Super Admin</option>
             </select>
-            <button className="btn-primary" type="submit">
-              <UserPlus size={16} />
-              <span>Add Admin</span>
+            <button className="btn-primary" type="submit" disabled={saving}>
+              {saving ? <Loader2 className="spin" size={16} /> : <UserPlus size={16} />}
+              <span>{saving ? 'Adding…' : 'Add Admin'}</span>
             </button>
           </form>
 
@@ -132,8 +172,8 @@ export default function AdminManagement() {
                   <td>{adm.added_by ? `ID #${adm.added_by}` : 'Bootstrap'}</td>
                   <td>{adm.created_at ? new Date(adm.created_at).toLocaleDateString() : '—'}</td>
                   <td>
-                    <button className="delete-btn" type="button" onClick={() => handleDeleteAdmin(adm.telegram_id)}>
-                      <Trash2 size={14} />
+                    <button className="delete-btn" type="button" disabled={removingId === adm.telegram_id} onClick={() => handleDeleteAdmin(adm.telegram_id)} aria-label={`Remove admin ${adm.telegram_id}`}>
+                      {removingId === adm.telegram_id ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
                     </button>
                   </td>
                 </tr>

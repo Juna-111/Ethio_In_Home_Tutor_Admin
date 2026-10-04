@@ -981,3 +981,15 @@ button, a { font: inherit; }
   .modal-backdrop { padding: 10px; }
   .modal-card { padding: 14px; }
 }
+
+.form-feedback {
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.form-feedback-error { color: var(--danger-dark); background: var(--danger-bg); border-color: var(--danger-border); }
+.form-feedback-success { color: var(--green-shade); background: var(--green-light); border-color: var(--green-border); }
+.add-admin-form button:disabled, .delete-btn:disabled { opacity: .55; cursor: wait; }

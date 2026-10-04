@@ -4,9 +4,11 @@ import { getExportUrl, getAuthHeaders } from '../services/api';
 
 export default function ExportCenter() {
   const [downloading, setDownloading] = useState(null);
+  const [error, setError] = useState(null);
 
   const handleDownload = async (type) => {
     setDownloading(type);
+    setError(null);
     try {
       const url = getExportUrl(type);
       const headers = getAuthHeaders();
@@ -24,7 +26,7 @@ export default function ExportCenter() {
       a.remove();
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
-      alert(`Could not download CSV: ${err.message}`);
+      setError(err.message || 'Could not download CSV.');
     } finally {
       setDownloading(null);
     }
@@ -32,6 +34,7 @@ export default function ExportCenter() {
 
   return (
     <div className="export-center-view">
+      {error && <div className="inline-message inline-error" role="alert">{error}</div>}
       <div className="export-intro">
         <p className="eyebrow">DATA EXPORT PARITY</p>
         <h2>Download Production Records</h2>

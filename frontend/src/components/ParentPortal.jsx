@@ -21,6 +21,9 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cancellingRequestId, setCancellingRequestId] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [feedbackError, setFeedbackError] = useState(null);
+  const [contactError, setContactError] = useState(null);
 
   // Feedback Modal State
   const [feedbackModal, setFeedbackModal] = useState(null); // { requestId, tutorName }
@@ -54,12 +57,13 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
 
   const handleCancelRequest = async (req) => {
     if (!window.confirm(lang === 'am' ? 'ይህን ጥያቄ መሰረዝ ይፈልጋሉ?' : 'Cancel this tutoring request?')) return;
+    setActionError(null);
     setCancellingRequestId(req.id);
     try {
       await cancelParentRequest(req.id);
       await loadRequests();
     } catch (err) {
-      alert(`Could not cancel request: ${err.message}`);
+      setActionError(err.message || 'Could not cancel request.');
     } finally {
       setCancellingRequestId(null);
     }
@@ -73,6 +77,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
     setRating(5);
     setComment('');
     setFeedbackSuccess(false);
+    setFeedbackError(null);
   };
 
   const handleSendFeedback = async (e) => {
@@ -91,7 +96,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
         setFeedbackSuccess(false);
       }, 1500);
     } catch (err) {
-      alert(`Error submitting feedback: ${err.message}`);
+      setFeedbackError(err.message || 'Could not submit feedback.');
     } finally {
       setSubmittingFeedback(false);
     }
@@ -101,6 +106,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
     setContactModal({ requestId: req.id });
     setContactMsg('');
     setContactSuccess(false);
+    setContactError(null);
   };
 
   const handleSendContact = async (e) => {
@@ -118,7 +124,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
         setContactSuccess(false);
       }, 1500);
     } catch (err) {
-      alert(`Error sending message: ${err.message}`);
+      setContactError(err.message || 'Could not send your message.');
     } finally {
       setSubmittingContact(false);
     }
@@ -165,6 +171,8 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
           <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-pine' : ''}`} />
         </button>
       </div>
+
+      {actionError && <div className="p-3 rounded-2xl bg-coral/10 border border-coral/20 text-coral text-xs" role="alert">{actionError}</div>}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center p-8 bg-paper rounded-2xl border border-line text-muted">
@@ -350,6 +358,11 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
               </div>
             ) : (
               <form onSubmit={handleSendFeedback} className="space-y-4">
+                {feedbackError && (
+                  <div className="p-3 rounded-xl bg-coral/10 border border-coral/20 text-coral text-xs" role="alert">
+                    {feedbackError}
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-ink mb-2">Rating</label>
                   <div className="flex items-center space-x-2">
@@ -427,6 +440,11 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
               </div>
             ) : (
               <form onSubmit={handleSendContact} className="space-y-4">
+                {contactError && (
+                  <div className="p-3 rounded-xl bg-coral/10 border border-coral/20 text-coral text-xs" role="alert">
+                    {contactError}
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-ink mb-1">Message</label>
                   <textarea

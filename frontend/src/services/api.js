@@ -147,6 +147,7 @@ async function requestOnce(path, options = {}) {
     clearTimeout(timer);
 
     if (!response.ok) {
+      const requestId = response.headers.get("X-Request-ID") || "";
       const errorData = await response.json().catch(() => ({}));
       let errorMessage = "An unexpected error occurred while communicating with the server.";
       if (errorData.detail) {
@@ -160,8 +161,13 @@ async function requestOnce(path, options = {}) {
           errorMessage = JSON.stringify(errorData.detail);
         }
       }
-      const error = new Error(errorMessage);
+      const error = new Error(
+        response.status >= 500 && requestId
+          ? `${errorMessage} Reference: ${requestId}`
+          : errorMessage
+      );
       error.status = response.status;
+      error.requestId = requestId || null;
       throw error;
     }
 

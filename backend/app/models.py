@@ -102,7 +102,7 @@ class AuditLog(Base):
     actor_telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     target_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    target_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="miniapp", server_default="miniapp")
     created_at: Mapped[datetime] = mapped_column(

@@ -152,8 +152,8 @@ export default function ParentForm({ user, lang, onSuccess }) {
 
       const result = await submitParentRequest(payload);
       onSuccess(result, 'parent');
-    } catch {
-      setGlobalError(t.messages.requestFailed);
+    } catch (err) {
+      setGlobalError(err.message || t.messages.requestFailed);
     } finally {
       setLoading(false);
     }

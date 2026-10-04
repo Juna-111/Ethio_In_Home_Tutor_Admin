@@ -14,6 +14,7 @@ export default function OpsQueue({ onSelectTutor }) {
   const [cronRunning, setCronRunning] = useState(false);
   const [cronResult, setCronResult] = useState(null);
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
 
   const loadData = (page = incidentPage) => {
     setLoading(true);
@@ -48,13 +49,14 @@ export default function OpsQueue({ onSelectTutor }) {
   const incidentTotalPages = Math.max(1, Math.ceil(incidentTotal / INCIDENT_PAGE_SIZE));
 
   const handleResolveIncident = async (incidentId) => {
+    setActionError(null);
     try {
       await updateAdminIncident(incidentId, { status: 'resolved' });
       setIncidents((prev) =>
         prev.map((i) => (i.id === incidentId ? { ...i, status: 'resolved' } : i))
       );
     } catch (err) {
-      alert(`Could not resolve incident: ${err.message}`);
+      setActionError(err.message || 'Could not resolve incident.');
     }
   };
 
@@ -102,6 +104,8 @@ export default function OpsQueue({ onSelectTutor }) {
           <span>Run Scheduled Checks</span>
         </button>
       </div>
+
+      {actionError && <div className="inline-message inline-error" role="alert"><AlertCircle size={14} />{actionError}</div>}
 
       {cronResult && (
         <div className="cron-banner">

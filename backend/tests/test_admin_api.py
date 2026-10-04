@@ -719,6 +719,37 @@ async def test_extracted_bot_analytics_uses_the_test_database(db_session: AsyncS
     assert "Bole (1)" in card
 
 @pytest.mark.asyncio
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_add_large_telegram_id_and_audit_it(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """Telegram IDs must fit the audit target column when adding admins."""
+    from app.routes.admin import create_admin_user
+    from app.schemas import AdminUserCreate
+
+    actor_id = 900000001
+    telegram_id = 2147483647 + 123456
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", actor_id)
+
+    admin = AdminPrincipal(telegram_id=actor_id, role="super_admin")
+    response = await create_admin_user(
+        AdminUserCreate(telegram_id=telegram_id, role="admin"),
+        admin,
+        db_session,
+    )
+
+    assert response.telegram_id == telegram_id
+    audit = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "add_admin",
+            AuditLog.target_id == telegram_id,
+        )
+    )
+    assert audit is not None
+    assert audit.target_id == telegram_id
 async def test_parent_can_cancel_only_owned_unassigned_requests(
     async_client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):

@@ -98,11 +98,30 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setFileUploadStatus(null);
-      setUploadedFileUrl('');
+    if (!file) return;
+
+    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg'];
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowedExtensions.includes(extension)) {
+      setGlobalError(lang === 'am'
+        ? 'እባክዎ PDF፣ PNG ወይም JPG ፋይል ይምረጡ።'
+        : 'Please choose a PDF, PNG, or JPG file.');
+      e.target.value = '';
+      return;
     }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setGlobalError(lang === 'am'
+        ? 'የፋይሉ መጠን ከ10 MB መብለጥ አይችልም።'
+        : 'The file must be 10 MB or smaller.');
+      e.target.value = '';
+      return;
+    }
+
+    setGlobalError(null);
+    setSelectedFile(file);
+    setFileUploadStatus(null);
+    setUploadedFileUrl('');
   };
 
   const removeSelectedFile = () => {
@@ -182,10 +201,10 @@ export default function TutorForm({ user, lang, onSuccess }) {
           } else {
             finalDocUrl = docUrl;
           }
-        } catch {
+        } catch (err) {
           setFileUploadStatus('error');
           setLoading(false);
-          setGlobalError(t.messages.uploadFailed);
+          setGlobalError(err.message || t.messages.uploadFailed);
           return;
         }
       } else if (uploadedFileUrl) {
@@ -219,8 +238,8 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
       const result = await submitTutorRegistration(payload);
       onSuccess(result, 'tutor');
-    } catch {
-      setGlobalError(t.messages.registrationFailed);
+    } catch (err) {
+      setGlobalError(err.message || t.messages.registrationFailed);
     } finally {
       setLoading(false);
     }
