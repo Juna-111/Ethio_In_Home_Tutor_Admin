@@ -993,3 +993,173 @@ button, a { font: inherit; }
 .form-feedback-error { color: var(--danger-dark); background: var(--danger-bg); border-color: var(--danger-border); }
 .form-feedback-success { color: var(--green-shade); background: var(--green-light); border-color: var(--green-border); }
 .add-admin-form button:disabled, .delete-btn:disabled { opacity: .55; cursor: wait; }
+
+
+/* ========================================================
+   Admin UX refresh: Ethio In-Home Tutor brand + action clarity
+   ======================================================== */
+.admin-topbar {
+  background: linear-gradient(110deg, #12362f 0%, #183b34 62%, #214b40 100%);
+  border-bottom: 3px solid var(--citrus-gold);
+}
+.admin-brand { gap: 12px; }
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  transform: rotate(-6deg);
+  background: rgba(255,255,255,.08);
+}
+.brand-mark span {
+  width: auto;
+  height: auto;
+  background: transparent;
+  color: var(--citrus-gold);
+  font-size: 15px;
+  font-weight: 900;
+  transform: rotate(6deg);
+}
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.05;
+}
+.brand-copy strong {
+  color: #fff;
+  font-size: 14px;
+  letter-spacing: -.15px;
+}
+.brand-admin {
+  color: #b9cec5;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+}
+.admin-nav {
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  padding: 7px;
+  background: rgba(251,252,249,.94);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(24,59,52,.07);
+  backdrop-filter: blur(12px);
+}
+.admin-nav-item {
+  min-height: 38px;
+  border-radius: 8px;
+}
+.admin-nav-item.active {
+  box-shadow: 0 2px 7px rgba(24,59,52,.14);
+}
+.queue-item.clickable:hover {
+  transform: translateY(-1px);
+}
+.candidate-row {
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.candidate-row:hover {
+  border-color: var(--green-border);
+  box-shadow: 0 5px 16px rgba(24,59,52,.07);
+}
+.candidate-recommended {
+  border-color: var(--citrus-gold) !important;
+  box-shadow: 0 0 0 1px rgba(229,170,95,.16), 0 7px 18px rgba(24,59,52,.07);
+}
+.recommended-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--citrus-cream);
+  color: var(--citrus-text);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .35px;
+}
+.match-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.match-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--green-body);
+  font-size: 9px;
+}
+.match-reason strong { color: var(--pine); }
+.match-details {
+  margin-top: 7px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.match-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--green-head);
+}
+.confirm-backdrop { z-index: 1200; }
+.confirm-card {
+  width: min(100%, 460px);
+  padding: 24px;
+  background: var(--paper);
+  border: 1px solid var(--border-card);
+  border-radius: 14px;
+  box-shadow: 0 22px 55px rgba(18,38,33,.25);
+}
+.confirm-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+  border-radius: 11px;
+  background: var(--citrus-cream);
+  color: var(--citrus-text);
+}
+.confirm-card h3 { margin: 0; color: var(--ink); font-size: 19px; }
+.confirm-card p { margin: 8px 0 0; color: var(--heading-copy); font-size: 13px; line-height: 1.55; }
+.confirm-summary {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 12px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+.confirm-actions button { min-height: 38px; }
+.recheck-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 8px;
+}
+@media (max-width: 700px) {
+  .admin-nav { top: 4px; overflow-x: auto; justify-content: flex-start; }
+  .admin-nav-item { flex: 0 0 auto; }
+  .brand-copy strong { font-size: 12px; }
+  .confirm-backdrop { padding: 14px; }
+  .confirm-card { padding: 20px; }
+  .confirm-actions { flex-direction: column-reverse; }
+  .confirm-actions button { width: 100%; justify-content: center; }
+}
