@@ -39,6 +39,7 @@ from app.bot.bot_instance import (
     format_parent_card,
 )
 from app.bot.topics import get_parent_topic_id
+from app.bot.formatters import _format_schedule, _format_subjects, _replace_card_header
 from app.config import settings, UPLOAD_DIR
 from app.database import AsyncSessionLocal
 from app.models import AdminUser, AdminWizardState, Assignment, MatchInvite, ParentRequest, SystemSetting, Tutor
@@ -281,27 +282,6 @@ def _get_admin_name(update: Update) -> str:
     if user.username:
         return f"@{user.username}"
     return user.first_name or "Admin"
-
-
-def _format_subjects(subjects) -> str:
-    if isinstance(subjects, list):
-        return ", ".join(html.escape(str(s)) for s in subjects)
-    return html.escape(str(subjects or ""))
-
-
-def _format_schedule(schedule) -> str:
-    if isinstance(schedule, list):
-        return ", ".join(html.escape(str(s)) for s in schedule)
-    return html.escape(str(schedule or ""))
-
-
-def _replace_card_header(text: str, new_header_html: str) -> str:
-    """Non-destructively replaces the top line of a card with updated status while preserving content."""
-    lines = text.split("\n")
-    if not lines:
-        return new_header_html
-    remaining_lines = [html.escape(line) for line in lines[1:]]
-    return new_header_html + "\n" + "\n".join(remaining_lines)
 
 
 async def _handle_review_deeplink(update: Update, param: str) -> bool:
