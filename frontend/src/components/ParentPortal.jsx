@@ -14,12 +14,13 @@ import {
   RotateCw,
   X
 } from 'lucide-react';
-import { getParentMyRequests, submitParentFeedback, submitParentContactAdmin } from '../services/api';
+import { getParentMyRequests, submitParentFeedback, submitParentContactAdmin, cancelParentRequest } from '../services/api';
 
 export default function ParentPortal({ user, lang, onSelectTab }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState(null);
 
   // Feedback Modal State
   const [feedbackModal, setFeedbackModal] = useState(null); // { requestId, tutorName }
@@ -50,6 +51,19 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
   useEffect(() => {
     loadRequests();
   }, []);
+
+  const handleCancelRequest = async (req) => {
+    if (!window.confirm(lang === 'am' ? 'ይህን ጥያቄ መሰረዝ ይፈልጋሉ?' : 'Cancel this tutoring request?')) return;
+    setCancellingRequestId(req.id);
+    try {
+      await cancelParentRequest(req.id);
+      await loadRequests();
+    } catch (err) {
+      alert(`Could not cancel request: ${err.message}`);
+    } finally {
+      setCancellingRequestId(null);
+    }
+  };
 
   const handleOpenFeedback = (req) => {
     setFeedbackModal({
@@ -117,6 +131,9 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
     }
     if (s === 'closed') {
       return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/20 text-muted">Closed</span>;
+    }
+    if (s === 'cancelled') {
+      return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-coral/10 text-coral">Cancelled</span>;
     }
     if (s === 'reviewing') {
       return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-citrus/20 text-citrus">Reviewing</span>;
@@ -271,6 +288,19 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
 
               {/* Action Buttons */}
               <div className="flex items-center space-x-2 pt-1">
+                {(req.status === 'pending' || req.status === 'reviewing') && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancelRequest(req)}
+                    disabled={cancellingRequestId === req.id}
+                    className="py-2 px-3 rounded-xl font-semibold text-xs border border-coral/30 text-coral hover:bg-coral/10 transition disabled:opacity-50"
+                  >
+                    {cancellingRequestId === req.id
+                      ? (lang === 'am' ? 'በመሰረዝ ላይ...' : 'Cancelling...')
+                      : (lang === 'am' ? 'ጥያቄ ሰርዝ' : 'Cancel Request')}
+                  </button>
+                )}
+
                 {(req.status === 'matched' || req.status === 'closed') && (
                   <button
                     type="button"
