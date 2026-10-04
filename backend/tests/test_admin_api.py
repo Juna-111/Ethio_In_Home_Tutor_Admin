@@ -74,6 +74,57 @@ async def test_admin_dashboard_requires_telegram_auth(async_client: AsyncClient,
 
 
 @pytest.mark.asyncio
+async def test_admin_parent_crm_paginates_parent_groups_without_losing_history(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    bot_token = "123456:admin-test-token"
+    admin_id = 700014
+    monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_ID", None)
+    monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
+
+    first_parent_old = _parent_request("First Parent Old")
+    first_parent_new = _parent_request("First Parent New")
+    second_parent = _parent_request("Second Parent")
+    second_parent.phone_number = "+251922334455"
+
+    db_session.add_all([
+        AdminUser(telegram_id=admin_id, role="admin", is_active=True),
+        first_parent_old,
+        first_parent_new,
+        second_parent,
+    ])
+    await db_session.flush()
+
+    # Make the first parent group clearly newer than the second group.
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    first_parent_old.created_at = now - timedelta(days=2)
+    first_parent_new.created_at = now - timedelta(days=1)
+    second_parent.created_at = now - timedelta(days=3)
+    await db_session.commit()
+
+    response = await async_client.get(
+        "/api/v1/admin/parents",
+        params={"page": 1, "page_size": 1},
+        headers=_telegram_auth_header(admin_id, bot_token),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert len(data["items"]) == 1
+    assert data["items"][0]["phone_number"] == first_parent_new.phone_number
+    assert data["items"][0]["total_requests"] == 2
+    assert [item["parent_name"] for item in data["items"][0]["requests"]] == [
+        "First Parent New",
+        "First Parent Old",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_admin_dashboard_forbids_authenticated_non_admin(async_client: AsyncClient, monkeypatch):
     bot_token = "123456:admin-test-token"
     monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
