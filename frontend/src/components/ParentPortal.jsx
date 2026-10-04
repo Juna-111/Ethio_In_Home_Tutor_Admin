@@ -10,7 +10,6 @@ import {
   ChevronRight, 
   GraduationCap, 
   Plus, 
-  ShieldCheck, 
   UsersRound, 
   MessageSquare, 
   Send, 
@@ -282,7 +281,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
       <section className="rounded-3xl border border-line bg-paper p-4 shadow-sm">
         <div className="mb-3 flex items-start gap-2.5">
           <div className="rounded-xl bg-pine/10 p-2 text-pine"><UsersRound className="h-4 w-4" /></div>
-          <div><h3 className="text-sm font-black text-ink">{isAm ? 'ልጆች / ተማሪዎች' : 'Children & learners'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'በጥያቄዎችዎ ውስጥ የተገኙ ተማሪዎች።' : 'Learners represented by your tutoring requests.'}</p></div>
+          <div><h3 className="text-sm font-black text-ink">{isAm ? 'በጥያቄዎ ውስጥ ያሉ ተማሪዎች' : 'Learners in your requests'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'ከእርስዎ የትምህርት ጥያቄዎች የተገኘ አጭር ማጠቃለያ።' : 'A lightweight summary of learners represented by your tutoring requests.'}</p></div>
         </div>
         {learners.length ? (
           <div className="space-y-2">
@@ -346,7 +345,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
           <div><h3 className="text-sm font-black text-ink">{isAm ? 'ማሳወቂያዎች' : 'Notifications'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'በጥያቄዎችዎ ላይ የቅርብ ጊዜ እንቅስቃሴ።' : 'Recent activity from your tutoring requests.'}</p></div>
         </div>
         {notifications.length ? <div className="space-y-1">{notifications.map((item) => (
-          <button key={item.id} type="button" onClick={() => { setSelectedRequestId(item.requestId); setTimeout(() => document.getElementById('parent-request-list')?.scrollIntoView({ behavior: 'smooth' }), 0); }} className="flex w-full items-start gap-2.5 rounded-2xl p-2.5 text-left hover:bg-[#f1f3ef]">
+          <button key={item.id} type="button" onClick={() => { setTimeout(() => document.getElementById('parent-request-list')?.scrollIntoView({ behavior: 'smooth' }), 0); }} className="flex w-full items-start gap-2.5 rounded-2xl p-2.5 text-left hover:bg-[#f1f3ef]">
             <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-citrus/15 text-citrus"><Bell className="h-3.5 w-3.5" /></span>
             <span className="min-w-0 flex-1"><strong className="block text-[10px] font-black text-ink">{item.title}</strong><small className="mt-0.5 block text-[9px] text-muted">{item.body}</small><small className="mt-1 block text-[8px] font-bold text-muted">{item.date ? new Date(item.date).toLocaleDateString() : '—'}</small></span>
             <ChevronRight className="mt-2 h-3.5 w-3.5 shrink-0 text-muted" />
