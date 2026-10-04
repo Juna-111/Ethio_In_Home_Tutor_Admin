@@ -14,7 +14,8 @@ export default function OpsQueue({ onSelectTutor }) {
   const [cronRunning, setCronRunning] = useState(false);
   const [cronResult, setCronResult] = useState(null);
   const [error, setError] = useState(null);
-  const [actionError, setActionError] = useState(null);\n  const [resolvingId, setResolvingId] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [resolvingId, setResolvingId] = useState(null);
 
   const loadData = (page = incidentPage) => {
     setLoading(true);
