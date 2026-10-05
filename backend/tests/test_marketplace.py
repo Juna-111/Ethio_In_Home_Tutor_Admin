@@ -60,13 +60,15 @@ def test_registration_safety_contracts():
     assert register_tutor.__name__ == "register_tutor"
 
 
-def test_customer_register_uses_botfather_direct_link():
-    from app.bot.handlers import get_customer_register_keyboard
+def test_customer_register_uses_reply_keyboard_webapp(monkeypatch):
+    from app.bot.handlers import get_public_reply_keyboard
+    from app.config import settings
 
-    keyboard = get_customer_register_keyboard()
-    # The deployed Render environment supplies CUSTOMER_MINI_APP_URL; the helper
-    # must expose it as a real Telegram URL button rather than a reply-keyboard WebApp.
-    if keyboard is not None:
-        button = keyboard.inline_keyboard[0][0]
-        assert button.text == "🚀 Register"
-        assert button.url.startswith("https://t.me/")
+    monkeypatch.setattr(settings, "WEBAPP_URL", "https://customer.example.com")
+
+    keyboard = get_public_reply_keyboard()
+    register_button = keyboard.keyboard[0][0]
+
+    assert register_button.text == "🚀 Register"
+    assert register_button.web_app is not None
+    assert register_button.web_app.url == "https://customer.example.com"
