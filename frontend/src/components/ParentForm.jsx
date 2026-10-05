@@ -9,15 +9,19 @@ import {
   PREFERRED_EXPERIENCES
 } from '../constants/options';
 import { TRANSLATIONS } from '../constants/translations';
-import { submitParentRequest } from '../services/api';
+import { getParentChildren, submitParentRequest } from '../services/api';
 import { normalizeEthiopianPhone } from '../utils/phone';
 
 export default function ParentForm({ user, lang, onSuccess }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
   const choices = t.choices || {};
 
+  const [children, setChildren] = useState([]);
+  const [targetTutor, setTargetTutor] = useState(null);
   const [formData, setFormData] = useState({
     parent_name: user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : '',
+    child_id: '',
+    child_name: '',
     phone_number: '',
     student_level: '',
     subjects: [],
@@ -34,6 +38,14 @@ export default function ParentForm({ user, lang, onSuccess }) {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [globalError, setGlobalError] = useState(null);
+
+  useEffect(() => {
+    getParentChildren().then((result) => setChildren(result.children || [])).catch(() => {});
+    try {
+      const raw = sessionStorage.getItem('marketplace_target_tutor');
+      if (raw) setTargetTutor(JSON.parse(raw));
+    } catch (_) {}
+  }, []);
 
   useEffect(() => {
     if (user && !formData.parent_name) {
@@ -91,6 +103,9 @@ export default function ParentForm({ user, lang, onSuccess }) {
     } else if (!normalizedPhone) {
       newErrors.phone_number = t.validation.phoneInvalid;
     }
+    if (!formData.child_id && !formData.child_name.trim()) {
+      newErrors.child_name = t.validation.required;
+    }
     if (!formData.student_level) {
       newErrors.student_level = t.validation.required;
     }
@@ -136,6 +151,9 @@ export default function ParentForm({ user, lang, onSuccess }) {
     try {
       const payload = {
         telegram_user_id: user?.id || null,
+        child_id: formData.child_id ? parseInt(formData.child_id, 10) : null,
+        child_name: formData.child_id ? null : formData.child_name.trim(),
+        preferred_tutor_id: targetTutor?.id || null,
         parent_name: formData.parent_name.trim(),
         phone_number: normalizeEthiopianPhone(formData.phone_number) || formData.phone_number.trim(),
         student_level: formData.student_level,
@@ -151,6 +169,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
       };
 
       const result = await submitParentRequest(payload);
+      try { sessionStorage.removeItem('marketplace_target_tutor'); } catch (_) {}
       onSuccess(result, 'parent');
     } catch (err) {
       setGlobalError(err.message || t.messages.requestFailed);
@@ -227,6 +246,20 @@ export default function ParentForm({ user, lang, onSuccess }) {
       {/* Student Academic Details */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionStudent}</h2>
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1.5">Student / child <span className="text-red-500">*</span></label>
+          {children.length > 0 && (
+            <select value={formData.child_id} onChange={(e) => setFormData({ ...formData, child_id: e.target.value, child_name: '' })} className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-line bg-white focus:outline-none focus:border-pine">
+              <option value="">New child</option>
+              {children.map((child) => <option key={child.id} value={child.id}>{child.name}</option>)}
+            </select>
+          )}
+          {!formData.child_id && (
+            <input value={formData.child_name} onChange={(e) => setFormData({ ...formData, child_name: e.target.value })} placeholder="Child's name" className="mt-2 w-full text-xs px-3.5 py-2.5 rounded-xl border border-line focus:outline-none focus:border-pine" />
+          )}
+          {targetTutor && <p className="mt-2 rounded-xl bg-citrus/10 border border-citrus/30 p-2 text-[10px] font-bold text-ink">Direct request for {targetTutor.full_name}. The tutor must still accept before assignment.</p>}
+          {errors.child_name && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.child_name}</p>}
+        </div>
         
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1.5">
