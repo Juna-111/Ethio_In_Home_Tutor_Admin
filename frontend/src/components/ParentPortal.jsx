@@ -426,7 +426,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
           {requests.map((req) => (
             <div key={req.id} className="bg-paper p-4 rounded-2xl border border-line shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-ink">Request #{req.id}</span>
+                <span className="text-xs font-bold text-ink">{req.child_name ? `${req.child_name} · ` : ''}Request #{req.id}</span>
                 {getStatusBadge(req.status)}
               </div>
 
@@ -446,6 +446,8 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   <span>Submitted {req.created_at ? new Date(req.created_at).toLocaleDateString() : '—'}</span>
                 </div>
               </div>
+
+              {req.preferred_tutor_id && <div className="rounded-xl bg-citrus/10 border border-citrus/20 p-2 text-[10px] font-bold text-ink">Direct tutor requested for this child. Waiting for tutor/admin assignment.</div>}
 
               {req.applications?.length > 0 && (
                 <div className="bg-white border border-line rounded-xl p-3 space-y-2">
