@@ -6,11 +6,27 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
+class Child(Base):
+    __tablename__ = "children"
+    __table_args__ = (
+        UniqueConstraint("parent_telegram_user_id", "normalized_name", name="uq_child_parent_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parent_telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class ParentRequest(Base):
     __tablename__ = "parent_requests"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
     telegram_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    child_id: Mapped[Optional[int]] = mapped_column(ForeignKey("children.id"), nullable=True, index=True)
+    preferred_tutor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tutors.id"), nullable=True, index=True)
     parent_name: Mapped[str] = mapped_column(String(150), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(50), nullable=False)
     student_level: Mapped[str] = mapped_column(String(100), nullable=False)
