@@ -19,6 +19,14 @@ const FACTOR_LABELS = {
   experience: 'Experience',
 };
 
+function candidateNextStep(candidate) {
+  if (candidate.invite_status === 'yes') return 'Ready to assign';
+  if (candidate.invite_status === 'sent') return 'Waiting for tutor';
+  if (candidate.invite_status === 'no') return 'Tutor declined';
+  if (candidate.telegram_available) return 'Invite first';
+  return 'No Telegram action';
+}
+
 function money(value) {
   return `${Number(value || 0).toLocaleString()} ETB`;
 }
@@ -254,13 +262,13 @@ export default function RequestWorkbench({ initialRequestId }) {
                 type="button"
                 disabled={actionBusy || selectedTutorIds.length === 0 || request.status !== 'pending'}
                 onClick={() => runAction(() => pingAdminCandidates(request.id, selectedTutorIds))}
-              ><Send size={15} /> Ping selected ({selectedTutorIds.length})</button>
+              ><Send size={15} /> Invite selected ({selectedTutorIds.length})</button>
             </div>
             {candidates.length === 0 ? <div className="empty-panel">No verified tutors currently match this request.</div> : (
               <div className="candidate-list">
                 {candidates.map((candidate, candidateIndex) => {
                   const canPing = candidate.telegram_available && !['sent', 'yes', 'no'].includes(candidate.invite_status);
-                  const canAssign = request.status === 'pending';
+                  const canAssign = request.status === 'pending' && candidate.invite_status === 'yes';
                   return (
                     <article className={`candidate-row ${candidateIndex === 0 ? 'candidate-recommended' : ''}`} key={candidate.tutor_id}>
                       <div className="candidate-select">
