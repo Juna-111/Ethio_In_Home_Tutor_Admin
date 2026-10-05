@@ -341,7 +341,7 @@ export default function RequestWorkbench({ initialRequestId }) {
                           'assign',
                           candidate.tutor_id
                         )}>
-                          <UserRoundCheck size={15} /> Assign
+                          <UserRoundCheck size={15} /> {canAssign ? 'Assign' : 'Assign locked'}
                         </button>
                       </div>
                     </article>
