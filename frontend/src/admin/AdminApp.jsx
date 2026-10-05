@@ -61,6 +61,9 @@ export default function AdminApp() {
 
   const navigate = (section, id) => {
     setActiveSection(section);
+    if ((section === 'requests' || section === 'tutors') && id) {
+      setStartTarget({ type: section === 'requests' ? 'request' : 'tutor', id });
+    }
     if (section === 'tutors' && id) setSelectedTutorId(id);
   };
 
@@ -75,7 +78,7 @@ export default function AdminApp() {
       </header>
       <main className="admin-main">
         {view.status === 'unauthorized' ? (
-          <section className="access-state" role="status"><div className="access-icon"><ShieldCheck size={23} /></div><p className="eyebrow">RESTRICTED AREA</p><h2>Admin access required</h2><p>Open this app from Telegram with an active administrator account.</p></section>
+          <section className="access-state" role="status"><div className="access-icon"><ShieldCheck size={23} /></div><p className="eyebrow">RESTRICTED AREA</p><h2>Admin access required</h2><p>Open this app from Telegram with an active administrator account.</p><div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}><a href="/index.html?tab=tutor_portal" className="primary-button" style={{ textDecoration: 'none' }}>Go to Tutor Portal (My Teaching)</a><a href="/index.html?tab=parent_portal" className="quiet-button" style={{ textDecoration: 'none' }}>Go to Parent Portal (My Requests)</a></div></section>
         ) : view.status === 'error' ? (
           <section className="access-state error-state" role="alert"><div className="access-icon"><AlertTriangle size={23} /></div><p className="eyebrow">CONNECTION ISSUE</p><h2>Dashboard unavailable</h2><p>{view.message}</p><button className="retry-button" type="button" onClick={() => setRefreshKey((k) => k + 1)}>Try again</button></section>
         ) : (
