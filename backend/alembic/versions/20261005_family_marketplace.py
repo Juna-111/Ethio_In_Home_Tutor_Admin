@@ -49,4 +49,3 @@ def downgrade() -> None:
     op.drop_index("ix_children_normalized_name", table_name="children")
     op.drop_index("ix_children_parent_telegram_user_id", table_name="children")
     op.drop_table("children")
-}
