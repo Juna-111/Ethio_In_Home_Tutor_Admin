@@ -57,7 +57,9 @@ export default function AdminApp() {
     return undefined;
   }, [activeSection, view.status]);
 
-  const sectionNames = { requests: 'Request', tutors: 'Tutor', crm: 'Families', pipeline: 'Assignments', ops: 'Incidents', analytics: 'Insights', coverage: 'Marketplace health', export: 'Exports', admins: 'Admin access' };\n\n  const navigate = (section, id) => {
+  const sectionNames = { requests: 'Request', tutors: 'Tutor', crm: 'Families', pipeline: 'Assignments', ops: 'Incidents', analytics: 'Insights', coverage: 'Marketplace health', export: 'Exports', admins: 'Admin access' };
+
+  const navigate = (section, id) => {
     setActiveSection(section);
     if (section === 'tutors' && id) setSelectedTutorId(id);
   };
