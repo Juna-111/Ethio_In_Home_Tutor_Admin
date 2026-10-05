@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, GraduationCap, Search, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, GraduationCap, RefreshCw, Search, Sparkles, X } from 'lucide-react';
 import { getAdminControlCenter, getAdminDashboard, getAdminRequest, getAdminTutors } from '../services/api';
 import './admin-control.css';
 
@@ -73,7 +73,7 @@ export default function AdminControlCenter({ onNavigate }) {
           <h1>{urgent.length ? `${urgent.length} thing${urgent.length === 1 ? '' : 's'} need your attention.` : 'Everything is under control.'}</h1>
           <p>{urgent.length ? 'The platform has already done the routine work. Here is what still needs a human decision.' : 'No urgent decision is waiting. The platform is monitoring matching, verification and assignments.'}</p>
         </div>
-        <div className="control-mark"><span className="status-dot" /> LIVE</div>
+        <div className="control-heading-actions"><button type="button" className="control-refresh" onClick={load} aria-label="Refresh operations"><RefreshCw size={14} /></button><div className="control-mark"><span className="status-dot" /> LIVE</div></div>
       </header>
 
       <div className="control-search">
@@ -135,7 +135,7 @@ export default function AdminControlCenter({ onNavigate }) {
 
       <footer className="control-footer">
         <div><Sparkles size={14} /><span>{data.next_move}</span></div>
-        <span className="control-health">{data.active_assignments || 0} active tutoring · {data.pending_requests || 0} waiting</span>
+        <span className="control-health">{dashboard?.requests_today || 0} today · {dashboard?.avg_days_to_assign ?? 0}d avg assignment · {dashboard?.tutor_verification_funnel_pct ?? 0}% tutor funnel</span>
       </footer>
     </section>
   );
