@@ -66,8 +66,23 @@ def normalize_ethiopian_phone(value: str) -> str:
 # Parent Request Schemas
 # ==========================================
 
+class ChildCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+
+
+class ChildResponse(BaseModel):
+    id: int
+    name: str
+    is_active: bool = True
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ParentRequestCreate(BaseModel):
     telegram_user_id: Optional[int] = Field(None, description="Telegram User ID if submitted via Telegram")
+    child_id: Optional[int] = Field(None, gt=0)
+    child_name: Optional[str] = Field(None, min_length=1, max_length=150)
+    preferred_tutor_id: Optional[int] = Field(None, gt=0)
     parent_name: str = Field(..., min_length=2, max_length=150, description="Parent's full name")
     phone_number: str = Field(..., min_length=7, max_length=50, description="Primary contact phone number")
     student_level: str = Field(..., description="Student educational level")
@@ -87,7 +102,23 @@ class ParentRequestCreate(BaseModel):
         return normalize_ethiopian_phone(value)
 
 
-class ParentRequestResponse(ParentRequestCreate):
+class ParentRequestResponse(BaseModel):
+    id: int
+    child_id: Optional[int] = None
+    preferred_tutor_id: Optional[int] = None
+    telegram_user_id: Optional[int] = None
+    parent_name: str
+    phone_number: str
+    student_level: str
+    subjects: List[str]
+    preferred_gender: str
+    preferred_experience: str
+    location_subcity: str
+    location_landmark: Optional[str] = None
+    schedule_days: Any
+    time_slot: str
+    session_duration: str
+    budget_etb: float
     id: int
     status: str
     telegram_topic_id: Optional[int] = None
@@ -607,6 +638,9 @@ class TutorMyAssignmentsResponse(BaseModel):
 
 class ParentRequestItem(BaseModel):
     id: int
+    child_id: Optional[int] = None
+    child_name: Optional[str] = None
+    preferred_tutor_id: Optional[int] = None
     student_level: str
     subjects: List[str]
     location_subcity: str
@@ -641,6 +675,10 @@ class ParentApplicationItem(BaseModel):
 
 class ParentMyRequestsResponse(BaseModel):
     requests: List[ParentRequestItem]
+
+
+class ParentChildrenResponse(BaseModel):
+    children: List[ChildResponse]
 
 
 class ParentFeedbackCreate(BaseModel):
