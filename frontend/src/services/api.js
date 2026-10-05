@@ -198,6 +198,17 @@ async function requestOnce(path, options = {}) {
   }
 }
 
+export async function getParentChildren() {
+  return request("/api/v1/parents/me/children");
+}
+
+export async function createParentChild(name) {
+  return request("/api/v1/parents/me/children", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function submitParentRequest(data) {
   return request("/api/v1/parents/request", {
     method: "POST",
