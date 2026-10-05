@@ -1349,7 +1349,7 @@ async def handle_support_contact(update: Update, context: ContextTypes.DEFAULT_T
         contact_text = (
             "📞 Support & Coordination\n\n"
             "Need help finding a mentor or have questions about our tutoring programs?\n\n"
-            "💬 Telegram: @Ethio In-Home TutorSupport\n"
+            "💬 Telegram: Message us here for support\n"
             "📱 Phone: +251 91 100 2233\n"
             "🕒 Hours: Mon – Sat, 8:30 AM – 6:30 PM (EAT)\n"
             "📍 Addis Ababa, Ethiopia"
@@ -2280,4 +2280,3 @@ def register_handlers(application: Application):
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     application.add_error_handler(error_handler)
-

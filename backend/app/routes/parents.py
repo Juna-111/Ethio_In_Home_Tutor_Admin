@@ -527,7 +527,7 @@ async def discover_tutors(
         if available_day:
             requested_days = _schedule_days([available_day])
             tutor_days = _schedule_days(tutor.availability_schedule)
-            if requested_days and tutor_days and not requested_days.intersection(tutor_days):
+            if requested_days and (not tutor_days or not requested_days.intersection(tutor_days)):
                 continue
 
         verification = verifications.get(tutor.id)
@@ -643,7 +643,7 @@ async def apply_to_tutor(
 
     requested_days = _schedule_days(request.schedule_days)
     tutor_days = _schedule_days(tutor.availability_schedule)
-    if requested_days and tutor_days and not requested_days.intersection(tutor_days):
+    if requested_days and (not tutor_days or not requested_days.intersection(tutor_days)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor has no availability overlap with the request.")
 
     existing = await db.scalar(

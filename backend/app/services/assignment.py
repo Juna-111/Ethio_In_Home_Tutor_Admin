@@ -4,8 +4,6 @@ The Admin Mini App and Telegram Admin Group must use the same business rules.
 Keeping the checks here prevents one surface from silently bypassing another.
 """
 
-from typing import Optional
-
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,9 +85,14 @@ async def assign_tutor_to_request(
         if preferred_gender != (tutor.gender or "").strip().lower():
             raise AssignmentWorkflowError("Tutor no longer matches the gender preference.")
 
+    budget = float(parent.budget_etb or 0)
+    fee = float(tutor.expected_fee_etb or 0)
+    if budget > 0 and fee > budget * 1.35:
+        raise AssignmentWorkflowError("Tutor is outside the request's flexible budget range.")
+
     requested_days = _schedule_days(parent.schedule_days)
     available_days = _schedule_days(tutor.availability_schedule)
-    if requested_days and available_days and not requested_days.intersection(available_days):
+    if requested_days and (not available_days or not requested_days.intersection(available_days)):
         raise AssignmentWorkflowError("Tutor availability no longer overlaps the requested days.")
 
     # Atomic request transition prevents two admins from creating competing assignments.

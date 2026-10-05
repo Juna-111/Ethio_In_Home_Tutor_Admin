@@ -14,7 +14,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
   const isAm = lang === 'am';
   const [tutors, setTutors] = useState([]);
   const [requestId, setRequestId] = useState(null);
-  const [filters, setFilters] = useState({ subject: '', grade: '', subcity: '', max_fee: '', min_rating: '', available_day: '', verified_only: 'true' });
+  const [filters, setFilters] = useState({ subject: '', grade: '', subcity: '', max_fee: '', min_rating: '', available_day: '', verified_only: 'true', favorite_only: 'false' });
   const [expandedId, setExpandedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [favoriteBusy, setFavoriteBusy] = useState(null);
@@ -37,7 +37,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
     }
   };
 
-  useEffect(() => { load(); }, [filters.subject, filters.grade, filters.subcity, filters.max_fee, filters.min_rating, filters.available_day, filters.verified_only]);
+  useEffect(() => { load(); }, [filters.subject, filters.grade, filters.subcity, filters.max_fee, filters.min_rating, filters.available_day, filters.verified_only, filters.favorite_only]);
 
   const updateFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
 
@@ -144,6 +144,15 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
             <option value="">{isAm ? 'ማንኛውም ቀን' : 'Any day'}</option>
             {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
           </select>
+          <button
+            type="button"
+            onClick={() => updateFilter('favorite_only', filters.favorite_only === 'true' ? 'false' : 'true')}
+            className={`rounded-xl border px-3 py-2.5 text-xs font-black transition ${filters.favorite_only === 'true' ? 'border-citrus/50 bg-citrus/15 text-ink' : 'border-line bg-[#f1f3ef] text-muted'}`}
+            aria-pressed={filters.favorite_only === 'true'}
+          >
+            <BookmarkCheck className="mr-1 inline h-3.5 w-3.5" />
+            {isAm ? 'የተወደዱ' : 'Favorites only'}
+          </button>
         </div>
       </section>
 

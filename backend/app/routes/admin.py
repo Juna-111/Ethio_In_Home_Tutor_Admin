@@ -806,7 +806,7 @@ async def nudge_idle_admin_tutor(
     try:
         await bot_instance.bot_app.bot.send_message(
             chat_id=tutor.telegram_user_id,
-            text=f"Hello {html.escape(tutor.full_name)}, we have new tutoring opportunities. Update your availability with MentorLink to be considered for a match.",
+            text=f"Hello {html.escape(tutor.full_name)}, we have new tutoring opportunities. Update your availability with Ethio In-Home Tutor to be considered for a match.",
             parse_mode=ParseMode.HTML,
         )
     except Exception as exc:
