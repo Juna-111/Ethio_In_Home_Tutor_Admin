@@ -323,6 +323,16 @@ export default function RequestWorkbench({ initialRequestId }) {
                         </span>
                         {!candidate.telegram_available && <span className="muted-caption">No Telegram</span>}
                         {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status === 'no' ? 'Unavailable' : candidate.invite_status}</span>}
+                        {candidate.telegram_available && (
+                          <button className="secondary-button" type="button" disabled={actionBusy || request.status !== 'pending' || ['sent', 'yes', 'no'].includes(candidate.invite_status)} onClick={() => requestConfirmation(
+                            () => pingAdminCandidates(request.id, [candidate.tutor_id]),
+                            'Invite this tutor?',
+                            'Send an availability request. Assignment stays locked until the tutor accepts.',
+                            candidate.full_name
+                          )}>
+                            <Send size={15} /> Invite
+                          </button>
+                        )}
                         <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => requestConfirmation(
                           () => assignAdminTutor(request.id, candidate.tutor_id),
                           'Assign this tutor?',
