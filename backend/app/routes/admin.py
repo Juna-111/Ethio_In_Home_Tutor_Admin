@@ -67,6 +67,7 @@ from app.schemas import (
     ParentRequestResponse,
 )
 from app.services.audit import log_action
+from app.services.assignment import AssignmentWorkflowError, assign_tutor_to_request
 from app.services.export_service import generate_assignments_csv, generate_parents_csv, generate_tutors_csv
 from app.services.matcher import get_tiered_matches
 from app.services.scheduler import claim_event, run_all_scheduled_tasks
@@ -625,62 +626,25 @@ async def assign_admin_request(
     admin: AdminPrincipal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminActionResponse:
-    tutor_id = payload.tutor_id
-
-    parent = await db.get(ParentRequest, request_id)
-    tutor = await db.get(Tutor, tutor_id)
-    if not parent or not tutor:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request or tutor not found.")
-    if tutor.status != "verified" or tutor.is_paused:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only verified, active tutors can be assigned.")
-
-    # Record or confirm MatchInvite so relationship is tracked
-    invite = await db.scalar(select(MatchInvite).where(
-        MatchInvite.request_id == request_id,
-        MatchInvite.tutor_id == tutor_id,
-    ))
-    now_utc = datetime.now(timezone.utc)
-    if not invite:
-        invite = MatchInvite(
+    try:
+        parent, tutor, assignment = await assign_tutor_to_request(
+            db,
             request_id=request_id,
-            tutor_id=tutor_id,
-            status="yes",
-            sent_at=now_utc,
-            responded_at=now_utc,
+            tutor_id=payload.tutor_id,
+            assigned_by=str(admin.telegram_id),
+            require_accepted_invite=True,
+            commit=False,
         )
-        db.add(invite)
-    elif invite.status != "yes":
-        invite.status = "yes"
-        invite.responded_at = now_utc
-
-    result = await db.execute(
-        update(ParentRequest)
-        .where(ParentRequest.id == request_id, ParentRequest.status == "pending")
-        .values(status="matched")
-    )
-    if result.rowcount != 1:
-        await db.rollback()
-        # Rollback expires ORM instances in the caller's session. Refresh the
-        # objects before raising so API tests and subsequent request handling
-        # never trigger implicit async IO when reading their identifiers.
+        log_action(db, admin.telegram_id, "assign_tutor", "parent_request", request_id, reason=f"Tutor ID {payload.tutor_id}")
+        await db.commit()
         await db.refresh(parent)
         await db.refresh(tutor)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request is no longer pending.")
-
-    assignment = Assignment(request_id=request_id, tutor_id=tutor_id, assigned_by=str(admin.telegram_id))
-    db.add(assignment)
-    log_action(db, admin.telegram_id, "assign_tutor", "parent_request", request_id, reason=f"Tutor ID {tutor_id}")
-    try:
-        await db.commit()
+        await db.refresh(assignment)
+    except AssignmentWorkflowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already has an assignment.")
-
-    # The bulk UPDATE above can expire ORM attributes even with expire_on_commit=False.
-    # Refresh before building Telegram cards so async SQLAlchemy never attempts implicit IO.
-    await db.refresh(parent)
-    await db.refresh(tutor)
-    await db.refresh(assignment)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request was assigned by another admin.")
 
     if bot_instance.bot_app:
         bot = bot_instance.bot_app.bot
@@ -695,10 +659,7 @@ async def assign_admin_request(
                     reply_markup=parent_keyboard,
                 )
             except Exception as exc:
-                logger.warning(
-                    "Failed to DM parent %s on assignment for request #%s (role=parent): %s",
-                    parent.telegram_user_id, request_id, exc,
-                )
+                logger.warning("Failed to DM parent %s on assignment for request #%s: %s", parent.telegram_user_id, request_id, exc)
         tutor_card = bot_instance.format_assignment_card_tutor(parent, tutor, assignment.id)
         tutor_keyboard = bot_instance.build_tutor_assignment_keyboard(request_id)
         if tutor.telegram_user_id:
@@ -710,12 +671,7 @@ async def assign_admin_request(
                     reply_markup=tutor_keyboard,
                 )
             except Exception as exc:
-                logger.warning(
-                    "Failed to DM tutor %s on assignment for request #%s (role=tutor): %s",
-                    tutor.telegram_user_id, request_id, exc,
-                )
-
-        # Sync assignment to Admin Group forum topic and close topic if open
+                logger.warning("Failed to DM tutor %s on assignment for request #%s: %s", tutor.telegram_user_id, request_id, exc)
         if parent.telegram_topic_id and settings.ADMIN_GROUP_ID:
             try:
                 await bot.send_message(
@@ -728,17 +684,9 @@ async def assign_admin_request(
                 logger.debug("Failed to post assignment confirmation in forum topic: %s", exc)
             if hasattr(bot, "close_forum_topic"):
                 try:
-                    await bot.close_forum_topic(
-                        chat_id=settings.ADMIN_GROUP_ID,
-                        message_thread_id=parent.telegram_topic_id,
-                    )
+                    await bot.close_forum_topic(chat_id=settings.ADMIN_GROUP_ID, message_thread_id=parent.telegram_topic_id)
                 except Exception as exc:
                     logger.debug("Failed to close forum topic for request #%s: %s", request_id, exc)
-    else:
-        logger.warning(
-            "Bot app not running; assignment notifications skipped for request #%s (tutor #%s).",
-            request_id, tutor_id,
-        )
     return AdminActionResponse(ok=True, message="Tutor assigned successfully.")
 
 

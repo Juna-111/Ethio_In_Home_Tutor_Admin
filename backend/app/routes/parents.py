@@ -1,7 +1,8 @@
 import html
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,7 @@ from app.auth import get_optional_telegram_user
 from app.bot import bot_instance
 from app.bot.bot_instance import send_parent_request_card
 from app.config import settings
+from app.services.matcher import _are_grades_compatible, _normalize_list, _schedule_days
 from app.database import get_db
 from app.models import Assignment, MarketplaceFavorite, MatchInvite, ParentRequest, SessionFeedback, Tutor, TutorVerification
 from app.schemas import (
@@ -41,6 +43,7 @@ async def create_parent_request(
     payload: ParentRequestCreate,
     db: AsyncSession = Depends(get_db),
     verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+    response: Response = None,
 ):
     """
     Validates and stores a parent intake request in PostgreSQL.
@@ -49,6 +52,42 @@ async def create_parent_request(
     """
     # Never trust telegram_user_id from the JSON body; it is client-controlled.
     effective_tg_id = verified_user_id
+
+    # Protect against double-taps, retries, and browser/network replay without
+    # preventing a parent from creating genuinely different requests later.
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+    recent = (
+        await db.execute(
+            select(ParentRequest)
+            .where(ParentRequest.created_at >= cutoff)
+            .order_by(ParentRequest.created_at.desc())
+            .limit(25)
+        )
+    ).scalars().all()
+    normalized_phone = payload.phone_number.strip()
+    for existing in recent:
+        owner_match = (
+            effective_tg_id is not None
+            and existing.telegram_user_id == effective_tg_id
+        ) or (
+            effective_tg_id is None
+            and existing.telegram_user_id is None
+            and existing.phone_number == normalized_phone
+        )
+        same_request = (
+            existing.phone_number == normalized_phone
+            and existing.student_level == payload.student_level
+            and existing.subjects == payload.subjects
+            and existing.location_subcity == payload.location_subcity
+            and existing.schedule_days == payload.schedule_days
+            and existing.time_slot == payload.time_slot
+            and existing.session_duration == payload.session_duration
+            and float(existing.budget_etb or 0) == float(payload.budget_etb or 0)
+        )
+        if owner_match and same_request:
+            if response is not None:
+                response.status_code = status.HTTP_200_OK
+            return existing
 
     parent_req = ParentRequest(
         telegram_user_id=effective_tg_id,
@@ -147,6 +186,7 @@ async def get_parent_requests(
     assignments_map = {}
     tutors_map = {}
     feedbacks_map = {}
+    applications_map = {}
 
     if req_ids:
         asmts_res = await db.execute(select(Assignment).where(Assignment.request_id.in_(req_ids)))
@@ -157,6 +197,17 @@ async def get_parent_requests(
         if tutor_ids:
             tutors_res = await db.execute(select(Tutor).where(Tutor.id.in_(tutor_ids)))
             tutors_map = {t.id: t for t in tutors_res.scalars().all()}
+
+        invite_res = await db.execute(
+            select(MatchInvite).where(MatchInvite.request_id.in_(req_ids)).order_by(MatchInvite.sent_at.desc())
+        )
+        invites = invite_res.scalars().all()
+        invite_tutor_ids = [i.tutor_id for i in invites]
+        if invite_tutor_ids:
+            invite_tutors_res = await db.execute(select(Tutor).where(Tutor.id.in_(invite_tutor_ids)))
+            tutors_map.update({t.id: t for t in invite_tutors_res.scalars().all()})
+        for invite in invites:
+            applications_map.setdefault(invite.request_id, []).append(invite)
 
         asmt_ids = [a.id for a in asmts]
         if asmt_ids:
@@ -193,6 +244,17 @@ async def get_parent_requests(
                 sessions_completed=1 if fb else 0,
                 has_feedback=fb is not None,
                 feedback_rating=fb.rating if fb else None,
+                applications=[
+                    {
+                        "invite_id": invite.id,
+                        "tutor_id": invite.tutor_id,
+                        "tutor_name": tutors_map.get(invite.tutor_id).full_name if tutors_map.get(invite.tutor_id) else None,
+                        "status": invite.status,
+                        "sent_at": invite.sent_at,
+                        "responded_at": invite.responded_at,
+                    }
+                    for invite in applications_map.get(r.id, [])
+                ],
             )
         )
 
@@ -434,8 +496,6 @@ async def discover_tutors(
         )
 
     query = select(Tutor).where(Tutor.status.in_({"verified", "probation"}), Tutor.is_paused.is_(False))
-    if subcity:
-        query = query.where(Tutor.base_subcity == subcity)
     if max_fee is not None:
         query = query.where(Tutor.expected_fee_etb <= max_fee)
 
@@ -456,10 +516,19 @@ async def discover_tutors(
         grades = {str(v).strip().lower() for v in _json_list(tutor.grades_qualified)}
         if subject and subject.strip().lower() not in subjects:
             continue
-        if grade and grade.strip().lower() not in grades:
+        if grade and not _are_grades_compatible(grade.strip().lower(), list(grades)):
             continue
-        if available_day and available_day.strip().lower() not in _availability_text(tutor.availability_schedule):
-            continue
+        if subcity:
+            requested_area = subcity.strip().lower()
+            if requested_area != str(tutor.base_subcity or "").strip().lower() and requested_area not in {
+                str(v).strip().lower() for v in _json_list(tutor.coverage_areas)
+            }:
+                continue
+        if available_day:
+            requested_days = _schedule_days([available_day])
+            tutor_days = _schedule_days(tutor.availability_schedule)
+            if requested_days and tutor_days and not requested_days.intersection(tutor_days):
+                continue
 
         verification = verifications.get(tutor.id)
         is_verified = bool(verification and verification.id_verified and verification.entrance_result_verified and verification.phone_confirmed and verification.claims_plausible)
@@ -553,6 +622,30 @@ async def apply_to_tutor(
     if request.preferred_gender not in {"No preference", "", None} and request.preferred_gender.lower() != str(tutor.gender).lower():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor does not match the gender preference on your request.")
 
+    requested_subjects = set(_normalize_list(request.subjects))
+    tutor_subjects = set(_normalize_list(tutor.subjects_qualified))
+    if not requested_subjects.intersection(tutor_subjects):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor does not teach a requested subject.")
+
+    if not _are_grades_compatible(request.student_level.strip().lower(), _normalize_list(tutor.grades_qualified)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor does not match the requested grade level.")
+
+    requested_area = request.location_subcity.strip().lower()
+    if requested_area != str(tutor.base_subcity or "").strip().lower() and requested_area not in {
+        str(v).strip().lower() for v in _json_list(tutor.coverage_areas)
+    }:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor does not cover the requested area.")
+
+    budget = float(request.budget_etb or 0)
+    fee = float(tutor.expected_fee_etb or 0)
+    if budget > 0 and fee > budget * 1.35:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor is outside the request's flexible budget range.")
+
+    requested_days = _schedule_days(request.schedule_days)
+    tutor_days = _schedule_days(tutor.availability_schedule)
+    if requested_days and tutor_days and not requested_days.intersection(tutor_days):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor has no availability overlap with the request.")
+
     existing = await db.scalar(
         select(MatchInvite).where(MatchInvite.request_id == request.id, MatchInvite.tutor_id == tutor.id)
     )
@@ -563,6 +656,27 @@ async def apply_to_tutor(
     db.add(invite)
     await db.commit()
     await db.refresh(invite)
+
+    # Notify the tutor only after the invite is durable, eliminating the
+    # Telegram-before-DB race that could produce a false "opportunity not found".
+    if bot_instance.bot_app and tutor.telegram_user_id:
+        try:
+            await bot_instance.bot_app.bot.send_message(
+                chat_id=tutor.telegram_user_id,
+                text=(
+                    "📚 <b>New Tutor Application</b>\n\n"
+                    f"A parent requested a tutor for <b>{html.escape(request.student_level)}</b> "
+                    f"in <b>{html.escape(request.location_subcity)}</b>.\n"
+                    f"<b>Subjects:</b> {html.escape(', '.join(str(v) for v in _json_list(request.subjects)))}\n"
+                    f"<b>Schedule:</b> {html.escape(_availability_text(request.schedule_days))}\n"
+                    f"<b>Budget:</b> {request.budget_etb:,.0f} ETB/hr\n\n"
+                    "Open your Tutor Portal to accept or decline this opportunity."
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            logger.warning("Marketplace application notification failed for tutor #%s: %s", tutor.id, exc)
+
     return MarketplaceApplicationResponse(ok=True, invite_id=invite.id, request_id=request.id, tutor_id=tutor.id, status=invite.status)
 
 

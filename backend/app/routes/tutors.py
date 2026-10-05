@@ -22,6 +22,7 @@ from app.schemas import (
     TutorCreate,
     TutorMyAssignmentsResponse,
     TutorResponse,
+    normalize_ethiopian_phone,
     TutorProfilePortalResponse,
     TutorVerificationStatus,
     TutorOpportunityItem,
@@ -170,11 +171,23 @@ async def register_tutor(
                 detail=f"A tutor with Telegram user ID {effective_tg_id} is already registered."
             )
 
+    normalized_phone = normalize_ethiopian_phone(payload.phone_number)
+    phone_query = select(Tutor).where(
+        Tutor.phone_number == normalized_phone,
+        Tutor.status.in_({"pending", "verified", "probation"}),
+    )
+    phone_existing = await db.scalar(phone_query)
+    if phone_existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A tutor with this phone number is already registered. If this is your profile, contact the administrative team.",
+        )
+
     tutor = Tutor(
         telegram_user_id=effective_tg_id,
         full_name=payload.full_name,
         gender=payload.gender,
-        phone_number=payload.phone_number,
+        phone_number=normalized_phone,
         university=payload.university,
         department=payload.department,
         education_year=payload.education_year,
@@ -383,7 +396,7 @@ async def get_tutor_opportunities(
         .where(
             MatchInvite.tutor_id == tutor.id,
             MatchInvite.status.in_(["sent", "yes", "no"]),
-            ParentRequest.status == "pending",
+            ParentRequest.status.in_({"pending", "reviewing"}),
         )
         .order_by(MatchInvite.sent_at.desc())
     )
@@ -435,8 +448,15 @@ async def respond_to_tutor_opportunity(
     )
     if not invite:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found.")
-    if invite.status not in {"sent", "yes", "no"}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This opportunity is no longer available.")
+    if invite.status != "sent":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This opportunity has already been answered.")
+
+    request = await db.get(ParentRequest, invite.request_id)
+    if not request or request.status not in {"pending", "reviewing"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This opportunity is no longer active.")
+
+    if tutor.status != "verified" or tutor.is_paused:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Your tutor profile is not currently eligible for this opportunity.")
 
     invite.status = decision
     invite.responded_at = datetime.now(timezone.utc)

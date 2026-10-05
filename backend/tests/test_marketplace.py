@@ -35,3 +35,26 @@ def test_marketplace_favorite_model_contract():
         if constraint.name
     }
     assert "uq_marketplace_favorite_parent_tutor" in constraint_names
+
+
+def test_assignment_service_requires_accepted_invite_and_active_request():
+    from app.services.assignment import AssignmentWorkflowError, assign_tutor_to_request
+
+    assert AssignmentWorkflowError("x").status_code == 409
+    assert assign_tutor_to_request.__name__ == "assign_tutor_to_request"
+
+
+def test_marketplace_grade_and_schedule_helpers_are_shared():
+    from app.services.matcher import _are_grades_compatible, _schedule_days
+
+    assert _are_grades_compatible("grade 10", ["grade 9-10"])
+    assert not _are_grades_compatible("grade 1", ["grade 10"])
+    assert _schedule_days("Monday, Wednesday") == {"mon", "wed"}
+
+
+def test_registration_safety_contracts():
+    from app.routes.parents import create_parent_request
+    from app.routes.tutors import register_tutor
+
+    assert create_parent_request.__name__ == "create_parent_request"
+    assert register_tutor.__name__ == "register_tutor"

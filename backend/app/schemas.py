@@ -627,6 +627,16 @@ class ParentRequestItem(BaseModel):
     sessions_completed: int = 0
     has_feedback: bool = False
     feedback_rating: Optional[int] = None
+    applications: List["ParentApplicationItem"] = Field(default_factory=list)
+
+
+class ParentApplicationItem(BaseModel):
+    invite_id: int
+    tutor_id: int
+    tutor_name: Optional[str] = None
+    status: str
+    sent_at: datetime
+    responded_at: Optional[datetime] = None
 
 
 class ParentMyRequestsResponse(BaseModel):

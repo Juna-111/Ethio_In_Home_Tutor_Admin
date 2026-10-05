@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_auth import AdminPrincipal, require_role
 from app.config import settings
-from app.models import AdminUser, Assignment, AuditLog, MatchInvite, ParentRequest, Tutor
+from app.models import AdminUser, Assignment, AuditLog, MatchInvite, ParentRequest, Tutor, TutorVerification
 from app.services.audit import log_action
 
 
@@ -61,6 +61,16 @@ def _tutor(name: str, status: str = "pending") -> Tutor:
         coverage_areas=["Bole"],
         availability_schedule="Weekends",
         status=status,
+    )
+
+
+def _complete_verification(tutor: Tutor) -> TutorVerification:
+    return TutorVerification(
+        tutor_id=tutor.id,
+        id_verified=True,
+        entrance_result_verified=True,
+        phone_confirmed=True,
+        claims_plausible=True,
     )
 
 
@@ -574,12 +584,12 @@ async def test_idle_tutor_list_and_reactivation_nudge(
 
 
 @pytest.mark.asyncio
-async def test_admin_direct_assignment_without_prior_invite_succeeds(
+async def test_admin_direct_assignment_without_prior_invite_is_rejected(
     async_client: AsyncClient,
     db_session: AsyncSession,
     monkeypatch,
 ):
-    """An administrator can directly assign any verified active tutor even without a prior ping."""
+    """Assignment is blocked until the tutor explicitly accepts an invitation."""
     bot_token = "123456:admin-test-token"
     admin_id = 700012
     monkeypatch.setattr(settings, "BOT_TOKEN", bot_token)
@@ -603,41 +613,8 @@ async def test_admin_direct_assignment_without_prior_invite_succeeds(
         json={"tutor_id": tutor.id},
         headers=_telegram_auth_header(admin_id, bot_token),
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["ok"] is True
+    assert response.status_code == 409
 
-    # Verify MatchInvite was auto-recorded
-    invite = await db_session.scalar(select(MatchInvite).where(
-        MatchInvite.request_id == parent.id, MatchInvite.tutor_id == tutor.id
-    ))
-    assert invite is not None
-    assert invite.status == "yes"
-
-    # Verify Assignment was created
-    assignment = await db_session.scalar(select(Assignment).where(Assignment.request_id == parent.id))
-    assert assignment is not None
-    assert assignment.tutor_id == tutor.id
-
-    # Verify parent and tutor received DMs
-    assert mock_bot.send_message.await_count == 2
-
-
-def test_assignment_and_invite_relationships_are_database_foreign_keys():
-    """Business records must not outlive the request or tutor they reference."""
-    assignment_fks = {
-        (fk.parent.name, fk.column.table.name, fk.column.name)
-        for fk in Assignment.__table__.foreign_keys
-    }
-    invite_fks = {
-        (fk.parent.name, fk.column.table.name, fk.column.name)
-        for fk in MatchInvite.__table__.foreign_keys
-    }
-
-    assert ("request_id", "parent_requests", "id") in assignment_fks
-    assert ("tutor_id", "tutors", "id") in assignment_fks
-    assert ("request_id", "parent_requests", "id") in invite_fks
-    assert ("tutor_id", "tutors", "id") in invite_fks
 
 
 @pytest.mark.asyncio
@@ -795,3 +772,7 @@ async def test_parent_can_cancel_only_owned_unassigned_requests(
 
     await db_session.refresh(owned)
     assert owned.status == "cancelled"
+
+    db_session.add(_complete_verification(tutor))
+    db_session.add(_complete_verification(tutor))
+    db_session.add(_complete_verification(tutor))

@@ -46,6 +46,7 @@ from app.models import AdminUser, AdminWizardState, Assignment, MatchInvite, Par
 from app.services.export_service import generate_parents_csv, generate_tutors_csv
 from app.services.bot_analytics import render_analytics_card
 from app.services.matcher import get_tiered_matches
+from app.services.assignment import AssignmentWorkflowError, assign_tutor_to_request
 
 logger = logging.getLogger("mentorlink.bot.handlers")
 
@@ -303,7 +304,7 @@ async def _handle_review_deeplink(update: Update, param: str) -> bool:
     async with AsyncSessionLocal() as session:
         role = await resolve_admin_role(session, user.id)
     if role is None:
-        await message.reply_text("This review link is only for MentorLink admins.")
+        await message.reply_text("This review link is only for Ethio In-Home Tutor admins.")
         return True
     base = _get_webapp_url()
     if not base:
@@ -335,7 +336,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_super_admin(update):
         admin_keyboard = get_admin_reply_keyboard()
         await message.reply_text(
-            text="👑 <b>MentorLink — SUPER ADMIN CONSOLE</b>\n\n"
+            text="👑 <b>Ethio In-Home Tutor — SUPER ADMIN CONSOLE</b>\n\n"
                  "Welcome, Super Admin! Select an action from the menu below or tap an inline option.",
             reply_markup=admin_keyboard,
             parse_mode=ParseMode.HTML
@@ -343,7 +344,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     welcome_text = (
-        "👋 <b>Welcome to MentorLink!</b>\n\n"
+        "👋 <b>Welcome to Ethio In-Home Tutor!</b>\n\n"
         "Connecting families with verified in-home tutors and university mentors across Addis Ababa.\n\n"
         "<blockquote><b>How It Works:</b>\n"
         "1️⃣ <b>Find a Tutor:</b> Tap <b>Register</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
@@ -779,16 +780,11 @@ async def handle_match_parent(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """
-    Broadcasts availability check DM to top matched verified tutors with interactive buttons.
-    Persists MatchInvite records and avoids locking buttons eagerly if 0 tutors are sent.
-    """
+    """Create durable MatchInvites before sending Telegram availability requests."""
     query = update.callback_query
-    parent_id_str = data.split(":", 1)[1]
-
     try:
-        parent_id = int(parent_id_str)
-    except ValueError:
+        parent_id = int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
         await query.answer("Invalid Request ID.")
         return
 
@@ -797,34 +793,44 @@ async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_T
         if not parent:
             await query.answer(f"Parent request #{parent_id} not found.", show_alert=True)
             return
-
         if parent.status != "pending":
             await query.answer(f"⚠️ Request #{parent_id} is already {parent.status}.", show_alert=True)
             return
 
-        # Query existing invites for this request
-        inv_stmt = select(MatchInvite.tutor_id).where(MatchInvite.request_id == parent_id)
-        inv_res = await session.execute(inv_stmt)
-        already_invited = set(inv_res.scalars().all())
+        existing_res = await session.execute(
+            select(MatchInvite.tutor_id).where(MatchInvite.request_id == parent_id)
+        )
+        already_invited = set(existing_res.scalars().all())
 
-    all_matched = tiered["tier1"] + tiered["tier2"] + tiered["tier3"]
-    # Filter candidates with TG IDs who haven't already received an invite
-    tutors_to_ping = [
-        c["tutor"] for c in all_matched
-        if c["tutor"].telegram_user_id and c["tutor"].id not in already_invited
-    ][:5]
+        candidates = [
+            c["tutor"] for c in (tiered["tier1"] + tiered["tier2"] + tiered["tier3"])
+            if c["tutor"].telegram_user_id and c["tutor"].id not in already_invited
+        ][:5]
+        if not candidates:
+            await query.answer("⚠️ No new Telegram-enabled candidates are available.", show_alert=True)
+            return
 
-    if not tutors_to_ping:
-        if already_invited:
-            await query.answer("⚠️ All top candidates have already been pinged for this request.", show_alert=True)
-        else:
-            await query.answer("⚠️ None of the matched tutors have registered Telegram user IDs.", show_alert=True)
-        return
+        now_utc = datetime.now(timezone.utc)
+        invites = []
+        for tutor in candidates:
+            invite = MatchInvite(
+                request_id=parent_id,
+                tutor_id=tutor.id,
+                status="sent",
+                sent_at=now_utc,
+            )
+            session.add(invite)
+            invites.append((invite, tutor))
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await query.answer("⚠️ Candidate invitations changed. Refresh and try again.", show_alert=True)
+            return
 
     landmark = f" ({html.escape(parent.location_landmark)})" if parent.location_landmark else ""
     subjects_str = _format_subjects(parent.subjects)
     schedule_str = _format_schedule(parent.schedule_days)
-
     ping_text = (
         f"<b>NEW TUTORING OPPORTUNITY</b>\n\n"
         f"<b>Area:</b> {html.escape(parent.location_subcity)}{landmark}\n"
@@ -835,52 +841,42 @@ async def handle_ping_candidates(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     sent_count = 0
-    newly_invited_ids = []
-    for tutor in tutors_to_ping:
+    for invite, tutor in invites:
         try:
-            tutor_keyboard = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("✅ Yes, I'm Available", callback_data=f"tutor_avail_yes:{parent_id}:{tutor.id}"),
-                    InlineKeyboardButton("❌ Not Available", callback_data=f"tutor_avail_no:{parent_id}:{tutor.id}")
-                ]
-            ])
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Yes, I'm Available", callback_data=f"tutor_avail_yes:{parent_id}:{tutor.id}"),
+                InlineKeyboardButton("❌ Not Available", callback_data=f"tutor_avail_no:{parent_id}:{tutor.id}"),
+            ]])
             await context.bot.send_message(
                 chat_id=tutor.telegram_user_id,
                 text=ping_text,
                 parse_mode=ParseMode.HTML,
-                reply_markup=tutor_keyboard
+                reply_markup=keyboard,
             )
             sent_count += 1
-            newly_invited_ids.append(tutor.id)
         except Exception as exc:
-            logger.warning("Failed to send ping DM to tutor %s (tg_id: %s): %s", tutor.full_name, tutor.telegram_user_id, exc)
+            logger.warning("Failed to send availability ping to tutor %s: %s", tutor.id, exc)
+            async with AsyncSessionLocal() as cleanup_session:
+                failed_invite = await cleanup_session.get(MatchInvite, invite.id)
+                if failed_invite and failed_invite.status == "sent":
+                    failed_invite.status = "expired"
+                    await cleanup_session.commit()
 
-    if sent_count > 0:
-        # Record invites in DB
-        async with AsyncSessionLocal() as session:
-            for tid in newly_invited_ids:
-                session.add(MatchInvite(request_id=parent_id, tutor_id=tid, status="sent"))
-            await session.commit()
-
-        # Update button in-place now that invites were genuinely sent
-        if query.message and query.message.reply_markup:
-            new_keyboard = []
+    if query.message and sent_count:
+        try:
+            rows = []
             for row in query.message.reply_markup.inline_keyboard:
-                new_row = []
-                for btn in row:
-                    if btn.callback_data and btn.callback_data.startswith("ping_candidates:"):
-                        new_row.append(InlineKeyboardButton(f"⏳ Ping Sent ({sent_count})", callback_data="noop"))
-                    else:
-                        new_row.append(btn)
-                new_keyboard.append(new_row)
-            try:
-                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
-            except Exception as exc:
-                logger.debug("Failed to update ping button in-place: %s", exc)
-
-        await query.answer(f"📡 Availability ping dispatched to {sent_count} candidate(s)!")
-    else:
-        await query.answer("⚠️ Could not deliver pings to candidates (they may have blocked the bot).", show_alert=True)
+                rows.append([
+                    InlineKeyboardButton(
+                        f"⏳ Ping Sent ({sent_count})",
+                        callback_data="noop",
+                    ) if btn.callback_data and btn.callback_data.startswith("ping_candidates:") else btn
+                    for btn in row
+                ])
+            await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(rows))
+        except Exception as exc:
+            logger.debug("Failed to update ping button: %s", exc)
+    await query.answer(f"📡 Availability ping dispatched to {sent_count} candidate(s).")
 
 
 async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
@@ -917,7 +913,7 @@ async def handle_tutor_avail_yes(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         # Check if parent request is still open
-        if parent.status != "pending":
+        if parent.status not in {"pending", "reviewing"}:
             await query.answer("⚠️ This tutoring opportunity has already been filled or closed.", show_alert=True)
             if query.message:
                 try:
@@ -1103,7 +1099,7 @@ async def handle_tutor_avail_no(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
-    """Assigns a tutor to a parent request, marks request matched, posts thread confirmation, and then closes forum topic."""
+    """Finalize an accepted tutor through the same authoritative assignment workflow as the Admin Mini App."""
     query = update.callback_query
     parts = data.split(":")
     if len(parts) != 3:
@@ -1111,8 +1107,6 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     _, parent_id_str, tutor_id_str = parts
-    admin_name = _get_admin_name(update)
-
     try:
         parent_id = int(parent_id_str)
         tutor_id = int(tutor_id_str)
@@ -1120,72 +1114,26 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("Invalid IDs.")
         return
 
-    async with AsyncSessionLocal() as session:
-        parent = await session.get(ParentRequest, parent_id)
-        tutor = await session.get(Tutor, tutor_id)
-
-        if not parent or not tutor:
-            await query.answer("Parent request or Tutor not found.", show_alert=True)
-            return
-
-        if tutor.status != "verified":
-            await query.answer("⚠️ Only verified tutors can be assigned.", show_alert=True)
-            return
-
-        # Record or confirm MatchInvite so the relationship is tracked
-        invite_stmt = select(MatchInvite).where(
-            MatchInvite.request_id == parent_id,
-            MatchInvite.tutor_id == tutor_id,
-        )
-        invite = (await session.execute(invite_stmt)).scalar_one_or_none()
-        now_utc = datetime.now(timezone.utc)
-        if not invite:
-            invite = MatchInvite(
+    admin_name = _get_admin_name(update)
+    try:
+        async with AsyncSessionLocal() as session:
+            parent, tutor, assignment = await assign_tutor_to_request(
+                session,
                 request_id=parent_id,
                 tutor_id=tutor_id,
-                status="yes",
-                sent_at=now_utc,
-                responded_at=now_utc,
+                assigned_by=admin_name,
+                require_accepted_invite=True,
+                commit=True,
             )
-            session.add(invite)
-        elif invite.status != "yes":
-            invite.status = "yes"
-            invite.responded_at = now_utc
-
-        if parent.status != "pending":
-            await query.answer(f"⚠️ This Request is already {parent.status}.", show_alert=True)
-            return
-
-        stmt = (
-            sql_update(ParentRequest)
-            .where(ParentRequest.id == parent_id, ParentRequest.status == "pending")
-            .values(status="matched")
-        )
-        res = await session.execute(stmt)
-        if res.rowcount == 0:
-            await query.answer("⚠️ This request has already been assigned or closed.", show_alert=True)
-            return
-
-        assignment = Assignment(
-            request_id=parent_id,
-            tutor_id=tutor_id,
-            assigned_by=admin_name
-        )
-        session.add(assignment)
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            await query.answer(
-                "⚠️ This request was assigned by another admin. Please refresh the match list.",
-                show_alert=True,
-            )
-            return
-        await session.refresh(parent)
+    except AssignmentWorkflowError as exc:
+        await query.answer(f"⚠️ {exc.message}", show_alert=True)
+        return
+    except IntegrityError:
+        await query.answer("⚠️ This request was assigned by another admin. Refresh the match list.", show_alert=True)
+        return
 
     await query.answer(f"Assigned {tutor.full_name} to Request #{parent_id}!")
 
-    # Lock button on match card and post thread confirmation FIRST (before topic closure!)
     first_name = tutor.full_name.split()[0] if tutor.full_name else "Tutor"
     if query.message:
         try:
@@ -1194,56 +1142,48 @@ async def handle_assign_match(update: Update, context: ContextTypes.DEFAULT_TYPE
                     [InlineKeyboardButton(f"✅ Assigned {first_name} by {admin_name}", callback_data="assigned")]
                 ])
             )
-            assign_reply_kwargs = {
+            thread_id = getattr(query.message, "message_thread_id", None) or parent.telegram_topic_id
+            reply_kwargs = {
                 "text": f"✅ Successfully assigned <b>{html.escape(tutor.full_name)}</b> to Parent Request #{parent_id} by {admin_name}.",
                 "parse_mode": ParseMode.HTML,
-                "reply_to_message_id": query.message.message_id
+                "reply_to_message_id": query.message.message_id,
             }
-            thread_id = getattr(query.message, "message_thread_id", None) or parent.telegram_topic_id
             if thread_id:
-                assign_reply_kwargs["message_thread_id"] = thread_id
-
-            await query.message.reply_text(**assign_reply_kwargs)
+                reply_kwargs["message_thread_id"] = thread_id
+            await query.message.reply_text(**reply_kwargs)
         except Exception as exc:
             logger.error("Error updating match assignment message: %s", exc)
 
-    # Direct Notification to Parent upon Assignment (with html.escape and rich card)
     if parent.telegram_user_id:
         try:
-            parent_dm = format_assignment_card_parent(parent, tutor, assignment.id)
-            parent_keyboard = build_parent_assignment_keyboard(parent_id)
             await context.bot.send_message(
                 chat_id=parent.telegram_user_id,
-                text=parent_dm,
+                text=format_assignment_card_parent(parent, tutor, assignment.id),
                 parse_mode=ParseMode.HTML,
-                reply_markup=parent_keyboard,
+                reply_markup=build_parent_assignment_keyboard(parent_id),
             )
         except Exception as exc:
-            logger.warning("Could not send assignment DM to parent %s (tg_id: %s, role=parent): %s", parent.parent_name, parent.telegram_user_id, exc)
+            logger.warning("Could not send assignment DM to parent #%s: %s", parent.id, exc)
 
-    # DM tutor with job details (with html.escape and rich card)
     if tutor.telegram_user_id:
         try:
-            job_alert = format_assignment_card_tutor(parent, tutor, assignment.id)
-            tutor_keyboard = build_tutor_assignment_keyboard(parent_id)
             await context.bot.send_message(
                 chat_id=tutor.telegram_user_id,
-                text=job_alert,
+                text=format_assignment_card_tutor(parent, tutor, assignment.id),
                 parse_mode=ParseMode.HTML,
-                reply_markup=tutor_keyboard,
+                reply_markup=build_tutor_assignment_keyboard(parent_id),
             )
         except Exception as exc:
-            logger.warning("Could not send assignment DM to tutor %s (tg_id: %s, role=tutor): %s", tutor.full_name, tutor.telegram_user_id, exc)
+            logger.warning("Could not send assignment DM to tutor #%s: %s", tutor.id, exc)
 
-    # Dedicated topic auto-closing ONLY AFTER thread messages and DMs complete
-    if parent.telegram_topic_id and hasattr(context.bot, "close_forum_topic"):
+    if parent.telegram_topic_id and settings.ADMIN_GROUP_ID and hasattr(context.bot, "close_forum_topic"):
         try:
             await context.bot.close_forum_topic(
                 chat_id=settings.ADMIN_GROUP_ID,
-                message_thread_id=parent.telegram_topic_id
+                message_thread_id=parent.telegram_topic_id,
             )
         except Exception as exc:
-            logger.warning("Could not close forum topic %s for Request #%s: %s", parent.telegram_topic_id, parent.id, exc)
+            logger.warning("Could not close forum topic %s: %s", parent.telegram_topic_id, exc)
 
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1258,7 +1198,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     admin_keyboard = get_admin_reply_keyboard()
     await msg.reply_text(
-        text="👑 <b>MentorLink — SUPER ADMIN CONSOLE</b>\n\n"
+        text="👑 <b>Ethio In-Home Tutor — SUPER ADMIN CONSOLE</b>\n\n"
              "Welcome, Super Admin! Select an action from the menu below or tap an inline option.",
         reply_markup=admin_keyboard,
         parse_mode=ParseMode.HTML
@@ -1383,8 +1323,8 @@ async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not bio_text:
         bio_text = (
-            "🌟 About MentorLink\n\n"
-            "MentorLink is Addis Ababa's premier home tutoring network connecting university "
+            "🌟 About Ethio In-Home Tutor\n\n"
+            "Ethio In-Home Tutor is Addis Ababa's premier home tutoring network connecting university "
             "scholars and verified educators with students across all grade levels.\n\n"
             "✨ Our Standards:\n"
             "• Rigorous credential & ID verification\n"
@@ -1409,7 +1349,7 @@ async def handle_support_contact(update: Update, context: ContextTypes.DEFAULT_T
         contact_text = (
             "📞 Support & Coordination\n\n"
             "Need help finding a mentor or have questions about our tutoring programs?\n\n"
-            "💬 Telegram: @MentorLinkSupport\n"
+            "💬 Telegram: @Ethio In-Home TutorSupport\n"
             "📱 Phone: +251 91 100 2233\n"
             "🕒 Hours: Mon – Sat, 8:30 AM – 6:30 PM (EAT)\n"
             "📍 Addis Ababa, Ethiopia"

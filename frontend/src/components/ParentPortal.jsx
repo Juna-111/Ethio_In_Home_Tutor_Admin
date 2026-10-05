@@ -375,7 +375,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
             {error.includes('authentication') || error.includes('401')
               ? (lang === 'am' 
                   ? 'የእርስዎን ጥያቄዎች ለማየት እባክዎ ይህን መተግበሪያ በቴሌግራም ውስጥ ይክፈቱት።' 
-                  : 'Open MentorLink directly inside Telegram to view your account requests.')
+                  : 'Open Ethio In-Home Tutor directly inside Telegram to view your account requests.')
               : error}
           </p>
           <div className="flex items-center justify-center space-x-2 pt-1">
@@ -446,6 +446,25 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
                   <span>Submitted {req.created_at ? new Date(req.created_at).toLocaleDateString() : '—'}</span>
                 </div>
               </div>
+
+              {req.applications?.length > 0 && (
+                <div className="bg-white border border-line rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-ink uppercase tracking-wider">
+                      {lang === 'am' ? 'የአስጠኚ ምላሾች' : 'Tutor Responses'}
+                    </span>
+                    <span className="text-[10px] text-muted">{req.applications.length}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {req.applications.slice(0, 4).map((application) => (
+                      <div key={application.invite_id} className="flex items-center justify-between text-xs">
+                        <span className="text-ink font-medium">{application.tutor_name || `Tutor #${application.tutor_id}`}</span>
+                        <span className="font-semibold text-muted capitalize">{application.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Matched Tutor Card if available */}
               {(req.tutor_name || req.assignment) ? (
