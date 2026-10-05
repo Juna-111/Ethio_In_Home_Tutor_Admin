@@ -79,20 +79,78 @@ export default function AdminApp() {
     { label: 'Tutor funnel conv.', value: `${dashboard.tutor_verification_funnel_pct ?? 0}%`, icon: ArrowUpRight, tone: 'blue' },
   ] : [];
 
-  const navItems = [
-    { id: 'overview', label: 'Home', icon: LayoutDashboard },
-    { id: 'requests', label: 'Match & Assign', icon: ClipboardList },
-    { id: 'tutors', label: 'Tutors', icon: GraduationCap },
-    { id: 'crm', label: 'Parents', icon: Contact },
-    { id: 'pipeline', label: 'Pipeline', icon: GitPullRequest },
-    { id: 'ops', label: 'Needs Review', icon: ShieldAlert },
-    { id: 'analytics', label: 'Insights', icon: BarChart3 },
-    { id: 'coverage', label: 'Coverage', icon: UsersRound },
-    { id: 'export', label: 'Export', icon: Download },
-    ...(dashboard?.admin_role === 'super_admin' ? [
-      { id: 'admins', label: 'Settings', icon: Settings }
-    ] : []),
+  const homeCards = [
+    {
+      id: 'requests',
+      title: 'Match & Assign',
+      description: 'Review parent requests, find suitable tutors, and manage assignments.',
+      icon: ClipboardList,
+      tone: 'coral',
+      badge: dashboard?.pending_requests || 0,
+      badgeLabel: 'pending',
+    },
+    {
+      id: 'tutors',
+      title: 'Tutor Management',
+      description: 'Review tutor profiles, verification, credentials, and availability.',
+      icon: GraduationCap,
+      tone: 'citrus',
+      badge: dashboard?.pending_tutors || 0,
+      badgeLabel: 'to verify',
+    },
+    {
+      id: 'crm',
+      title: 'Parents & Families',
+      description: 'View customer activity, requests, and family records in one place.',
+      icon: Contact,
+      tone: 'green',
+    },
+    {
+      id: 'pipeline',
+      title: 'Assignment Pipeline',
+      description: 'Track every request from matching through active tutoring.',
+      icon: GitPullRequest,
+      tone: 'blue',
+    },
+    {
+      id: 'ops',
+      title: 'Needs Review',
+      description: 'Handle operational exceptions and items that need admin attention.',
+      icon: ShieldAlert,
+      tone: 'coral',
+    },
+    {
+      id: 'analytics',
+      title: 'Insights',
+      description: 'Understand demand, tutor supply, conversion, and platform performance.',
+      icon: BarChart3,
+      tone: 'blue',
+    },
+    {
+      id: 'coverage',
+      title: 'Coverage',
+      description: 'See where tutor supply is strong, weak, or currently idle.',
+      icon: UsersRound,
+      tone: 'green',
+    },
+    {
+      id: 'export',
+      title: 'Export Center',
+      description: 'Download operational data for reporting and administration.',
+      icon: Download,
+      tone: 'citrus',
+    },
   ];
+
+  if (dashboard?.admin_role === 'super_admin') {
+    homeCards.push({
+      id: 'admins',
+      title: 'Admin Settings',
+      description: 'Manage administrator access and platform administration controls.',
+      icon: Settings,
+      tone: 'pine',
+    });
+  }
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -126,21 +184,6 @@ export default function AdminApp() {
       </header>
 
       <main className="admin-main">
-        {view.status === 'ready' && (
-          <nav className="admin-nav" aria-label="Admin sections" role="tablist">
-            {navItems.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={activeSection === id}
-                className={activeSection === id ? 'admin-nav-item active' : 'admin-nav-item'}
-                onClick={() => setActiveSection(id)}
-              ><Icon size={16} /><span>{label}</span></button>
-            ))}
-          </nav>
-        )}
-
         {activeSection === 'overview' && (
           <div className="page-heading">
             <div>
@@ -200,7 +243,7 @@ export default function AdminApp() {
             {view.status === 'ready' && activeSection === 'overview' && (
               <>
                 <section className="metrics-grid" aria-label="Platform metrics">
-                  {metrics.map(({ label, value, icon: Icon, tone }, index) => (
+                  {metrics.slice(0, 4).map(({ label, value, icon: Icon, tone }, index) => (
                     <article className={`metric metric-${tone}`} key={label} style={{ '--stagger': `${index * 70}ms` }}>
                       <div className="metric-topline">
                         <span>{label}</span>
@@ -211,30 +254,49 @@ export default function AdminApp() {
                     </article>
                   ))}
                 </section>
-                <section className="queue-section">
-                  <div className="section-title-row">
+
+                <section className="admin-home-section" aria-labelledby="admin-tools-title">
+                  <div className="section-title-row admin-home-title">
                     <div>
-                      <p className="eyebrow">WORK QUEUE</p>
-                      <h2>Needs attention</h2>
+                      <p className="eyebrow">ETHIO IN-HOME TUTOR · ADMIN</p>
+                      <h2 id="admin-tools-title">What do you want to manage?</h2>
+                      <p>Everything is grouped by purpose. Choose a workspace to get started.</p>
                     </div>
                     <span className="queue-total">
-                      {formatCount((dashboard?.pending_tutors || 0) + (dashboard?.pending_requests || 0))} OPEN
+                      {formatCount((dashboard?.pending_tutors || 0) + (dashboard?.pending_requests || 0))} NEED ATTENTION
                     </span>
                   </div>
-                  <div className="queue-list">
-                    <button className="queue-item clickable" type="button" onClick={() => setActiveSection('tutors')}>
-                      <span className="queue-icon queue-icon-coral"><GraduationCap size={18} /></span>
-                      <span className="queue-label"><strong>Tutor verification</strong><small>Profiles awaiting checklist review</small></span>
-                      <strong className="queue-count">{formatCount(dashboard.pending_tutors)}</strong>
-                    </button>
-                    <button className="queue-item clickable" type="button" onClick={() => setActiveSection('requests')}>
-                      <span className="queue-icon queue-icon-green"><ClipboardList size={18} /></span>
-                      <span className="queue-label"><strong>Parent requests</strong><small>Students waiting for workbench matching</small></span>
-                      <strong className="queue-count">{formatCount(dashboard.pending_requests)}</strong>
-                    </button>
+
+                  <div className="admin-home-grid">
+                    {homeCards.map(({ id, title, description, icon: Icon, tone, badge, badgeLabel }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`admin-home-card admin-home-card-${tone}`}
+                        onClick={() => setActiveSection(id)}
+                      >
+                        <span className="admin-home-card-icon"><Icon size={21} strokeWidth={1.8} /></span>
+                        <span className="admin-home-card-copy">
+                          <strong>{title}</strong>
+                          <small>{description}</small>
+                        </span>
+                        <span className="admin-home-card-arrow" aria-hidden="true"><ArrowUpRight size={17} /></span>
+                        {badge ? <span className="admin-home-card-badge">{formatCount(badge)} {badgeLabel}</span> : null}
+                      </button>
+                    ))}
                   </div>
                 </section>
               </>
+            )}
+
+            {view.status === 'ready' && activeSection !== 'overview' && (
+              <div className="admin-section-toolbar">
+                <button type="button" className="admin-home-back" onClick={() => setActiveSection('overview')}>
+                  <LayoutDashboard size={15} />
+                  <span>Admin Home</span>
+                </button>
+                <span className="admin-section-context">ETHIO IN-HOME TUTOR / ADMIN WORKSPACE</span>
+              </div>
             )}
 
             {view.status === 'ready' && activeSection === 'requests' && (
