@@ -246,23 +246,16 @@ def _get_customer_mini_app_link() -> Optional[str]:
 
 
 def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
-    """Build the public customer keyboard using the canonical Telegram Mini App launch path."""
-    keyboard = []
+    """Build the persistent customer reply keyboard without a Mini App auth launch button.
 
-    customer_link = _get_customer_mini_app_link()
-    webapp_url = _get_webapp_url()
-    if customer_link:
-        # A BotFather direct Mini App link is the canonical Telegram-managed launch path.
-        keyboard.append([KeyboardButton("Register", url=customer_link)])
-    elif webapp_url:
-        # Safe fallback until the BotFather direct link is configured.
-        keyboard.append([KeyboardButton("Register", web_app=WebAppInfo(url=webapp_url))])
-
-    # Row 2: Customer buttons (ALWAYS present)
-    keyboard.append([
+    Telegram's reply-keyboard Mini App mode does not provide the initData required by
+    our backend's verified Telegram authentication, so the customer Mini App is launched
+    through the BotFather direct link in the inline keyboard instead.
+    """
+    keyboard = [[
         KeyboardButton("ℹ️ About Us"),
         KeyboardButton("📞 Contact")
-    ])
+    ]]
 
     return ReplyKeyboardMarkup(
         keyboard,
@@ -270,6 +263,17 @@ def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
         is_persistent=True,
         one_time_keyboard=False
     )
+
+
+def get_customer_register_keyboard() -> Optional[InlineKeyboardMarkup]:
+    """Build the customer Register button using the BotFather direct Mini App link."""
+    customer_link = _get_customer_mini_app_link()
+    if not customer_link:
+        return None
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Register", url=customer_link)]
+    ])
 
 
 def get_admin_reply_keyboard() -> ReplyKeyboardMarkup:
@@ -364,12 +368,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     reply_markup = get_public_reply_keyboard()
+    register_keyboard = get_customer_register_keyboard()
 
     await message.reply_text(
         text=welcome_text,
         reply_markup=reply_markup,
         parse_mode="HTML"
     )
+    if register_keyboard:
+        await message.reply_text(
+            text="🔐 <b>Secure registration</b> — open the customer Mini App below:",
+            reply_markup=register_keyboard,
+            parse_mode="HTML",
+        )
 
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
