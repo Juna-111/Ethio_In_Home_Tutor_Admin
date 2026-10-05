@@ -54,6 +54,24 @@ async def create_parent_request(
 
     child = await _get_or_create_child(db, effective_tg_id, payload.child_id, payload.child_name)
     preferred_tutor = await _get_verified_marketplace_tutor(db, payload.preferred_tutor_id) if payload.preferred_tutor_id else None
+    if preferred_tutor:
+        if payload.preferred_gender not in {"No preference", "", None} and payload.preferred_gender.lower() != str(preferred_tutor.gender).lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The selected tutor does not match the requested gender preference.")
+        if not set(_normalize_list(payload.subjects)).intersection(set(_normalize_list(preferred_tutor.subjects_qualified))):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The selected tutor does not teach a requested subject.")
+        if not _are_grades_compatible(payload.student_level.strip().lower(), _normalize_list(preferred_tutor.grades_qualified)):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The selected tutor does not match the requested grade level.")
+        requested_area = payload.location_subcity.strip().lower()
+        if requested_area != str(preferred_tutor.base_subcity or "").strip().lower() and requested_area not in {str(v).strip().lower() for v in _json_list(preferred_tutor.coverage_areas)}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The selected tutor does not cover the requested area.")
+        budget = float(payload.budget_etb or 0)
+        fee = float(preferred_tutor.expected_fee_etb or 0)
+        if budget > 0 and fee > budget * 1.35:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The selected tutor is outside the flexible budget range.")
+        requested_days = _schedule_days(payload.schedule_days)
+        tutor_days = _schedule_days(preferred_tutor.availability_schedule)
+        if requested_days and (not tutor_days or not requested_days.intersection(tutor_days)):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The selected tutor has no availability overlap.")
 
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
     recent = (await db.execute(
