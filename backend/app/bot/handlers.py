@@ -237,16 +237,26 @@ def _get_webapp_url() -> Optional[str]:
     return None
 
 
+def _get_customer_mini_app_link() -> Optional[str]:
+    """Return the BotFather-managed customer Mini App direct link when configured."""
+    value = settings.CUSTOMER_MINI_APP_URL
+    if value and value.startswith("https://t.me/") and "/" in value[len("https://t.me/"):]:
+        return value.rstrip("/")
+    return None
+
+
 def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
-    """Constructs public reply keyboard safely with WebApp button and customer options."""
+    """Build the public customer keyboard using the canonical Telegram Mini App launch path."""
     keyboard = []
 
-    # Row 1: Only attach WebApp button if a valid HTTPS web hosting URL is available
+    customer_link = _get_customer_mini_app_link()
     webapp_url = _get_webapp_url()
-    if webapp_url:
-        keyboard.append([
-            KeyboardButton("Register", web_app=WebAppInfo(url=webapp_url))
-        ])
+    if customer_link:
+        # A BotFather direct Mini App link is the canonical Telegram-managed launch path.
+        keyboard.append([KeyboardButton("Register", url=customer_link)])
+    elif webapp_url:
+        # Safe fallback until the BotFather direct link is configured.
+        keyboard.append([KeyboardButton("Register", web_app=WebAppInfo(url=webapp_url))])
 
     # Row 2: Customer buttons (ALWAYS present)
     keyboard.append([
