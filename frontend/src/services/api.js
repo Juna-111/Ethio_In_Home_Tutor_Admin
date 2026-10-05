@@ -230,6 +230,10 @@ export async function uploadTutorDocument(file) {
   return { ...result, full_url: fullUrl };
 }
 
+export async function getAdminControlCenter() {
+  return request('/api/v1/admin/control-center');
+}
+
 export async function getAdminDashboard() {
   return request("/api/v1/admin/dashboard");
 }
