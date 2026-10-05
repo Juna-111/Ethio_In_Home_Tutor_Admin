@@ -119,7 +119,6 @@ class ParentRequestResponse(BaseModel):
     time_slot: str
     session_duration: str
     budget_etb: float
-    id: int
     status: str
     telegram_topic_id: Optional[int] = None
     created_at: datetime
