@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, GraduationCap, Search, Sparkles, X } from 'lucide-react';
-import { getAdminControlCenter, getAdminRequest, getAdminTutors } from '../services/api';
+import { getAdminControlCenter, getAdminDashboard, getAdminRequest, getAdminTutors } from '../services/api';
 import './admin-control.css';
 
 const age = (hours) => {
@@ -12,6 +12,7 @@ const age = (hours) => {
 
 export default function AdminControlCenter({ onNavigate }) {
   const [data, setData] = useState(null);
+  const [dashboard, setDashboard] = useState(null);
   const [state, setState] = useState('loading');
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -20,8 +21,8 @@ export default function AdminControlCenter({ onNavigate }) {
   const load = () => {
     setState('loading');
     setError('');
-    getAdminControlCenter()
-      .then((result) => { setData(result); setState('ready'); })
+    Promise.all([getAdminControlCenter(), getAdminDashboard()])
+      .then(([result, overview]) => { setData(result); setDashboard(overview); setState('ready'); })
       .catch((err) => { setError(err.message || 'Control center unavailable.'); setState('error'); });
   };
 
@@ -79,6 +80,28 @@ export default function AdminControlCenter({ onNavigate }) {
         <Search size={17} />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a request or tutor" aria-label="Find a request or tutor" />
         {query && <button type="button" aria-label="Clear search" onClick={() => setQuery('')}><X size={14} /></button>}
+      </div>
+
+      {dashboard && (
+        <div className="control-pulse" aria-label="Platform pulse">
+          <button type="button" onClick={() => onNavigate('requests')}><strong>{dashboard.pending_requests || 0}</strong><span>requests waiting</span></button>
+          <button type="button" onClick={() => onNavigate('tutors')}><strong>{dashboard.pending_tutors || 0}</strong><span>tutors to verify</span></button>
+          <button type="button" onClick={() => onNavigate('pipeline')}><strong>{dashboard.active_assignments || 0}</strong><span>active assignments</span></button>
+          <button type="button" onClick={() => onNavigate('analytics')}><strong>{dashboard.conversion_rate_pct ?? 0}%</strong><span>request conversion</span></button>
+        </div>
+      )}
+
+      <div className="control-workspaces" aria-label="Admin workspaces">
+        <span>WORKSPACES</span>
+        <button type="button" onClick={() => onNavigate('requests')}>Matching</button>
+        <button type="button" onClick={() => onNavigate('tutors')}>Tutors</button>
+        <button type="button" onClick={() => onNavigate('crm')}>Families</button>
+        <button type="button" onClick={() => onNavigate('pipeline')}>Assignments</button>
+        <button type="button" onClick={() => onNavigate('ops')}>Incidents</button>
+        <button type="button" onClick={() => onNavigate('analytics')}>Insights</button>
+        <button type="button" onClick={() => onNavigate('coverage')}>Coverage</button>
+        <button type="button" onClick={() => onNavigate('export')}>Exports</button>
+        {dashboard?.admin_role === 'super_admin' && <button type="button" onClick={() => onNavigate('admins')}>Admin access</button>}
       </div>
 
       {results && (
