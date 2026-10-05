@@ -151,6 +151,8 @@ export default function RequestWorkbench({ initialRequestId }) {
     }
   };
 
+  const recommendedCandidate = candidates[0] || null;
+  const recommendedStep = recommendedCandidate ? candidateNextStep(recommendedCandidate) : null;
   const totalPages = Math.max(1, Math.ceil(list.total / list.page_size));
 
   return (
@@ -256,7 +258,7 @@ export default function RequestWorkbench({ initialRequestId }) {
           )}
           <section className="candidate-section">
             <div className="section-title-row candidate-title-row">
-              <div><p className="eyebrow">MATCHING WORKBENCH</p><h3>Candidate comparison</h3></div>
+              <div><p className="eyebrow">MATCHING WORKBENCH</p><h3>Decision surface</h3><p className="workbench-subtitle">Ranked candidates, evidence, and the safest next move — without bypassing the assignment workflow.</p></div>
               <button
                 className="primary-button"
                 type="button"
@@ -264,6 +266,17 @@ export default function RequestWorkbench({ initialRequestId }) {
                 onClick={() => runAction(() => pingAdminCandidates(request.id, selectedTutorIds))}
               ><Send size={15} /> Invite selected ({selectedTutorIds.length})</button>
             </div>
+            {recommendedCandidate && (
+              <div className="recommendation-banner">
+                <div className="recommendation-icon"><ShieldCheck size={18} /></div>
+                <div className="recommendation-copy">
+                  <p className="eyebrow">SYSTEM RECOMMENDATION</p>
+                  <strong>{recommendedCandidate.full_name} · {Math.round(recommendedCandidate.overall_score)}% match</strong>
+                  <span>{recommendedStep} — {recommendedCandidate.invite_status === 'yes' ? 'accepted the availability request; assignment can now be confirmed.' : recommendedCandidate.invite_status === 'sent' ? 'availability request is pending; wait for the tutor response.' : 'send an availability invite before attempting assignment.'}</span>
+                </div>
+              </div>
+            )}
+
             {candidates.length === 0 ? <div className="empty-panel">No verified tutors currently match this request.</div> : (
               <div className="candidate-list">
                 {candidates.map((candidate, candidateIndex) => {
@@ -309,7 +322,7 @@ export default function RequestWorkbench({ initialRequestId }) {
                         <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => requestConfirmation(
                           () => assignAdminTutor(request.id, candidate.tutor_id),
                           'Assign this tutor?',
-                          'We will recheck the request and tutor match immediately before assigning.',
+                          'We will recheck the request, tutor match, and accepted invite immediately before creating the official assignment.',
                           `${candidate.full_name} → Request #${request.id}`,
                           'assign',
                           candidate.tutor_id
