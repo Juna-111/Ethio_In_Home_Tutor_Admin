@@ -19,6 +19,14 @@ const FACTOR_LABELS = {
   experience: 'Experience',
 };
 
+function candidateNextStep(candidate) {
+  if (candidate.invite_status === 'yes') return 'Ready to assign';
+  if (candidate.invite_status === 'sent') return 'Waiting for tutor';
+  if (candidate.invite_status === 'no') return 'Tutor declined';
+  if (candidate.telegram_available) return 'Invite first';
+  return 'No Telegram action';
+}
+
 function money(value) {
   return `${Number(value || 0).toLocaleString()} ETB`;
 }
@@ -143,6 +151,8 @@ export default function RequestWorkbench({ initialRequestId }) {
     }
   };
 
+  const recommendedCandidate = candidates[0] || null;
+  const recommendedStep = recommendedCandidate ? candidateNextStep(recommendedCandidate) : null;
   const totalPages = Math.max(1, Math.ceil(list.total / list.page_size));
 
   return (
@@ -248,19 +258,30 @@ export default function RequestWorkbench({ initialRequestId }) {
           )}
           <section className="candidate-section">
             <div className="section-title-row candidate-title-row">
-              <div><p className="eyebrow">MATCHING WORKBENCH</p><h3>Candidate comparison</h3></div>
+              <div><p className="eyebrow">MATCHING WORKBENCH</p><h3>Decision surface</h3><p className="workbench-subtitle">Ranked candidates, evidence, and the safest next move — without bypassing the assignment workflow.</p></div>
               <button
                 className="primary-button"
                 type="button"
                 disabled={actionBusy || selectedTutorIds.length === 0 || request.status !== 'pending'}
                 onClick={() => runAction(() => pingAdminCandidates(request.id, selectedTutorIds))}
-              ><Send size={15} /> Ping selected ({selectedTutorIds.length})</button>
+              ><Send size={15} /> Invite selected ({selectedTutorIds.length})</button>
             </div>
+            {recommendedCandidate && (
+              <div className="recommendation-banner">
+                <div className="recommendation-icon"><ShieldCheck size={18} /></div>
+                <div className="recommendation-copy">
+                  <p className="eyebrow">SYSTEM RECOMMENDATION</p>
+                  <strong>{recommendedCandidate.full_name} · {Math.round(recommendedCandidate.overall_score)}% match</strong>
+                  <span>{recommendedStep} — {recommendedCandidate.invite_status === 'yes' ? 'accepted the availability request; assignment can now be confirmed.' : recommendedCandidate.invite_status === 'sent' ? 'availability request is pending; wait for the tutor response.' : 'send an availability invite before attempting assignment.'}</span>
+                </div>
+              </div>
+            )}
+
             {candidates.length === 0 ? <div className="empty-panel">No verified tutors currently match this request.</div> : (
               <div className="candidate-list">
                 {candidates.map((candidate, candidateIndex) => {
                   const canPing = candidate.telegram_available && !['sent', 'yes', 'no'].includes(candidate.invite_status);
-                  const canAssign = request.status === 'pending';
+                  const canAssign = request.status === 'pending' && candidate.invite_status === 'yes';
                   return (
                     <article className={`candidate-row ${candidateIndex === 0 ? 'candidate-recommended' : ''}`} key={candidate.tutor_id}>
                       <div className="candidate-select">
@@ -296,17 +317,31 @@ export default function RequestWorkbench({ initialRequestId }) {
                         <strong>{Math.round(candidate.overall_score)}</strong><small>MATCH</small>
                       </div>
                       <div className="candidate-actions">
+                        <span className={`next-step next-step-${candidate.invite_status || 'new'}`}>
+                          <strong>{candidateNextStep(candidate)}</strong>
+                          <small>{candidate.invite_status === 'yes' ? 'Tutor accepted. Assignment is unlocked.' : candidate.invite_status === 'sent' ? 'Waiting for tutor response.' : candidate.invite_status === 'no' ? 'Choose another candidate.' : candidate.telegram_available ? 'Send an availability invite first.' : 'No Telegram workflow.'}</small>
+                        </span>
                         {!candidate.telegram_available && <span className="muted-caption">No Telegram</span>}
                         {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status === 'no' ? 'Unavailable' : candidate.invite_status}</span>}
+                        {candidate.telegram_available && (
+                          <button className="secondary-button" type="button" disabled={actionBusy || request.status !== 'pending' || ['sent', 'yes', 'no'].includes(candidate.invite_status)} onClick={() => requestConfirmation(
+                            () => pingAdminCandidates(request.id, [candidate.tutor_id]),
+                            'Invite this tutor?',
+                            'Send an availability request. Assignment stays locked until the tutor accepts.',
+                            candidate.full_name
+                          )}>
+                            <Send size={15} /> Invite
+                          </button>
+                        )}
                         <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => requestConfirmation(
                           () => assignAdminTutor(request.id, candidate.tutor_id),
                           'Assign this tutor?',
-                          'We will recheck the request and tutor match immediately before assigning.',
+                          'We will recheck the request, tutor match, and accepted invite immediately before creating the official assignment.',
                           `${candidate.full_name} → Request #${request.id}`,
                           'assign',
                           candidate.tutor_id
                         )}>
-                          <UserRoundCheck size={15} /> Assign
+                          <UserRoundCheck size={15} /> {canAssign ? 'Assign' : 'Assign locked'}
                         </button>
                       </div>
                     </article>
