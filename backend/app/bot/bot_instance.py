@@ -4,7 +4,7 @@ import re
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
 from telegram.constants import ParseMode
 from telegram.ext import Application, ApplicationBuilder
 
@@ -14,6 +14,29 @@ from app.config import settings
 logger = logging.getLogger("mentorlink.bot")
 
 bot_app: Optional[Application] = None
+
+
+async def configure_customer_menu_button(application: Application) -> bool:
+    """Configure Telegram's native chat menu to launch the customer Mini App."""
+    try:
+        from app.bot.handlers import _get_webapp_url
+
+        webapp_url = _get_webapp_url()
+        if not webapp_url:
+            logger.warning("Customer menu WebApp not configured: WEBAPP_URL/MINI_APP_URL is missing.")
+            return False
+
+        await application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Register",
+                web_app=WebAppInfo(url=webapp_url),
+            )
+        )
+        logger.info("Telegram customer chat menu configured to open the Mini App.")
+        return True
+    except Exception as exc:
+        logger.error("Failed to configure Telegram customer chat menu: %s", exc, exc_info=True)
+        return False
 
 
 async def init_bot_app() -> Optional[Application]:
@@ -42,6 +65,7 @@ async def init_bot_app() -> Optional[Application]:
         await load_admin_registry()
 
         await application.initialize()
+        await configure_customer_menu_button(application)
         await application.start()
 
         if settings.BOT_MODE == "webhook":
