@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, LayoutDashboard, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, RefreshCw, ShieldCheck } from 'lucide-react';
 import { getAdminDashboard } from '../services/api';
 import AdminControlCenter from './AdminControlCenter.jsx';
 import CoverageBoard from './CoverageBoard.jsx';
@@ -57,7 +57,7 @@ export default function AdminApp() {
     return undefined;
   }, [activeSection, view.status]);
 
-  const navigate = (section, id) => {
+  const sectionNames = { requests: 'Request', tutors: 'Tutor', crm: 'Families', pipeline: 'Assignments', ops: 'Incidents', analytics: 'Insights', coverage: 'Marketplace health', export: 'Exports', admins: 'Admin access' };\n\n  const navigate = (section, id) => {
     setActiveSection(section);
     if (section === 'tutors' && id) setSelectedTutorId(id);
   };
@@ -79,7 +79,7 @@ export default function AdminApp() {
         ) : (
           <>
             {activeSection === 'overview' && <AdminControlCenter onNavigate={navigate} />}
-            {activeSection !== 'overview' && <div className="admin-section-toolbar"><button type="button" className="admin-home-back" onClick={() => setActiveSection('overview')}><LayoutDashboard size={15} /><span>Control Center</span></button><span className="admin-section-context">ETHIO IN-HOME TUTOR / ADMIN</span><button type="button" className="refresh-button" onClick={() => setRefreshKey((k) => k + 1)} aria-label="Refresh admin data"><RefreshCw size={16} /></button></div>}
+            {activeSection !== 'overview' && <div className="admin-section-toolbar"><button type="button" className="admin-home-back" onClick={() => setActiveSection('overview')} aria-label="Back to operations"><ArrowLeft size={16} /></button><strong className="admin-section-title">{sectionNames[activeSection] || 'Admin'}</strong><button type="button" className="refresh-button" onClick={() => setRefreshKey((k) => k + 1)} aria-label="Refresh"><RefreshCw size={15} /></button></div>}
             {view.status === 'ready' && activeSection === 'requests' && <RequestWorkbench initialRequestId={startTarget?.type === 'request' ? startTarget.id : null} />}
             {view.status === 'ready' && activeSection === 'tutors' && <TutorList onSelectTutor={(id) => setSelectedTutorId(id)} />}
             {view.status === 'ready' && activeSection === 'crm' && <CustomerCRM />}
