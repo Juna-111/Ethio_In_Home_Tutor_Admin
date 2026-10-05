@@ -5,6 +5,7 @@ import {
   favoriteMarketplaceTutor,
   getMarketplaceTutor,
   getMarketplaceTutors,
+  getParentMyRequests,
   unfavoriteMarketplaceTutor,
 } from '../services/api';
 
@@ -14,6 +15,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
   const isAm = lang === 'am';
   const [tutors, setTutors] = useState([]);
   const [requestId, setRequestId] = useState(null);
+  const [requestChoices, setRequestChoices] = useState([]);
   const [filters, setFilters] = useState({ subject: '', grade: '', subcity: '', max_fee: '', min_rating: '', available_day: '', verified_only: 'true', favorite_only: 'false' });
   const [expandedId, setExpandedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -27,7 +29,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
     setLoading(true);
     setError(null);
     try {
-      const result = await getMarketplaceTutors(filters);
+      const result = await getMarketplaceTutors({ ...filters, ...(requestId ? { request_id: requestId } : {}) });
       setTutors(result.tutors || []);
       setRequestId(result.request_id || null);
     } catch (err) {
@@ -37,7 +39,17 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
     }
   };
 
-  useEffect(() => { load(); }, [filters.subject, filters.grade, filters.subcity, filters.max_fee, filters.min_rating, filters.available_day, filters.verified_only, filters.favorite_only]);
+  useEffect(() => {
+    getParentMyRequests()
+      .then((result) => {
+        const choices = (result.requests || []).filter((req) => !['closed', 'cancelled'].includes((req.status || '').toLowerCase()));
+        setRequestChoices(choices);
+        setRequestId((current) => current && choices.some((req) => req.id === current) ? current : (choices[0]?.id || null));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { load(); }, [requestId, filters.subject, filters.grade, filters.subcity, filters.max_fee, filters.min_rating, filters.available_day, filters.verified_only, filters.favorite_only]);
 
   const updateFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
 
@@ -117,6 +129,21 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
           </div>
         </div>
       </section>
+
+      {requestChoices.length > 0 && (
+        <section className="rounded-2xl border border-line bg-paper p-3 shadow-sm">
+          <label className="block text-[9px] font-black uppercase tracking-wider text-muted">{isAm ? 'ለየትኛው ልጅ?' : 'Shopping for which child?'}</label>
+          <select
+            value={requestId || ''}
+            onChange={(e) => setRequestId(e.target.value ? Number(e.target.value) : null)}
+            className="mt-1.5 w-full rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs font-bold text-ink outline-none"
+          >
+            {requestChoices.map((req) => (
+              <option key={req.id} value={req.id}>{req.child_name || (isAm ? 'ተማሪ' : 'Learner')} · {req.student_level} · Request #{req.id}</option>
+            ))}
+          </select>
+        </section>
+      )}
 
       {!requestId && (
         <button type="button" onClick={() => onSelectTab?.('parent_form')} className="flex w-full items-center justify-between rounded-2xl border border-citrus/40 bg-citrus/10 p-3 text-left">
