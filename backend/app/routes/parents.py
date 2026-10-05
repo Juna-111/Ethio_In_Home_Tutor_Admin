@@ -12,7 +12,7 @@ from app.bot.bot_instance import send_parent_request_card
 from app.config import settings
 from app.services.matcher import _are_grades_compatible, _normalize_list, _schedule_days
 from app.database import get_db
-from app.models import Assignment, MarketplaceFavorite, MatchInvite, ParentRequest, SessionFeedback, Tutor, TutorVerification
+from app.models import Assignment, Child, MarketplaceFavorite, MatchInvite, ParentRequest, SessionFeedback, Tutor, TutorVerification
 from app.schemas import (
     ParentContactAdminCreate,
     ParentFeedbackCreate,
@@ -21,6 +21,9 @@ from app.schemas import (
     ParentRequestItem,
     ParentRequestResponse,
     MarketplaceApplicationCreate,
+    ChildCreate,
+    ChildResponse,
+    ParentChildrenResponse,
     MarketplaceApplicationResponse,
     MarketplaceFavoriteResponse,
     MarketplaceTutorDetailResponse,
@@ -45,37 +48,26 @@ async def create_parent_request(
     verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
     response: Response = None,
 ):
-    """
-    Validates and stores a parent intake request in PostgreSQL.
-    Status is initialized to 'pending'.
-    Forwards a notification card to the Telegram Admin Group.
-    """
-    # Never trust telegram_user_id from the JSON body; it is client-controlled.
     effective_tg_id = verified_user_id
+    if effective_tg_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
 
-    # Protect against double-taps, retries, and browser/network replay without
-    # preventing a parent from creating genuinely different requests later.
+    child = await _get_or_create_child(db, effective_tg_id, payload.child_id, payload.child_name)
+    preferred_tutor = await _get_verified_marketplace_tutor(db, payload.preferred_tutor_id) if payload.preferred_tutor_id else None
+
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-    recent = (
-        await db.execute(
-            select(ParentRequest)
-            .where(ParentRequest.created_at >= cutoff)
-            .order_by(ParentRequest.created_at.desc())
-            .limit(25)
-        )
-    ).scalars().all()
+    recent = (await db.execute(
+        select(ParentRequest).where(
+            ParentRequest.created_at >= cutoff,
+            ParentRequest.telegram_user_id == effective_tg_id,
+        ).order_by(ParentRequest.created_at.desc()).limit(25)
+    )).scalars().all()
+
     normalized_phone = payload.phone_number.strip()
     for existing in recent:
-        owner_match = (
-            effective_tg_id is not None
-            and existing.telegram_user_id == effective_tg_id
-        ) or (
-            effective_tg_id is None
-            and existing.telegram_user_id is None
-            and existing.phone_number == normalized_phone
-        )
-        same_request = (
+        if (
             existing.phone_number == normalized_phone
+            and existing.child_id == (child.id if child else None)
             and existing.student_level == payload.student_level
             and existing.subjects == payload.subjects
             and existing.location_subcity == payload.location_subcity
@@ -83,14 +75,16 @@ async def create_parent_request(
             and existing.time_slot == payload.time_slot
             and existing.session_duration == payload.session_duration
             and float(existing.budget_etb or 0) == float(payload.budget_etb or 0)
-        )
-        if owner_match and same_request:
+            and existing.preferred_tutor_id == payload.preferred_tutor_id
+        ):
             if response is not None:
                 response.status_code = status.HTTP_200_OK
             return existing
 
     parent_req = ParentRequest(
         telegram_user_id=effective_tg_id,
+        child_id=child.id if child else None,
+        preferred_tutor_id=preferred_tutor.id if preferred_tutor else None,
         parent_name=payload.parent_name,
         phone_number=payload.phone_number,
         student_level=payload.student_level,
@@ -105,16 +99,63 @@ async def create_parent_request(
         budget_etb=payload.budget_etb,
         status="pending",
     )
-
     db.add(parent_req)
+    await db.flush()
+
+    if preferred_tutor:
+        db.add(MatchInvite(request_id=parent_req.id, tutor_id=preferred_tutor.id, status="sent"))
+
     await db.commit()
     await db.refresh(parent_req)
-
-    # Broadcast intake card to Telegram Admin Group (creates dedicated ticket topic and index directory card)
     await send_parent_request_card(parent_req, db_session=db)
+
+    if preferred_tutor and preferred_tutor.telegram_user_id and bot_instance.bot_app:
+        try:
+            await bot_instance.bot_app.bot.send_message(
+                chat_id=preferred_tutor.telegram_user_id,
+                text=(
+                    "📚 <b>Direct Tutor Request</b>\n\n"
+                    f"A parent specifically requested you for <b>{html.escape(parent_req.student_level)}</b> "
+                    f"in <b>{html.escape(parent_req.location_subcity)}</b>.\n"
+                    f"<b>Subjects:</b> {html.escape(', '.join(str(v) for v in _json_list(parent_req.subjects)))}\n"
+                    f"<b>Schedule:</b> {html.escape(_availability_text(parent_req.schedule_days))}\n"
+                    f"<b>Budget:</b> {parent_req.budget_etb:,.0f} ETB/hr\n\n"
+                    "Open your Tutor Portal to accept or decline this opportunity."
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            logger.warning("Direct tutor request notification failed for tutor #%s: %s", preferred_tutor.id, exc)
 
     return parent_req
 
+
+@router.get("/me/children", response_model=ParentChildrenResponse, summary="List the authenticated parent's children")
+async def get_parent_children(
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+):
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+    rows = await db.execute(select(Child).where(
+        Child.parent_telegram_user_id == verified_user_id,
+        Child.is_active.is_(True),
+    ).order_by(Child.created_at.asc(), Child.id.asc()))
+    return ParentChildrenResponse(children=[ChildResponse.model_validate(c) for c in rows.scalars().all()])
+
+
+@router.post("/me/children", response_model=ChildResponse, status_code=status.HTTP_201_CREATED, summary="Create a child profile")
+async def create_parent_child(
+    payload: ChildCreate,
+    db: AsyncSession = Depends(get_db),
+    verified_user_id: Optional[int] = Depends(get_optional_telegram_user),
+):
+    if verified_user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Telegram Mini App authentication is required.")
+    child = await _get_or_create_child(db, verified_user_id, None, payload.name)
+    await db.commit()
+    await db.refresh(child)
+    return child
 
 @router.post(
     "/me/requests/{request_id}/cancel",
@@ -182,6 +223,15 @@ async def get_parent_requests(
     )
     parent_requests = requests_res.scalars().all()
 
+    child_ids = [r.child_id for r in parent_requests if r.child_id]
+    children_map = {}
+    if child_ids:
+        child_rows = await db.execute(select(Child).where(
+            Child.id.in_(child_ids),
+            Child.parent_telegram_user_id == verified_user_id,
+        ))
+        children_map = {c.id: c for c in child_rows.scalars().all()}
+
     req_ids = [r.id for r in parent_requests]
     assignments_map = {}
     tutors_map = {}
@@ -224,6 +274,9 @@ async def get_parent_requests(
         items.append(
             ParentRequestItem(
                 id=r.id,
+                child_id=r.child_id,
+                child_name=children_map.get(r.child_id).name if r.child_id in children_map else None,
+                preferred_tutor_id=r.preferred_tutor_id,
                 student_level=r.student_level,
                 subjects=r.subjects if isinstance(r.subjects, list) else [str(r.subjects)],
                 location_subcity=r.location_subcity,
@@ -351,6 +404,48 @@ async def contact_admin_support(
     return {"ok": True, "success": True, "message": "Your message has been delivered to our administrative team."}
 
 
+
+
+async def _get_or_create_child(db: AsyncSession, parent_telegram_user_id: int, child_id: Optional[int], child_name: Optional[str]) -> Optional[Child]:
+    if child_id is not None:
+        child = await db.scalar(select(Child).where(
+            Child.id == child_id,
+            Child.parent_telegram_user_id == parent_telegram_user_id,
+            Child.is_active.is_(True),
+        ))
+        if not child:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Child profile not found.")
+        return child
+    if not child_name:
+        return None
+    normalized = " ".join(child_name.strip().lower().split())
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Child name cannot be empty.")
+    child = await db.scalar(select(Child).where(
+        Child.parent_telegram_user_id == parent_telegram_user_id,
+        Child.normalized_name == normalized,
+        Child.is_active.is_(True),
+    ))
+    if child:
+        return child
+    child = Child(parent_telegram_user_id=parent_telegram_user_id, name=child_name.strip(), normalized_name=normalized)
+    db.add(child)
+    await db.flush()
+    return child
+
+
+async def _get_verified_marketplace_tutor(db: AsyncSession, tutor_id: int) -> Tutor:
+    tutor = await db.scalar(select(Tutor).where(
+        Tutor.id == tutor_id,
+        Tutor.status.in_({"verified", "probation"}),
+        Tutor.is_paused.is_(False),
+    ))
+    if not tutor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor is not currently available in the marketplace.")
+    verification = await db.scalar(select(TutorVerification).where(TutorVerification.tutor_id == tutor.id))
+    if not verification or not all([verification.id_verified, verification.entrance_result_verified, verification.phone_confirmed, verification.claims_plausible]):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor is not fully verified yet.")
+    return tutor
 
 def _json_list(value):
     if isinstance(value, list):
@@ -609,15 +704,7 @@ async def apply_to_tutor(
     if request.status not in {"pending", "reviewing"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only an active tutoring request can receive applications.")
 
-    tutor = await db.scalar(
-        select(Tutor).where(Tutor.id == tutor_id, Tutor.status.in_({"verified", "probation"}), Tutor.is_paused.is_(False))
-    )
-    if not tutor:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tutor is not currently available in the marketplace.")
-
-    verification = await db.scalar(select(TutorVerification).where(TutorVerification.tutor_id == tutor.id))
-    if not verification or not all([verification.id_verified, verification.entrance_result_verified, verification.phone_confirmed, verification.claims_plausible]):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor is not fully verified yet.")
+    tutor = await _get_verified_marketplace_tutor(db, tutor_id)
 
     if request.preferred_gender not in {"No preference", "", None} and request.preferred_gender.lower() != str(tutor.gender).lower():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor does not match the gender preference on your request.")
@@ -645,6 +732,16 @@ async def apply_to_tutor(
     tutor_days = _schedule_days(tutor.availability_schedule)
     if requested_days and (not tutor_days or not requested_days.intersection(tutor_days)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This tutor has no availability overlap with the request.")
+
+    if request.preferred_tutor_id is not None and request.preferred_tutor_id != tutor.id:
+        current_target_invite = await db.scalar(select(MatchInvite).where(
+            MatchInvite.request_id == request.id,
+            MatchInvite.tutor_id == request.preferred_tutor_id,
+        ))
+        if current_target_invite and current_target_invite.status == "yes":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This request already has a tutor who accepted the direct request.")
+
+    request.preferred_tutor_id = tutor.id
 
     existing = await db.scalar(
         select(MatchInvite).where(MatchInvite.request_id == request.id, MatchInvite.tutor_id == tutor.id)
