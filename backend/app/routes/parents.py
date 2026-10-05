@@ -503,6 +503,9 @@ def _match_tutor(tutor: Tutor, request: Optional[ParentRequest]):
 
     score = 0.0
     reasons = []
+    if request.preferred_tutor_id == tutor.id:
+        score += 50.0
+        reasons.append("Explicitly selected tutor")
     if subject_hits:
         score += 35.0 * min(1.0, len(subject_hits) / max(1, len(requested_subjects)))
         reasons.append(f"Teaches {', '.join(sorted(subject_hits))}")
