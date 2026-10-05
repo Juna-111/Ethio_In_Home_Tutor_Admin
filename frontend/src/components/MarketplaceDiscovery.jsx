@@ -73,6 +73,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
 
   const apply = async (tutor) => {
     if (!requestId) {
+      try { sessionStorage.setItem('marketplace_target_tutor', JSON.stringify(tutor)); } catch (_) {}
       onSelectTab?.('parent_form');
       return;
     }
@@ -81,7 +82,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
     setNotice(null);
     try {
       await applyToMarketplaceTutor(tutor.id, requestId);
-      setNotice(isAm ? 'ማመልከቻዎ ተልኳል። አስጠኚው ሲመልስ ያያሉ።' : 'Application sent. You will see the tutor response in your request flow.');
+      setNotice(isAm ? 'በቀጥታ ለዚህ ልጅ የመረጡት አስጠኚ ተጠይቋል። አስጠኚው መቀበል አለበት።' : 'Direct tutor request sent for this child. The tutor must accept before assignment.');
       await load();
     } catch (err) {
       setError(err.message || (isAm ? 'ማመልከቻውን መላክ አልተቻለም።' : 'Could not send application.'));
