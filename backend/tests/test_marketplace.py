@@ -60,15 +60,14 @@ def test_registration_safety_contracts():
     assert register_tutor.__name__ == "register_tutor"
 
 
-def test_customer_register_uses_reply_keyboard_webapp(monkeypatch):
-    from app.bot.handlers import get_public_reply_keyboard
+def test_customer_register_uses_botfather_direct_link(monkeypatch):
+    from app.bot.handlers import get_customer_register_keyboard
     from app.config import settings
 
-    monkeypatch.setattr(settings, "WEBAPP_URL", "https://customer.example.com")
+    monkeypatch.setattr(settings, "CUSTOMER_MINI_APP_URL", "https://t.me/teqoaibot/customer")
 
-    keyboard = get_public_reply_keyboard()
-    register_button = keyboard.keyboard[0][0]
-
-    assert register_button.text == "🚀 Register"
-    assert register_button.web_app is not None
-    assert register_button.web_app.url == "https://customer.example.com"
+    keyboard = get_customer_register_keyboard()
+    assert keyboard is not None
+    button = keyboard.inline_keyboard[0][0]
+    assert button.text == "🚀 Register"
+    assert button.url == "https://t.me/teqoaibot/customer"
