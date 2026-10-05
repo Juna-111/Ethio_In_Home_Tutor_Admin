@@ -246,25 +246,11 @@ def _get_customer_mini_app_link() -> Optional[str]:
 
 
 def get_public_reply_keyboard() -> ReplyKeyboardMarkup:
-    """Build the persistent customer reply keyboard with a native Mini App button.
-
-    The Register button uses Telegram's WebAppInfo launch mechanism rather than a
-    normal URL. That keeps the customer experience in the reply keyboard while
-    allowing Telegram to attach Web App initData for backend verification.
-    """
-    webapp_url = _get_webapp_url()
-    register_button = (
-        KeyboardButton("🚀 Register", web_app=WebAppInfo(url=webapp_url))
-        if webapp_url
-        else KeyboardButton("🚀 Register")
-    )
-
+    """Build the persistent customer reply keyboard."""
     keyboard = [[
-        register_button,
         KeyboardButton("ℹ️ About Us"),
         KeyboardButton("📞 Contact"),
     ]]
-
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
@@ -376,12 +362,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     reply_markup = get_public_reply_keyboard()
+    register_keyboard = get_customer_register_keyboard()
 
     await message.reply_text(
         text=welcome_text,
         reply_markup=reply_markup,
         parse_mode="HTML"
     )
+    if register_keyboard:
+        await message.reply_text(
+            text="🔐 <b>Secure registration</b> — open the customer Mini App below:",
+            reply_markup=register_keyboard,
+            parse_mode="HTML",
+        )
 
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
