@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     PARENT_REQUESTS_TOPIC_ID: Optional[int] = None
     TUTOR_REGISTRATION_TOPIC_ID: Optional[int] = None
     WEBAPP_URL: Optional[str] = None
+    CUSTOMER_MINI_APP_URL: Optional[str] = None
     MINI_APP_URL: Optional[str] = None
     ADMIN_MINI_APP_SHORT_NAME: Optional[str] = None
     # How "Review in App" buttons open the admin app: "direct" (t.me/<bot>/<app>?startapp=),
@@ -88,7 +89,7 @@ class Settings(BaseSettings):
             return v.strip().lower() in ("true", "1", "yes", "t")
         return bool(v)
 
-    @field_validator("MINI_APP_URL", "WEBAPP_URL", mode="before")
+    @field_validator("MINI_APP_URL", "WEBAPP_URL", "CUSTOMER_MINI_APP_URL", mode="before")
     @classmethod
     def sanitize_urls(cls, v):
         if v is None:
