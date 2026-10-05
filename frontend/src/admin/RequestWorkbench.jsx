@@ -317,6 +317,10 @@ export default function RequestWorkbench({ initialRequestId }) {
                         <strong>{Math.round(candidate.overall_score)}</strong><small>MATCH</small>
                       </div>
                       <div className="candidate-actions">
+                        <span className={`next-step next-step-${candidate.invite_status || 'new'}`}>
+                          <strong>{candidateNextStep(candidate)}</strong>
+                          <small>{candidate.invite_status === 'yes' ? 'Tutor accepted. Assignment is unlocked.' : candidate.invite_status === 'sent' ? 'Waiting for tutor response.' : candidate.invite_status === 'no' ? 'Choose another candidate.' : candidate.telegram_available ? 'Send an availability invite first.' : 'No Telegram workflow.'}</small>
+                        </span>
                         {!candidate.telegram_available && <span className="muted-caption">No Telegram</span>}
                         {candidate.invite_status && <span className={`invite-state invite-${candidate.invite_status}`}>{candidate.invite_status === 'yes' ? 'Available' : candidate.invite_status === 'sent' ? 'Pinged' : candidate.invite_status === 'no' ? 'Unavailable' : candidate.invite_status}</span>}
                         <button className="secondary-button" type="button" disabled={!canAssign || actionBusy} onClick={() => requestConfirmation(
