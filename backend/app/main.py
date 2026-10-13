@@ -22,6 +22,7 @@ from app.routes.admin_control import router as admin_control_router
 from app.routes.parents import router as parents_router
 from app.routes.tutors import router as tutors_router
 from app.routes.sessions import router as sessions_router
+from app.routes.learning import router as learning_router
 from app.services.schema_check import get_schema_status
 
 
@@ -238,6 +239,7 @@ app.include_router(admin_control_router, prefix="/api/v1")
 app.include_router(parents_router, prefix="/api/v1")
 app.include_router(tutors_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
+app.include_router(learning_router, prefix="/api/v1")
 
 
 @app.get("/", tags=["Root"])
