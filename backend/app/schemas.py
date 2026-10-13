@@ -964,3 +964,8 @@ class PracticeQuestionAdminResponse(PracticeQuestionResponse):
     correct_option_index: int
     explanation: Optional[str] = None
     is_active: bool
+
+
+class PracticeQuestionAdminListResponse(BaseModel):
+    questions: list[PracticeQuestionAdminResponse]
+    total: int
