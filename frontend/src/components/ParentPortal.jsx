@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { getParentMyRequests, submitParentFeedback, submitParentContactAdmin, cancelParentRequest } from '../services/api';
 import SessionManager from './SessionManager';
+import LearningPanel from './LearningPanel';
 
 export default function ParentPortal({ user, lang, onSelectTab }) {
   const [requests, setRequests] = useState([]);
@@ -681,8 +682,9 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
         </div>
       )}
       </div>
-      <div className="mt-4">
+      <div className="mt-4 space-y-4">
         <SessionManager mode="parent" lang={lang} />
+        <LearningPanel mode="parent" lang={lang} />
       </div>
     </div>
   );
