@@ -775,7 +775,3 @@ async def test_parent_can_cancel_only_owned_unassigned_requests(
 
     await db_session.refresh(owned)
     assert owned.status == "cancelled"
-
-    db_session.add(_complete_verification(tutor))
-    db_session.add(_complete_verification(tutor))
-    db_session.add(_complete_verification(tutor))
