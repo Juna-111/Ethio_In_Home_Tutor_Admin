@@ -305,6 +305,7 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
     monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
     parent = _parent_request("Assign Parent")
     tutor = _tutor("Assign Tutor", status="verified")
+    tutor.availability_schedule = ["Mon"]
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
@@ -350,6 +351,7 @@ async def test_admin_assignment_notifies_parent_and_tutor(
     parent = _parent_request("Notify Parent")
     parent.telegram_user_id = 900001
     tutor = _tutor("Notify Tutor", status="verified")
+    tutor.availability_schedule = ["Mon"]
     tutor.telegram_user_id = 900002
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
@@ -397,6 +399,7 @@ async def test_admin_assignment_notification_failure_does_not_break_assignment(
     parent = _parent_request("Blocked Parent")
     parent.telegram_user_id = 900003
     tutor = _tutor("Blocked Tutor", status="verified")
+    tutor.availability_schedule = ["Mon"]
     tutor.telegram_user_id = 900004
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
