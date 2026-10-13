@@ -52,8 +52,6 @@ async def test_create_parent_request_success(async_client: AsyncClient, db_sessi
     }
 
     _authenticate_preview()
-    _authenticate_preview(123456790)
-    _authenticate_preview(123456793)
     response = await async_client.post("/api/v1/parents/request", json=payload)
     assert response.status_code == 201
     data = response.json()
@@ -274,6 +272,7 @@ async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, mo
         "budget_etb": 3500.0
     }
 
+    _authenticate_preview(123456790)
     response = await async_client.post("/api/v1/parents/request", json=payload)
     assert response.status_code == 201
     created_id = response.json()["id"]
@@ -550,6 +549,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
         "budget_etb": 500.0
     }
 
+    _authenticate_preview(123456793)
     response = await async_client.post("/api/v1/parents/request", json=payload)
     assert response.status_code == 201
     created_id = response.json()["id"]
