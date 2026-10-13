@@ -398,7 +398,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
         expected_fee_etb=400.0,
         base_subcity="Kolfe",
         coverage_areas=["Kolfe"],
-        availability_schedule="Flexible",
+        availability_schedule=["Tue", "Thu"],
         status="verified"
     )
     db_session.add_all([parent, tutor])
