@@ -365,6 +365,8 @@ export default function TutorPortal({ lang, onSelectTab }) {
           )) : <div className="rounded-2xl bg-canvas p-4 text-center text-[10px] text-muted">{isAm ? 'እስካሁን ተማሪ አልተመደበልዎትም።' : 'No student assignments yet.'}</div>}
         </div>
       </section>
+
+      <SessionManager mode="tutor" assignments={assignments} lang={lang} />
     </div>
   );
 }
