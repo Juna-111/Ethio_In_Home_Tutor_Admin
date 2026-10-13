@@ -3,10 +3,14 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Assignment, MatchInvite, ParentRequest, Tutor
+from app.models import Assignment, MatchInvite, ParentRequest, Tutor, TutorVerification
 from app.services.matcher import find_top_matches
 from tests.conftest import TestingSessionLocal
 import app.bot.handlers as bot_handlers
+
+
+def _complete_verification(tutor):
+    return TutorVerification(tutor_id=tutor.id, id_verified=True, entrance_result_verified=True, phone_confirmed=True, claims_plausible=True)
 
 
 @pytest.mark.asyncio
@@ -401,6 +405,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await db_session.commit()
     await db_session.refresh(parent)
     await db_session.refresh(tutor)
+    db_session.add(_complete_verification(tutor))
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
     await db_session.commit()
 
@@ -492,6 +497,7 @@ async def test_match_and_assign_preserves_topic_thread_id(db_session: AsyncSessi
     await db_session.commit()
     await db_session.refresh(parent)
     await db_session.refresh(tutor)
+    db_session.add(_complete_verification(tutor))
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
     await db_session.commit()
 
