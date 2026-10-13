@@ -428,7 +428,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await bot_handlers.handle_assign_match(mock_update, mock_context, f"assign_match:{parent.id}:{tutor.id}")
 
     await db_session.refresh(parent)
-    assert parent.status == "matched"
+    assert parent.status == "matched", mock_query.answer.await_args
 
     # Verify Assignment record created
     from app.models import Assignment
