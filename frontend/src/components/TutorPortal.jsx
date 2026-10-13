@@ -228,10 +228,10 @@ export default function TutorPortal({ lang, onSelectTab }) {
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
-          <div className="rounded-2xl bg-[#f1f3ef] p-3"><span className="text-muted">Education</span><strong className="mt-1 block text-ink">{profile.education_year}</strong></div>
-          <div className="rounded-2xl bg-[#f1f3ef] p-3"><span className="text-muted">Experience</span><strong className="mt-1 block text-ink">{profile.years_of_experience} {isAm ? 'ዓመት' : 'years'}</strong></div>
-          <div className="rounded-2xl bg-[#f1f3ef] p-3"><span className="text-muted">Subjects</span><strong className="mt-1 block text-ink">{(profile.subjects_qualified || []).join(', ') || '—'}</strong></div>
-          <div className="rounded-2xl bg-[#f1f3ef] p-3"><span className="text-muted">Grades</span><strong className="mt-1 block text-ink">{(profile.grades_qualified || []).join(', ') || '—'}</strong></div>
+          <div className="rounded-2xl bg-canvas p-3"><span className="text-muted">Education</span><strong className="mt-1 block text-ink">{profile.education_year}</strong></div>
+          <div className="rounded-2xl bg-canvas p-3"><span className="text-muted">Experience</span><strong className="mt-1 block text-ink">{profile.years_of_experience} {isAm ? 'ዓመት' : 'years'}</strong></div>
+          <div className="rounded-2xl bg-canvas p-3"><span className="text-muted">Subjects</span><strong className="mt-1 block text-ink">{(profile.subjects_qualified || []).join(', ') || '—'}</strong></div>
+          <div className="rounded-2xl bg-canvas p-3"><span className="text-muted">Grades</span><strong className="mt-1 block text-ink">{(profile.grades_qualified || []).join(', ') || '—'}</strong></div>
         </div>
 
         <div className="mt-2 flex items-center gap-2 rounded-2xl border border-line p-3 text-[10px]">
@@ -288,7 +288,7 @@ export default function TutorPortal({ lang, onSelectTab }) {
             </button>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2 rounded-2xl bg-[#f1f3ef] p-3">
+        <div className="mt-3 flex items-center gap-2 rounded-2xl bg-canvas p-3">
           <Clock3 className="h-4 w-4 text-pine" />
           <input
             value={timeWindow}
@@ -318,8 +318,8 @@ export default function TutorPortal({ lang, onSelectTab }) {
                 </span>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-[9px]">
-                <span className="rounded-xl bg-[#f1f3ef] p-2"><MapPin className="mr-1 inline h-3 w-3 text-pine" />{item.location}</span>
-                <span className="rounded-xl bg-[#f1f3ef] p-2"><CalendarDays className="mr-1 inline h-3 w-3 text-pine" />{item.schedule}</span>
+                <span className="rounded-xl bg-canvas p-2"><MapPin className="mr-1 inline h-3 w-3 text-pine" />{item.location}</span>
+                <span className="rounded-xl bg-canvas p-2"><CalendarDays className="mr-1 inline h-3 w-3 text-pine" />{item.schedule}</span>
               </div>
               <div className="mt-2 flex items-center justify-between">
                 <strong className="text-xs text-ink">{Number(item.budget_etb || 0).toLocaleString()} ETB/hr</strong>
@@ -331,7 +331,7 @@ export default function TutorPortal({ lang, onSelectTab }) {
                 )}
               </div>
             </div>
-          )) : <div className="rounded-2xl bg-[#f1f3ef] p-4 text-center text-[10px] text-muted">{isAm ? 'እስካሁን አዲስ እድል የለም።' : 'No tutoring opportunities yet.'}</div>}
+          )) : <div className="rounded-2xl bg-canvas p-4 text-center text-[10px] text-muted">{isAm ? 'እስካሁን አዲስ እድል የለም።' : 'No tutoring opportunities yet.'}</div>}
         </div>
       </section>
 
@@ -341,8 +341,8 @@ export default function TutorPortal({ lang, onSelectTab }) {
           <div><h3 className="text-sm font-black text-ink">{isAm ? 'የተመደቡ ተማሪዎች' : 'My assignments'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'ንቁ ምደባዎችዎን እና የተገመተ ገቢዎን ይከታተሉ።' : 'Manage your active students and assignment history.'}</p></div></div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-2xl bg-[#f1f3ef] p-3"><span className="text-[9px] text-muted">Active</span><strong className="mt-1 block text-lg font-black text-pine">{activeAssignments.length}</strong></div>
-          <div className="rounded-2xl bg-[#f1f3ef] p-3"><span className="text-[9px] text-muted">Est. earnings</span><strong className="mt-1 block text-sm font-black text-ink">{Math.round(estimatedEarnings).toLocaleString()} ETB</strong></div>
+          <div className="rounded-2xl bg-canvas p-3"><span className="text-[9px] text-muted">Active</span><strong className="mt-1 block text-lg font-black text-pine">{activeAssignments.length}</strong></div>
+          <div className="rounded-2xl bg-canvas p-3"><span className="text-[9px] text-muted">Est. earnings</span><strong className="mt-1 block text-sm font-black text-ink">{Math.round(estimatedEarnings).toLocaleString()} ETB</strong></div>
         </div>
 
         <div className="mt-3 space-y-2">
@@ -362,7 +362,7 @@ export default function TutorPortal({ lang, onSelectTab }) {
                 {item.parent_phone && <a href={`tel:${item.parent_phone}`} className="rounded-xl bg-pine p-2 text-paper" aria-label={isAm ? 'ወላጅን ይደውሉ' : 'Call parent'}><Phone className="h-3.5 w-3.5" /></a>}
               </div>
             </div>
-          )) : <div className="rounded-2xl bg-[#f1f3ef] p-4 text-center text-[10px] text-muted">{isAm ? 'እስካሁን ተማሪ አልተመደበልዎትም።' : 'No student assignments yet.'}</div>}
+          )) : <div className="rounded-2xl bg-canvas p-4 text-center text-[10px] text-muted">{isAm ? 'እስካሁን ተማሪ አልተመደበልዎትም።' : 'No student assignments yet.'}</div>}
         </div>
       </section>
     </div>
