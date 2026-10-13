@@ -13,6 +13,7 @@ import ExportCenter from './ExportCenter.jsx';
 import AdminManagement from './AdminManagement.jsx';
 import CustomerCRM from './CustomerCRM.jsx';
 import AssignmentPipeline from './AssignmentPipeline.jsx';
+import QuestionBankManager from './QuestionBankManager.jsx';
 
 function parseStartParam(value) {
   const match = /^(tutor|request)_(\d+)$/.exec(value || '');
@@ -57,7 +58,7 @@ export default function AdminApp() {
     return undefined;
   }, [activeSection, view.status]);
 
-  const sectionNames = { requests: 'Request', tutors: 'Tutor', crm: 'Families', pipeline: 'Assignments', ops: 'Incidents', analytics: 'Insights', coverage: 'Marketplace health', export: 'Exports', admins: 'Admin access' };
+  const sectionNames = { requests: 'Request', tutors: 'Tutor', crm: 'Families', pipeline: 'Assignments', ops: 'Incidents', analytics: 'Insights', coverage: 'Marketplace health', export: 'Exports', admins: 'Admin access', questions: 'Exam question bank' };
 
   const navigate = (section, id) => {
     setActiveSection(section);
@@ -93,6 +94,7 @@ export default function AdminApp() {
             {view.status === 'ready' && activeSection === 'analytics' && <AnalyticsBoard />}
             {view.status === 'ready' && activeSection === 'coverage' && <><CoverageBoard /><div style={{ marginTop: 30 }}><IdleTutors /></div></>}
             {view.status === 'ready' && activeSection === 'export' && <ExportCenter />}
+            {view.status === 'ready' && activeSection === 'questions' && <QuestionBankManager />}
             {view.status === 'ready' && activeSection === 'admins' && dashboard?.admin_role === 'super_admin' && <AdminManagement />}
             {view.status === 'ready' && activeSection !== 'overview' && <footer className="admin-footer"><span><span className="status-dot" /> LIVE DATA CONNECTED</span><span>MENTORLINK <i>·</i> ADMIN OPERATIONS</span></footer>}
           </>
