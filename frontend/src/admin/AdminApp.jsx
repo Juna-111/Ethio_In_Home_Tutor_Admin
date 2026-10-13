@@ -71,7 +71,7 @@ export default function AdminApp() {
     <div className="admin-app">
       <header className="admin-topbar">
         <a className="admin-brand" href="/admin.html" aria-label="MentorLink Admin home">
-          <span className="brand-mark" aria-hidden="true"><span>E</span></span>
+          <span className="brand-mark" aria-hidden="true"><span className="brand-mark-dot" /></span>
           <span className="brand-copy"><strong>MentorLink</strong><span className="brand-admin">ADMIN CONSOLE</span></span>
         </a>
         <div className="topbar-status"><span className="status-dot" />{dashboard ? 'SIGNED IN · ' + (dashboard.admin_role || 'ADMIN').toUpperCase() : 'ADMIN OPERATIONS'}</div>
