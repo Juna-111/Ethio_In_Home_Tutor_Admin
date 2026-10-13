@@ -315,3 +315,42 @@ class DiagnosticAssessment(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     next_steps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PracticeQuestion(Base):
+    """Admin-authored curriculum-aligned question; answer keys stay server-side."""
+
+    __tablename__ = "practice_questions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subject: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    grade_level: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    topic: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    difficulty: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[List[str]] = mapped_column(JSON, nullable=False)
+    correct_option_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_by_admin_id: Mapped[int] = mapped_column(ForeignKey("admin_users.telegram_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class MockExamAttempt(Base):
+    """Timed attempt owned by one authenticated Telegram account."""
+
+    __tablename__ = "mock_exam_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(120), nullable=False)
+    topic: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    question_ids: Mapped[List[int]] = mapped_column(JSON, nullable=False)
+    answers: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    time_limit_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    score_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    result_details: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
