@@ -94,6 +94,7 @@ def test_bot_token(monkeypatch):
     token = "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
     monkeypatch.setattr(settings, "BOT_TOKEN", token)
     monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/TestBot/admin")
+    monkeypatch.setattr(settings, "CUSTOMER_MINI_APP_URL", "https://t.me/TestBot/customer")
     return token
 
 
@@ -118,7 +119,7 @@ def test_tutor_assignment_card_fields_and_keyboard(test_bot_token):
     assert keyboard is not None
     button = keyboard.inline_keyboard[0][0]
     assert button.text == "Review in App"
-    assert "startapp=request_10" in button.url
+    assert "startapp=tutor_portal_request_10" in button.url
 
 
 # AC-2: Parent DM Notification completeness (10 fields & Review in App deep link)
@@ -142,7 +143,7 @@ def test_parent_assignment_card_fields_and_keyboard(test_bot_token):
     assert keyboard is not None
     button = keyboard.inline_keyboard[0][0]
     assert button.text == "Review in App"
-    assert "startapp=request_20" in button.url
+    assert "startapp=parent_portal_request_20" in button.url
 
 
 # AC-12: All 5 card types have Review in App buttons
@@ -165,6 +166,11 @@ def test_all_five_card_types_have_review_in_app_button(test_bot_token):
             if found:
                 break
         assert found, f"Review in App button missing in {card_type} keyboard"
+    tutor_assignment_url = keyboards[3][1].inline_keyboard[0][0].url
+    parent_assignment_url = keyboards[4][1].inline_keyboard[0][0].url
+    assert "startapp=tutor_portal_request_4" in tutor_assignment_url
+    assert "startapp=parent_portal_request_5" in parent_assignment_url
+    assert "/customer" in tutor_assignment_url and "/customer" in parent_assignment_url
 
 
 # AC-13: Startup check logs sample Review URL
