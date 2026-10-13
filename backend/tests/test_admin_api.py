@@ -308,6 +308,7 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    db_session.add(_complete_verification(tutor))
     await db_session.commit()
 
     response = await async_client.post(
@@ -353,6 +354,7 @@ async def test_admin_assignment_notifies_parent_and_tutor(
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    db_session.add(_complete_verification(tutor))
     await db_session.commit()
 
     response = await async_client.post(
@@ -399,6 +401,7 @@ async def test_admin_assignment_notification_failure_does_not_break_assignment(
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    db_session.add(_complete_verification(tutor))
     await db_session.commit()
 
     response = await async_client.post(
