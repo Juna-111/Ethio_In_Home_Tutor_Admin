@@ -67,3 +67,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Low-data mode avoids remote fonts on the next load and strips expensive visual effects immediately. */
+.low-data-mode .blur-2xl,
+.low-data-mode .blur-xl {
+  display: none !important;
+}
+.low-data-mode .shadow-2xl,
+.low-data-mode .shadow-xl,
+.low-data-mode .shadow-lg,
+.low-data-mode .shadow-md {
+  box-shadow: none !important;
+}
+.low-data-mode *,
+.low-data-mode *::before,
+.low-data-mode *::after {
+  animation: none !important;
+  transition: none !important;
+}

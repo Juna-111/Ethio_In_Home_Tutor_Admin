@@ -1,10 +1,10 @@
 import React from 'react';
-import { ArrowLeft, Globe, User } from 'lucide-react';
+import { ArrowLeft, Globe, User, Wifi, WifiOff } from 'lucide-react';
 import BrandMark from './BrandMark';
 import { TRANSLATIONS } from '../constants/translations';
 
 
-export default function Header({ user, lang, onToggleLanguage, showHome, onHome }) {
+export default function Header({ user, lang, onToggleLanguage, lowDataMode, onToggleLowData, showHome, onHome }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
 
   return (
@@ -34,6 +34,17 @@ export default function Header({ user, lang, onToggleLanguage, showHome, onHome 
         </button>
 
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleLowData}
+            aria-pressed={Boolean(lowDataMode)}
+            aria-label={lowDataMode ? (lang === 'am' ? 'ዝቅተኛ ዳታ አጥፋ' : 'Disable low-data mode') : (lang === 'am' ? 'ዝቅተኛ ዳታ አብራ' : 'Enable low-data mode')}
+            title={lowDataMode ? (lang === 'am' ? 'ዝቅተኛ ዳታ ነቅቷል' : 'Low-data mode enabled') : (lang === 'am' ? 'ዝቅተኛ ዳታ አንቃ' : 'Enable low-data mode')}
+            className={`flex items-center justify-center rounded-full border px-2 py-1.5 text-[10px] font-bold transition ${lowDataMode ? 'border-citrus bg-citrus/20 text-paper' : 'border-white/20 bg-white/10 text-paper'}`}
+          >
+            {lowDataMode ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
+          </button>
+
           <button
             type="button"
             onClick={onToggleLanguage}

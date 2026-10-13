@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "MentorLink In-Home Learning",
+  "short_name": "MentorLink",
+  "description": "Trusted in-home learning, tutoring sessions, and exam practice.",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbfcf9",
+  "theme_color": "#183b34",
+  "lang": "en",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/mentorlink-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
