@@ -13,6 +13,7 @@ import { getTelegramInitData } from './services/api';
 import { TRANSLATIONS } from './constants/translations';
 
 const LANGUAGE_STORAGE_KEY = 'mentorlink-language';
+const LOW_DATA_STORAGE_KEY = 'mentorlink-low-data';
 
 function resolveInitialTab() {
   try {
@@ -37,6 +38,12 @@ function resolveInitialTab() {
 export default function App() {
   const [activeTab, setActiveTab] = useState(resolveInitialTab);
   const [user, setUser] = useState(null);
+  const [lowDataMode, setLowDataMode] = useState(() => {
+    try {
+      const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      return window.localStorage.getItem(LOW_DATA_STORAGE_KEY) === '1' || Boolean(connection?.saveData);
+    } catch { return false; }
+  });
   const [submissionSuccess, setSubmissionSuccess] = useState(null);
   const [lang, setLang] = useState(() => {
     try {
@@ -51,6 +58,7 @@ export default function App() {
   const role = isTutor ? 'tutor' : 'parent';
 
   const toggleLanguage = () => setLang((prev) => (prev === 'en' ? 'am' : 'en'));
+  const toggleLowData = () => setLowDataMode((prev) => !prev);
 
   useEffect(() => {
     try {
@@ -114,16 +122,22 @@ export default function App() {
     try { window.localStorage.setItem(LANGUAGE_STORAGE_KEY, lang); } catch {}
   }, [lang]);
 
+  useEffect(() => {
+    try { window.localStorage.setItem(LOW_DATA_STORAGE_KEY, lowDataMode ? '1' : '0'); } catch {}
+  }, [lowDataMode]);
+
   const handleSuccess = (result, type) => setSubmissionSuccess({ data: result, type });
   const handleCloseModal = () => setSubmissionSuccess(null);
   const goHome = () => setActiveTab('home');
 
   return (
-    <div className="min-h-screen bg-canvas flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans text-ink">
+    <div className={"min-h-screen bg-canvas flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans text-ink " + (lowDataMode ? "low-data-mode" : "")}>
       <Header
         user={user}
         lang={lang}
         onToggleLanguage={toggleLanguage}
+        lowDataMode={lowDataMode}
+        onToggleLowData={toggleLowData}
         showHome={!isHome}
         onHome={goHome}
       />
