@@ -42,15 +42,17 @@ UPLOAD_RATE_WINDOW_SECONDS = 60
 _upload_attempts: dict[str, deque[float]] = defaultdict(deque)
 
 
-def _validate_magic_bytes(header: bytes) -> bool:
-    """Validates initial byte header against known magic numbers for PDF, PNG, and JPEG."""
-    if header.startswith(b"%PDF"):
-        return True
-    if header.startswith(b"\x89PNG\r\n\x1a\n"):
-        return True
-    if header.startswith(b"\xff\xd8\xff"):
-        return True
-    return False
+def _validate_magic_bytes(header: bytes, extension: Optional[str] = None) -> bool:
+    """Validate the file signature, and when supplied, require it to match the extension."""
+    signatures = {
+        ".pdf": header.startswith(b"%PDF"),
+        ".png": header.startswith(b"\x89PNG\r\n\x1a\n"),
+        ".jpg": header.startswith(b"\xff\xd8\xff"),
+        ".jpeg": header.startswith(b"\xff\xd8\xff"),
+    }
+    if extension is not None:
+        return signatures.get(extension.lower(), False)
+    return any(signatures.values())
 
 
 @router.post(
@@ -99,7 +101,7 @@ async def upload_tutor_document(
         async with aiofiles.open(file_path, "wb") as f:
             while chunk := await file.read(64 * 1024):  # 64 KB chunks
                 if first_chunk:
-                    if not _validate_magic_bytes(chunk[:32]):
+                    if not _validate_magic_bytes(chunk[:32], ext_lower):
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Invalid file signature. File contents do not match allowed formats (PDF, PNG, JPG)."
