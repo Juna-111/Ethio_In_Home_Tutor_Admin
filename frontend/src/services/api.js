@@ -494,3 +494,26 @@ export async function favoriteMarketplaceTutor(tutorId) {
 export async function unfavoriteMarketplaceTutor(tutorId) {
   return request(`/api/v1/parents/tutors/${encodeURIComponent(tutorId)}/favorite`, { method: 'DELETE' });
 }
+
+
+export async function getTutorSessions() {
+  return request('/api/v1/sessions/tutor/me');
+}
+
+export async function createTutorSession(assignmentId, data) {
+  return request(`/api/v1/sessions/tutor/me/assignments/${encodeURIComponent(assignmentId)}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateTutorSession(sessionId, patch) {
+  return request(`/api/v1/sessions/tutor/me/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function getParentSessions() {
+  return request('/api/v1/sessions/parent/me');
+}
