@@ -216,6 +216,20 @@ def format_tutor_card(tutor, status_override: Optional[str] = None, admin_userna
     )
 
 
+def get_customer_portal_url(role: str, request_id: int) -> Optional[str]:
+    """Build a customer-facing Mini App deep link, never an admin-only review URL."""
+    if role not in {"parent", "tutor"}:
+        return None
+    base = settings.CUSTOMER_MINI_APP_URL
+    if not base:
+        return None
+    parsed = urlsplit(base)
+    start_param = f"{role}_portal_request_{int(request_id)}"
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "startapp"]
+    query.append(("startapp", start_param))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
 def format_assignment_card_tutor(parent_req, tutor, assignment_id: Optional[int] = None) -> str:
     """Renders the Blockquote Terminal Data Card for tutor assignment notification."""
     asmt_tag = f" | ASMT-{assignment_id:04d}" if assignment_id else ""
@@ -226,8 +240,8 @@ def format_assignment_card_tutor(parent_req, tutor, assignment_id: Optional[int]
     duration_str = html.escape(str(parent_req.session_duration))
     timing_str = f"{schedule_days_str} | {time_slot_str} ({duration_str})"
     subjects_str = format_subjects(parent_req.subjects)
-    review_url = get_admin_review_url(f"request_{parent_req.id}") or ""
-    review_link_html = f'\n\n<a href="{review_url}">Review in App</a>' if review_url else ""
+    review_url = get_customer_portal_url("tutor", parent_req.id) or ""
+    review_link_html = f'\n\n<a href="{html.escape(review_url, quote=True)}">Review in App</a>' if review_url else ""
 
     return (
         f"<b>TUTORING ASSIGNMENT{asmt_tag}</b>\n\n"
@@ -251,8 +265,8 @@ def format_assignment_card_parent(parent_req, tutor, assignment_id: Optional[int
     req_tag = f"REQ-{parent_req.id:04d}"
     subjects_str = format_subjects(tutor.subjects_qualified)
     years_exp = f"{tutor.years_of_experience:g}"
-    review_url = get_admin_review_url(f"request_{parent_req.id}") or ""
-    review_link_html = f'\n\n<a href="{review_url}">Review in App</a>' if review_url else ""
+    review_url = get_customer_portal_url("parent", parent_req.id) or ""
+    review_link_html = f'\n\n<a href="{html.escape(review_url, quote=True)}">Review in App</a>' if review_url else ""
 
     coverage_areas = tutor.coverage_areas if isinstance(tutor.coverage_areas, list) else [str(tutor.coverage_areas)]
     if len(coverage_areas) > 2:
@@ -436,20 +450,16 @@ def build_tutor_registration_keyboard(tutor_id: int, has_doc: bool = False) -> I
 
 
 def build_tutor_assignment_keyboard(request_id: int) -> InlineKeyboardMarkup:
-    """Builds inline keyboard for tutor assignment DM notification."""
-    buttons = []
-    review_url = get_admin_review_url(f"request_{request_id}")
-    if review_url:
-        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    """Builds a tutor-facing link to the tutor portal, not the admin console."""
+    url = get_customer_portal_url("tutor", request_id)
+    buttons = [[InlineKeyboardButton("Review in App", url=url)]] if url else []
     return InlineKeyboardMarkup(buttons)
 
 
 def build_parent_assignment_keyboard(request_id: int) -> InlineKeyboardMarkup:
-    """Builds inline keyboard for parent assignment DM notification."""
-    buttons = []
-    review_url = get_admin_review_url(f"request_{request_id}")
-    if review_url:
-        buttons.append([InlineKeyboardButton("Review in App", url=review_url)])
+    """Builds a parent-facing link to the parent portal, not the admin console."""
+    url = get_customer_portal_url("parent", request_id)
+    buttons = [[InlineKeyboardButton("Review in App", url=url)]] if url else []
     return InlineKeyboardMarkup(buttons)
 
 
