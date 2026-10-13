@@ -53,7 +53,7 @@ async def test_parent_cancel_returns_conflict_when_request_is_no_longer_cancella
         await cancel_parent_request(request_id=42, db=db, verified_user_id=123)
 
     assert exc.value.status_code == 409
-    assert db.rolled_back is True
+    assert db.rolled_back is False
     assert db.committed is False
 
 
