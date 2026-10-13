@@ -23,6 +23,7 @@ import {
 import { getParentMyRequests, submitParentFeedback, submitParentContactAdmin, cancelParentRequest } from '../services/api';
 import SessionManager from './SessionManager';
 import LearningPanel from './LearningPanel';
+import ExamPracticePanel from './ExamPracticePanel';
 
 export default function ParentPortal({ user, lang, onSelectTab }) {
   const [requests, setRequests] = useState([]);
@@ -685,6 +686,7 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
       <div className="mt-4 space-y-4">
         <SessionManager mode="parent" lang={lang} />
         <LearningPanel mode="parent" lang={lang} />
+        <ExamPracticePanel lang={lang} />
       </div>
     </div>
   );

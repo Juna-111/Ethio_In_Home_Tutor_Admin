@@ -547,3 +547,43 @@ export async function createTutorAssessment(assignmentId, data) {
     body: JSON.stringify(data),
   });
 }
+
+
+export async function listPracticeQuestions(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  return request(`/api/v1/exams/questions${query.size ? `?${query.toString()}` : ''}`);
+}
+
+export async function startMockExam(data) {
+  return request('/api/v1/exams/attempts', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function saveMockExamAnswers(attemptId, answers) {
+  return request(`/api/v1/exams/attempts/${encodeURIComponent(attemptId)}/answers`, {
+    method: 'PATCH',
+    body: JSON.stringify({ answers }),
+  });
+}
+
+export async function submitMockExam(attemptId) {
+  return request(`/api/v1/exams/attempts/${encodeURIComponent(attemptId)}/submit`, { method: 'POST' });
+}
+
+export async function createAdminPracticeQuestion(data) {
+  return request('/api/v1/exams/admin/questions', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function getAdminPracticeQuestions(filters = {}) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  return request(`/api/v1/exams/admin/questions${query.size ? `?${query.toString()}` : ''}`);
+}
+
+export async function setAdminPracticeQuestionActive(questionId, active) {
+  return request(`/api/v1/exams/admin/questions/${encodeURIComponent(questionId)}/active?active=${active}`, { method: 'PATCH' });
+}

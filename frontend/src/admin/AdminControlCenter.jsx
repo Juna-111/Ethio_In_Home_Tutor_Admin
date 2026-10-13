@@ -101,6 +101,7 @@ export default function AdminControlCenter({ onNavigate }) {
         <button type="button" onClick={() => onNavigate('analytics')}>Insights</button>
         <button type="button" onClick={() => onNavigate('coverage')}>Coverage</button>
         <button type="button" onClick={() => onNavigate('export')}>Exports</button>
+        <button type="button" onClick={() => onNavigate('questions')}>Exam questions</button>
         {dashboard?.admin_role === 'super_admin' && <button type="button" onClick={() => onNavigate('admins')}>Admin access</button>}
       </div>
 
