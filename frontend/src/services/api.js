@@ -517,3 +517,33 @@ export async function updateTutorSession(sessionId, patch) {
 export async function getParentSessions() {
   return request('/api/v1/sessions/parent/me');
 }
+
+
+export async function getLearnerProfiles() {
+  return request('/api/v1/learning/parent/me/learners');
+}
+
+export async function createLearnerProfile(data) {
+  return request('/api/v1/learning/parent/me/learners', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateLearnerProfile(profileId, patch) {
+  return request(`/api/v1/learning/parent/me/learners/${encodeURIComponent(profileId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function getParentAssessments() {
+  return request('/api/v1/learning/parent/me/assessments');
+}
+
+export async function createTutorAssessment(assignmentId, data) {
+  return request(`/api/v1/learning/tutor/me/assignments/${encodeURIComponent(assignmentId)}/assessments`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
