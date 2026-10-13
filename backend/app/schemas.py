@@ -850,3 +850,111 @@ class DiagnosticAssessmentResponse(BaseModel):
 class DiagnosticAssessmentListResponse(BaseModel):
     assessments: list[DiagnosticAssessmentResponse]
     total: int
+
+
+class PracticeQuestionCreate(BaseModel):
+    subject: str = Field(..., min_length=2, max_length=120)
+    grade_level: str = Field(..., min_length=2, max_length=100)
+    topic: str = Field(..., min_length=2, max_length=200)
+    difficulty: int = Field(default=3, ge=1, le=5)
+    prompt: str = Field(..., min_length=3, max_length=5000)
+    options: list[str] = Field(..., min_length=2, max_length=6)
+    correct_option_index: int = Field(..., ge=0, le=5)
+    explanation: Optional[str] = Field(default=None, max_length=3000)
+
+    @field_validator("subject", "grade_level", "topic", "prompt")
+    @classmethod
+    def question_text_must_not_be_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("This field cannot be blank.")
+        return cleaned
+
+    @field_validator("options")
+    @classmethod
+    def options_must_be_valid(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if item and item.strip()]
+        if len(cleaned) < 2 or len(cleaned) != len(value):
+            raise ValueError("Provide at least two non-empty answer options.")
+        if len({item.casefold() for item in cleaned}) != len(cleaned):
+            raise ValueError("Answer options must be unique.")
+        return cleaned
+
+    @field_validator("explanation")
+    @classmethod
+    def clean_explanation(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip() if value and value.strip() else None
+
+
+class PracticeQuestionResponse(BaseModel):
+    id: int
+    subject: str
+    grade_level: str
+    topic: str
+    difficulty: int
+    prompt: str
+    options: list[str]
+
+
+class MockExamStartRequest(BaseModel):
+    subject: str = Field(..., min_length=2, max_length=120)
+    topic: Optional[str] = Field(default=None, max_length=200)
+    grade_level: Optional[str] = Field(default=None, max_length=100)
+    question_count: int = Field(default=10, ge=1, le=50)
+    time_limit_minutes: int = Field(default=20, ge=1, le=180)
+
+    @field_validator("subject")
+    @classmethod
+    def exam_subject_must_not_be_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Subject cannot be blank.")
+        return cleaned
+
+
+class MockExamStartResponse(BaseModel):
+    attempt_id: int
+    subject: str
+    topic: Optional[str] = None
+    started_at: datetime
+    expires_at: datetime
+    time_limit_seconds: int
+    questions: list[PracticeQuestionResponse]
+
+
+class MockExamAnswersUpdate(BaseModel):
+    answers: dict[str, int] = Field(..., max_length=50)
+
+    @field_validator("answers")
+    @classmethod
+    def answer_indexes_must_be_non_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        if any(index < 0 or index > 5 for index in value.values()):
+            raise ValueError("Answer option index is invalid.")
+        return value
+
+
+class MockExamQuestionResult(BaseModel):
+    question_id: int
+    prompt: str
+    options: list[str]
+    selected_option_index: Optional[int] = None
+    correct_option_index: int
+    is_correct: bool
+    explanation: Optional[str] = None
+
+
+class MockExamResultResponse(BaseModel):
+    attempt_id: int
+    subject: str
+    topic: Optional[str] = None
+    score_percent: float
+    correct_count: int
+    question_count: int
+    submitted_at: datetime
+    expired: bool = False
+    results: list[MockExamQuestionResult]
+
+
+class PracticeQuestionListResponse(BaseModel):
+    questions: list[PracticeQuestionResponse]
+    total: int
