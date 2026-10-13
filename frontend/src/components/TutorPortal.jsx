@@ -367,6 +367,7 @@ export default function TutorPortal({ lang, onSelectTab }) {
       </section>
 
       <SessionManager mode="tutor" assignments={assignments} lang={lang} />
+      <LearningPanel mode="tutor" assignments={assignments} lang={lang} />
     </div>
   );
 }
