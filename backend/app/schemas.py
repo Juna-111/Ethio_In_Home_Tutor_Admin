@@ -760,3 +760,93 @@ class TutoringSessionResponse(BaseModel):
 class TutoringSessionListResponse(BaseModel):
     sessions: list[TutoringSessionResponse]
     total: int
+
+
+class LearnerProfileCreate(BaseModel):
+    learner_name: str = Field(..., min_length=2, max_length=150)
+    current_level: str = Field(..., min_length=2, max_length=100)
+    subjects: list[str] = Field(..., min_length=1, max_length=20)
+    learning_goals: str = Field(..., min_length=3, max_length=3000)
+    strengths: list[str] = Field(default_factory=list, max_length=20)
+    focus_areas: list[str] = Field(default_factory=list, max_length=20)
+    learning_preferences: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("learner_name", "current_level", "learning_goals")
+    @classmethod
+    def required_profile_text_must_not_be_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("This field cannot be blank.")
+        return cleaned
+
+    @field_validator("subjects", "strengths", "focus_areas")
+    @classmethod
+    def clean_profile_lists(cls, value: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(item.strip() for item in value if item and item.strip()))
+        return cleaned
+
+
+class LearnerProfileUpdate(BaseModel):
+    current_level: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    subjects: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    learning_goals: Optional[str] = Field(default=None, min_length=3, max_length=3000)
+    strengths: Optional[list[str]] = Field(default=None, max_length=20)
+    focus_areas: Optional[list[str]] = Field(default=None, max_length=20)
+    learning_preferences: Optional[str] = Field(default=None, max_length=2000)
+
+
+class LearnerProfileResponse(BaseModel):
+    id: int
+    child_id: int
+    learner_name: str
+    current_level: str
+    subjects: list[str]
+    learning_goals: str
+    strengths: list[str]
+    focus_areas: list[str]
+    learning_preferences: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DiagnosticAssessmentCreate(BaseModel):
+    subject: str = Field(..., min_length=2, max_length=120)
+    assessment_type: str = Field(default="baseline", pattern=r"^(baseline|progress)$")
+    score_percent: Optional[float] = Field(default=None, ge=0, le=100)
+    strengths: list[str] = Field(default_factory=list, max_length=20)
+    focus_areas: list[str] = Field(default_factory=list, max_length=20)
+    notes: Optional[str] = Field(default=None, max_length=5000)
+    next_steps: Optional[str] = Field(default=None, max_length=3000)
+
+    @field_validator("subject")
+    @classmethod
+    def subject_must_not_be_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Subject cannot be blank.")
+        return cleaned
+
+    @field_validator("strengths", "focus_areas")
+    @classmethod
+    def clean_assessment_lists(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item and item.strip()))
+
+
+class DiagnosticAssessmentResponse(BaseModel):
+    id: int
+    assignment_id: int
+    request_id: int
+    learner_name: str
+    subject: str
+    assessment_type: str
+    score_percent: Optional[float] = None
+    strengths: list[str]
+    focus_areas: list[str]
+    notes: Optional[str] = None
+    next_steps: Optional[str] = None
+    assessed_at: datetime
+
+
+class DiagnosticAssessmentListResponse(BaseModel):
+    assessments: list[DiagnosticAssessmentResponse]
+    total: int
