@@ -377,7 +377,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
         preferred_experience="Fresh Graduate",
         location_subcity="Kolfe",
         location_landmark="Near Total",
-        schedule_days=["Tue", "Thu"],
+        schedule_days=["Tuesday", "Thursday"],
         time_slot="5:00 PM - 7:00 PM",
         session_duration="2 hrs",
         budget_etb=4200.0,
@@ -398,7 +398,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
         expected_fee_etb=400.0,
         base_subcity="Kolfe",
         coverage_areas=["Kolfe"],
-        availability_schedule=["Tue", "Thu"],
+        availability_schedule={"days": ["Tuesday", "Thursday"]},
         status="verified"
     )
     db_session.add_all([parent, tutor])
