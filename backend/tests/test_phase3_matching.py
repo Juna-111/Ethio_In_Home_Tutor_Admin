@@ -99,7 +99,7 @@ async def test_matching_engine_filters_and_ranking(db_session: AsyncSession):
         expected_fee_etb=300.0,
         base_subcity="Bole",
         coverage_areas=["Bole"],
-        availability_schedule="Flexible",
+        availability_schedule=["Tue", "Thu"],
         status="pending"  # NOT verified!
     )
 
