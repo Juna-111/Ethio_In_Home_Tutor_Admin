@@ -366,6 +366,7 @@ async def test_close_parent_callback_updates_db(db_session: AsyncSession, monkey
 
 @pytest.mark.asyncio
 async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001234567890)
     """Verifies that assigning a tutor updates parent status to 'matched', closes dedicated topic, and alerts both tutor and parent."""
     parent = ParentRequest(
         telegram_user_id=777666555,
