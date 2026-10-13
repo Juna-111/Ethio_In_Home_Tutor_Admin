@@ -1,7 +1,7 @@
 export const TRANSLATIONS = {
   en: {
     appTitle: "MentorLink",
-    appSubtitle: "Trusted In-Home Learning",
+    appSubtitle: "Trusted In-Home Learning · የታመነ የቤት ውስጥ ትምህርት",
     webPreview: "Web Preview",
     tabs: {
       findTutor: "Find a Tutor",
