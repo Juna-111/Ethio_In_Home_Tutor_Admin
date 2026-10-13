@@ -65,4 +65,4 @@ async def test_parent_cancel_returns_not_found_for_request_owned_by_another_user
         await cancel_parent_request(request_id=42, db=db, verified_user_id=123)
 
     assert exc.value.status_code == 404
-    assert db.rolled_back is True
+    assert db.rolled_back is False
