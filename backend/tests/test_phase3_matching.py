@@ -3,6 +3,7 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Assignment, MatchInvite, ParentRequest, Tutor, TutorVerification
 from app.services.matcher import find_top_matches
 from tests.conftest import TestingSessionLocal
