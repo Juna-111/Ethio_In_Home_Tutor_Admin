@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_optional_telegram_user
@@ -192,30 +192,40 @@ async def cancel_parent_request(
             detail="Telegram Mini App authentication is required.",
         )
 
-    parent_req = await db.scalar(
+    # Conditional UPDATE makes cancellation atomic. A read-then-write check can race
+    # with an admin assignment or a second cancellation request.
+    result = await db.execute(
+        update(ParentRequest)
+        .where(
+            ParentRequest.id == request_id,
+            ParentRequest.telegram_user_id == verified_user_id,
+            ParentRequest.status.in_({"pending", "reviewing"}),
+        )
+        .values(status="cancelled")
+    )
+    if result.rowcount == 1:
+        await db.commit()
+        return {
+            "ok": True,
+            "request_id": request_id,
+            "status": "cancelled",
+            "message": "Your tutoring request has been cancelled.",
+        }
+
+    await db.rollback()
+    owned_request = await db.scalar(
         select(ParentRequest).where(
             ParentRequest.id == request_id,
             ParentRequest.telegram_user_id == verified_user_id,
         )
     )
-    if not parent_req:
+    if not owned_request:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found.")
 
-    if parent_req.status not in {"pending", "reviewing"}:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only pending or reviewing requests can be cancelled.",
-        )
-
-    parent_req.status = "cancelled"
-    await db.commit()
-
-    return {
-        "ok": True,
-        "request_id": parent_req.id,
-        "status": parent_req.status,
-        "message": "Your tutoring request has been cancelled.",
-    }
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Only pending or reviewing requests can be cancelled.",
+    )
 
 
 @router.get(
