@@ -252,19 +252,19 @@ export default function TutorForm({ user, lang, onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-12 space-y-5">
       {globalError && (
-        <div role="alert" aria-live="polite" className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
-          <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+        <div role="alert" aria-live="polite" className="p-3.5 bg-coral/10 border border-coral/30 text-coral text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
+          <AlertCircle className="w-4 h-4 text-coral shrink-0 mt-0.5" />
           <span className="leading-relaxed whitespace-pre-line font-medium">{globalError}</span>
         </div>
       )}
 
       {/* 1. Basic Personal Info */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionProfile}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-3.5">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{formT.sectionProfile}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {formT.fullName} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {formT.fullName} <span className="text-coral">*</span>
           </label>
           <input
             type="text"
@@ -273,19 +273,19 @@ export default function TutorForm({ user, lang, onSuccess }) {
             onChange={(e) => handleFieldChange('full_name', e.target.value)}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.full_name
-                ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20'
                 : 'border-line focus:outline-none focus:border-pine focus:ring-2 focus:ring-pine/10'
             }`}
           />
-          {errors.full_name && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.full_name}</p>}
+          {errors.full_name && <p className="text-coral text-[11px] mt-1 font-medium">{errors.full_name}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-              {formT.gender} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink mb-1.5">
+              {formT.gender} <span className="text-coral">*</span>
             </label>
-            <div className={`grid grid-cols-2 gap-2 p-0.5 rounded-xl ${errors.gender ? 'border border-red-500 bg-red-50/20 p-1' : ''}`}>
+            <div className={`grid grid-cols-2 gap-2 p-0.5 rounded-xl ${errors.gender ? 'border border-coral bg-coral/10/20 p-1' : ''}`}>
               {['Male', 'Female'].map((genderOption) => {
                 const label = genderOption === 'Male' ? t.options.male : t.options.female;
                 const selected = formData.gender === genderOption;
@@ -298,7 +298,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                     className={`py-2 px-2 text-xs rounded-xl font-medium border text-center transition cursor-pointer ${
                       selected
                         ? 'border-pine bg-pine/10 text-pine font-semibold'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                        : 'border-line text-muted hover:bg-paper'
                     }`}
                   >
                     {label}
@@ -306,12 +306,12 @@ export default function TutorForm({ user, lang, onSuccess }) {
                 );
               })}
             </div>
-            {errors.gender && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.gender}</p>}
+            {errors.gender && <p className="text-coral text-[11px] mt-1 font-medium">{errors.gender}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              {formT.activePhone} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink mb-1">
+              {formT.activePhone} <span className="text-coral">*</span>
             </label>
             <input
               type="tel"
@@ -320,22 +320,22 @@ export default function TutorForm({ user, lang, onSuccess }) {
               onChange={(e) => handleFieldChange('phone_number', e.target.value)}
               className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
                 errors.phone_number
-                  ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                  ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20'
                   : 'border-line focus:outline-none focus:border-pine'
               }`}
             />
-            {errors.phone_number && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.phone_number}</p>}
+            {errors.phone_number && <p className="text-coral text-[11px] mt-1 font-medium">{errors.phone_number}</p>}
           </div>
         </div>
       </div>
 
       {/* 2. Academic Background */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionAcademic}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-3.5">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{formT.sectionAcademic}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {formT.university} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {formT.university} <span className="text-coral">*</span>
           </label>
           <input
             type="text"
@@ -344,17 +344,17 @@ export default function TutorForm({ user, lang, onSuccess }) {
             onChange={(e) => handleFieldChange('university', e.target.value)}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.university
-                ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20'
                 : 'border-line focus:outline-none focus:border-pine'
             }`}
           />
-          {errors.university && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.university}</p>}
+          {errors.university && <p className="text-coral text-[11px] mt-1 font-medium">{errors.university}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              {formT.department} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink mb-1">
+              {formT.department} <span className="text-coral">*</span>
             </label>
             <input
               type="text"
@@ -363,23 +363,23 @@ export default function TutorForm({ user, lang, onSuccess }) {
               onChange={(e) => handleFieldChange('department', e.target.value)}
               className={`w-full text-xs px-3 py-2.5 rounded-xl border transition ${
                 errors.department
-                  ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                  ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20'
                   : 'border-line focus:outline-none focus:border-pine'
               }`}
             />
-            {errors.department && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.department}</p>}
+            {errors.department && <p className="text-coral text-[11px] mt-1 font-medium">{errors.department}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              {formT.yearStatus} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink mb-1">
+              {formT.yearStatus} <span className="text-coral">*</span>
             </label>
             <select
               value={formData.education_year}
               onChange={(e) => handleFieldChange('education_year', e.target.value)}
               className={`w-full text-xs px-3 py-2.5 rounded-xl border bg-white transition cursor-pointer ${
                 errors.education_year
-                  ? 'border-red-500 bg-red-50/20 text-red-900 focus:ring-1 focus:ring-red-500'
+                  ? 'border-coral bg-coral/10/20 text-coral focus:ring-1 focus:ring-coral/20'
                   : 'border-line focus:outline-none focus:border-pine text-ink'
               }`}
             >
@@ -388,15 +388,15 @@ export default function TutorForm({ user, lang, onSuccess }) {
                 <option key={year} value={year}>{choices.educationYears?.[year] || year}</option>
               ))}
             </select>
-            {errors.education_year && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.education_year}</p>}
+            {errors.education_year && <p className="text-coral text-[11px] mt-1 font-medium">{errors.education_year}</p>}
           </div>
         </div>
   
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
+          <label className="block text-xs font-semibold text-ink mb-1">
             {formT.entranceResult}
           </label>
-          <p className="text-[11px] text-gray-400 mb-2">{formT.entranceResultHint}</p>
+          <p className="text-[11px] text-muted mb-2">{formT.entranceResultHint}</p>
           <input
             type="number"
             placeholder={formT.entranceResultPlaceholder}
@@ -407,32 +407,32 @@ export default function TutorForm({ user, lang, onSuccess }) {
             onChange={(e) => handleFieldChange('entrance_result', e.target.value)}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.entrance_result
-                ? "border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500"
+                ? "border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20"
                 : "border-line focus:outline-none focus:border-pine"
             }`}
           />
           {errors.entrance_result && (
-            <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.entrance_result}</p>
+            <p className="text-coral text-[11px] mt-1 font-medium">{errors.entrance_result}</p>
           )}
         </div>
 
       </div>
 
       {/* 3. Teaching Qualifications */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionQualifications}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-4">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{formT.sectionQualifications}</h2>
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-gray-700">
-              {formT.subjectsQualified} <span className="text-red-500">*</span>
+            <label className="text-xs font-semibold text-ink">
+              {formT.subjectsQualified} <span className="text-coral">*</span>
             </label>
             <span className="text-[11px] text-pine font-medium">
               {formData.subjects_qualified.length} {formT.subjectsSelected}
             </span>
           </div>
           <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border transition ${
-            errors.subjects_qualified ? 'border-red-500 bg-red-50/10' : 'border-gray-100'
+            errors.subjects_qualified ? 'border-coral bg-coral/10/10' : 'border-line'
           }`}>
             {SUBJECTS_LIST.map((subject) => {
               const selected = formData.subjects_qualified.includes(subject);
@@ -445,7 +445,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 cursor-pointer ${
                     selected
                       ? 'bg-pine text-paper shadow-sm'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-line/60 text-muted hover:bg-line'
                   }`}
                 >
                   {selected && <Check className="w-3 h-3 mr-0.5" />}
@@ -455,21 +455,21 @@ export default function TutorForm({ user, lang, onSuccess }) {
             })}
           </div>
           {errors.subjects_qualified && (
-            <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.subjects_qualified}</p>
+            <p className="text-coral text-[11px] mt-1 font-medium">{errors.subjects_qualified}</p>
           )}
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-gray-700">
-              {formT.targetGrades} <span className="text-red-500">*</span>
+            <label className="text-xs font-semibold text-ink">
+              {formT.targetGrades} <span className="text-coral">*</span>
             </label>
             <span className="text-[11px] text-pine font-medium">
               {formData.grades_qualified.length} {formT.gradesSelected}
             </span>
           </div>
           <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 rounded-xl border transition ${
-            errors.grades_qualified ? 'border-red-500 bg-red-50/10' : 'border-gray-100'
+            errors.grades_qualified ? 'border-coral bg-coral/10/10' : 'border-line'
           }`}>
             {STUDENT_LEVELS.map((level) => {
               const selected = formData.grades_qualified.includes(level);
@@ -482,7 +482,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   className={`py-2 px-2.5 rounded-xl text-xs font-medium border text-left transition cursor-pointer ${
                     selected
                       ? 'border-pine bg-pine/10 text-pine font-semibold'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      : 'border-line text-muted hover:bg-paper'
                   }`}
                 >
                   {choices.studentLevels?.[level] || level}
@@ -491,14 +491,14 @@ export default function TutorForm({ user, lang, onSuccess }) {
             })}
           </div>
           {errors.grades_qualified && (
-            <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.grades_qualified}</p>
+            <p className="text-coral text-[11px] mt-1 font-medium">{errors.grades_qualified}</p>
           )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 pt-1">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              {formT.experienceYears} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink mb-1">
+              {formT.experienceYears} <span className="text-coral">*</span>
             </label>
             <input
               type="number"
@@ -509,18 +509,18 @@ export default function TutorForm({ user, lang, onSuccess }) {
               onChange={(e) => handleFieldChange('years_of_experience', e.target.value)}
               className={`w-full text-xs px-3 py-2.5 rounded-xl border transition ${
                 errors.years_of_experience
-                  ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                  ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20'
                   : 'border-line focus:outline-none focus:border-pine'
               }`}
             />
             {errors.years_of_experience && (
-              <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.years_of_experience}</p>
+              <p className="text-coral text-[11px] mt-1 font-medium">{errors.years_of_experience}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              {formT.expectedFeePerHour} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink mb-1">
+              {formT.expectedFeePerHour} <span className="text-coral">*</span>
             </label>
             <input
               type="number"
@@ -531,31 +531,31 @@ export default function TutorForm({ user, lang, onSuccess }) {
               onChange={(e) => handleFieldChange('expected_fee_etb', e.target.value)}
               className={`w-full text-xs px-3 py-2.5 rounded-xl border font-semibold transition ${
                 errors.expected_fee_etb
-                  ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500 text-red-900'
+                  ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20 text-coral'
                   : 'border-line focus:outline-none focus:border-pine text-ink'
               }`}
             />
             {errors.expected_fee_etb && (
-              <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.expected_fee_etb}</p>
+              <p className="text-coral text-[11px] mt-1 font-medium">{errors.expected_fee_etb}</p>
             )}
           </div>
         </div>
       </div>
 
       {/* 4. Location & Coverage */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionLocation}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-4">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{formT.sectionLocation}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {formT.baseSubcity} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {formT.baseSubcity} <span className="text-coral">*</span>
           </label>
           <select
             value={formData.base_subcity}
             onChange={(e) => handleFieldChange('base_subcity', e.target.value)}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border bg-white transition cursor-pointer font-medium ${
               errors.base_subcity
-                ? 'border-red-500 bg-red-50/20 text-red-900 focus:ring-1 focus:ring-red-500'
+                ? 'border-coral bg-coral/10/20 text-coral focus:ring-1 focus:ring-coral/20'
                 : 'border-line focus:outline-none focus:border-pine text-ink'
             }`}
           >
@@ -564,20 +564,20 @@ export default function TutorForm({ user, lang, onSuccess }) {
               <option key={subcity} value={subcity}>{choices.subcities?.[subcity] || subcity}</option>
             ))}
           </select>
-          {errors.base_subcity && <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.base_subcity}</p>}
+          {errors.base_subcity && <p className="text-coral text-[11px] mt-1 font-medium">{errors.base_subcity}</p>}
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-gray-700">
-              {formT.coverageAreas} <span className="text-red-500">*</span>
+            <label className="text-xs font-semibold text-ink">
+              {formT.coverageAreas} <span className="text-coral">*</span>
             </label>
             <span className="text-[11px] text-pine font-medium">
               {formData.coverage_areas.length} {formT.coverageSelected}
             </span>
           </div>
           <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border transition ${
-            errors.coverage_areas ? 'border-red-500 bg-red-50/10' : 'border-gray-100'
+            errors.coverage_areas ? 'border-coral bg-coral/10/10' : 'border-line'
           }`}>
             {SUBCITIES.map((subcity) => {
               const selected = formData.coverage_areas.includes(subcity);
@@ -590,7 +590,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
                   className={`py-1.5 px-2.5 rounded-xl text-[11px] font-medium transition cursor-pointer ${
                     selected
                       ? 'bg-pine text-paper shadow-sm font-semibold'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-line/60 text-muted hover:bg-line'
                   }`}
                 >
                   {choices.subcities?.[subcity] || subcity}
@@ -599,13 +599,13 @@ export default function TutorForm({ user, lang, onSuccess }) {
             })}
           </div>
           {errors.coverage_areas && (
-            <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.coverage_areas}</p>
+            <p className="text-coral text-[11px] mt-1 font-medium">{errors.coverage_areas}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {formT.availability} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {formT.availability} <span className="text-coral">*</span>
           </label>
           <input
             type="text"
@@ -614,26 +614,26 @@ export default function TutorForm({ user, lang, onSuccess }) {
             onChange={(e) => handleFieldChange('availability_schedule', e.target.value)}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition ${
               errors.availability_schedule
-                ? 'border-red-500 bg-red-50/20 focus:ring-1 focus:ring-red-500'
+                ? 'border-coral bg-coral/10/20 focus:ring-1 focus:ring-coral/20'
                 : 'border-line focus:outline-none focus:border-pine'
             }`}
           />
           {errors.availability_schedule && (
-            <p className="text-red-600 text-[11px] mt-1 font-medium">{errors.availability_schedule}</p>
+            <p className="text-coral text-[11px] mt-1 font-medium">{errors.availability_schedule}</p>
           )}
         </div>
       </div>
 
       {/* 5. Dual Document Upload (File + Portfolio URL) */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{formT.sectionDocuments}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-4">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{formT.sectionDocuments}</h2>
 
         {/* File Upload for ID / CV */}
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
+          <label className="block text-xs font-semibold text-ink mb-1">
             {formT.uploadDocument}
           </label>
-          <p className="text-[11px] text-gray-400 mb-2">{formT.uploadHint}</p>
+          <p className="text-[11px] text-muted mb-2">{formT.uploadHint}</p>
 
           <input
             type="file"
@@ -647,9 +647,9 @@ export default function TutorForm({ user, lang, onSuccess }) {
           {!selectedFile ? (
             <label
               htmlFor="tutor-doc-file"
-              className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 hover:border-pine rounded-2xl cursor-pointer bg-paper hover:bg-pine/5 transition group"
+              className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-line hover:border-pine rounded-2xl cursor-pointer bg-paper hover:bg-pine/5 transition group"
             >
-              <Upload className="w-6 h-6 text-gray-400 group-hover:text-pine mb-1.5 transition" />
+              <Upload className="w-6 h-6 text-muted group-hover:text-pine mb-1.5 transition" />
               <span className="text-xs font-semibold text-pine group-hover:text-ink">
                 {formT.chooseFile}
               </span>
@@ -676,7 +676,7 @@ export default function TutorForm({ user, lang, onSuccess }) {
 
         {/* Portfolio / Google Drive URL */}
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
+          <label className="block text-xs font-semibold text-ink mb-1">
             {formT.documentUrl}
           </label>
           <input
