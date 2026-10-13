@@ -136,7 +136,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
           <select
             value={requestId || ''}
             onChange={(e) => setRequestId(e.target.value ? Number(e.target.value) : null)}
-            className="mt-1.5 w-full rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs font-bold text-ink outline-none"
+            className="mt-1.5 w-full rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs font-bold text-ink outline-none"
           >
             {requestChoices.map((req) => (
               <option key={req.id} value={req.id}>{req.child_name || (isAm ? 'ተማሪ' : 'Learner')} · {req.student_level} · Request #{req.id}</option>
@@ -158,24 +158,24 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
           <h3 className="text-sm font-black text-ink">{isAm ? 'ፈልግ እና አጣራ' : 'Search & filter'}</h3>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <input value={filters.subject} onChange={(e) => updateFilter('subject', e.target.value)} placeholder={isAm ? 'ትምህርት' : 'Subject'} className="rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs outline-none" />
-          <input value={filters.grade} onChange={(e) => updateFilter('grade', e.target.value)} placeholder={isAm ? 'ክፍል' : 'Grade'} className="rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs outline-none" />
-          <input value={filters.subcity} onChange={(e) => updateFilter('subcity', e.target.value)} placeholder={isAm ? 'ክፍለ ከተማ' : 'Subcity'} className="rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs outline-none" />
-          <input value={filters.max_fee} onChange={(e) => updateFilter('max_fee', e.target.value)} inputMode="numeric" placeholder={isAm ? 'ከፍተኛ ETB/hr' : 'Max ETB/hr'} className="rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs outline-none" />
+          <input value={filters.subject} onChange={(e) => updateFilter('subject', e.target.value)} placeholder={isAm ? 'ትምህርት' : 'Subject'} className="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs outline-none" />
+          <input value={filters.grade} onChange={(e) => updateFilter('grade', e.target.value)} placeholder={isAm ? 'ክፍል' : 'Grade'} className="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs outline-none" />
+          <input value={filters.subcity} onChange={(e) => updateFilter('subcity', e.target.value)} placeholder={isAm ? 'ክፍለ ከተማ' : 'Subcity'} className="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs outline-none" />
+          <input value={filters.max_fee} onChange={(e) => updateFilter('max_fee', e.target.value)} inputMode="numeric" placeholder={isAm ? 'ከፍተኛ ETB/hr' : 'Max ETB/hr'} className="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs outline-none" />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <select value={filters.min_rating} onChange={(e) => updateFilter('min_rating', e.target.value)} className="rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs outline-none">
+          <select value={filters.min_rating} onChange={(e) => updateFilter('min_rating', e.target.value)} className="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs outline-none">
             <option value="">{isAm ? 'ማንኛውም ደረጃ' : 'Any rating'}</option>
             <option value="4">4.0+</option><option value="4.5">4.5+</option>
           </select>
-          <select value={filters.available_day} onChange={(e) => updateFilter('available_day', e.target.value)} className="rounded-xl border border-line bg-[#f1f3ef] px-3 py-2.5 text-xs outline-none">
+          <select value={filters.available_day} onChange={(e) => updateFilter('available_day', e.target.value)} className="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs outline-none">
             <option value="">{isAm ? 'ማንኛውም ቀን' : 'Any day'}</option>
             {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
           </select>
           <button
             type="button"
             onClick={() => updateFilter('favorite_only', filters.favorite_only === 'true' ? 'false' : 'true')}
-            className={`rounded-xl border px-3 py-2.5 text-xs font-black transition ${filters.favorite_only === 'true' ? 'border-citrus/50 bg-citrus/15 text-ink' : 'border-line bg-[#f1f3ef] text-muted'}`}
+            className={`rounded-xl border px-3 py-2.5 text-xs font-black transition ${filters.favorite_only === 'true' ? 'border-citrus/50 bg-citrus/15 text-ink' : 'border-line bg-canvas text-muted'}`}
             aria-pressed={filters.favorite_only === 'true'}
           >
             <BookmarkCheck className="mr-1 inline h-3.5 w-3.5" />
@@ -216,7 +216,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <span className="rounded-full bg-citrus/15 px-2 py-1 text-[8px] font-black text-ink">{tutor.expected_fee_etb.toLocaleString()} ETB/hr</span>
                       <span className="rounded-full bg-pine/10 px-2 py-1 text-[8px] font-black text-pine">{tutor.years_of_experience}y exp</span>
-                      {tutor.avg_rating ? <span className="rounded-full bg-[#f1f3ef] px-2 py-1 text-[8px] font-black text-ink"><Star className="mr-1 inline h-3 w-3" />{tutor.avg_rating} ({tutor.review_count})</span> : <span className="rounded-full bg-[#f1f3ef] px-2 py-1 text-[8px] font-bold text-muted">New reviews</span>}
+                      {tutor.avg_rating ? <span className="rounded-full bg-canvas px-2 py-1 text-[8px] font-black text-ink"><Star className="mr-1 inline h-3 w-3" />{tutor.avg_rating} ({tutor.review_count})</span> : <span className="rounded-full bg-canvas px-2 py-1 text-[8px] font-bold text-muted">New reviews</span>}
                       {tutor.verification_complete && <span className="rounded-full bg-green/10 px-2 py-1 text-[8px] font-black text-green"><ShieldCheck className="mr-1 inline h-3 w-3" />Verified</span>}
                     </div>
                   </div>
@@ -231,8 +231,8 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
                 )}
 
                 <div className="mt-3 grid grid-cols-2 gap-2 text-[9px]">
-                  <span className="rounded-xl bg-[#f1f3ef] p-2"><MapPin className="mr-1 inline h-3 w-3 text-pine" />{tutor.base_subcity} · {(tutor.coverage_areas || []).slice(0, 2).join(', ')}</span>
-                  <span className="rounded-xl bg-[#f1f3ef] p-2"><Award className="mr-1 inline h-3 w-3 text-pine" />{(tutor.subjects_qualified || []).slice(0, 3).join(', ')}</span>
+                  <span className="rounded-xl bg-canvas p-2"><MapPin className="mr-1 inline h-3 w-3 text-pine" />{tutor.base_subcity} · {(tutor.coverage_areas || []).slice(0, 2).join(', ')}</span>
+                  <span className="rounded-xl bg-canvas p-2"><Award className="mr-1 inline h-3 w-3 text-pine" />{(tutor.subjects_qualified || []).slice(0, 3).join(', ')}</span>
                 </div>
 
                 <div className="mt-3 flex gap-2">
@@ -245,7 +245,7 @@ export default function MarketplaceDiscovery({ lang = 'en', onSelectTab }) {
                 </div>
 
                 {isOpen && detail && (
-                  <div className="mt-3 rounded-2xl border border-line bg-[#f1f3ef] p-3 text-[9px]">
+                  <div className="mt-3 rounded-2xl border border-line bg-canvas p-3 text-[9px]">
                     <div className="grid grid-cols-2 gap-2">
                       <div><span className="text-muted">Grades</span><strong className="mt-1 block text-ink">{detail.grades_qualified.join(', ')}</strong></div>
                       <div><span className="text-muted">Education</span><strong className="mt-1 block text-ink">{detail.education_year}</strong></div>
