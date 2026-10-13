@@ -212,7 +212,8 @@ async def cancel_parent_request(
             "message": "Your tutoring request has been cancelled.",
         }
 
-    await db.rollback()
+    # The conditional UPDATE changed no rows, so there is nothing to roll back.
+    # Avoid expiring unrelated ORM instances held by the request-scoped async session.
     owned_request = await db.scalar(
         select(ParentRequest).where(
             ParentRequest.id == request_id,
