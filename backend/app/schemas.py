@@ -693,3 +693,70 @@ class ParentContactAdminCreate(BaseModel):
     message: str = Field(..., min_length=2, max_length=1000)
 
 
+
+
+class TutoringSessionCreate(BaseModel):
+    scheduled_at: datetime
+    duration_minutes: int = Field(default=60, ge=15, le=240)
+    lesson_topic: str = Field(..., min_length=2, max_length=200)
+
+    @field_validator("lesson_topic")
+    @classmethod
+    def topic_must_contain_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Lesson topic cannot be blank.")
+        return cleaned
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def schedule_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("scheduled_at must include a timezone offset.")
+        return value
+
+
+class TutoringSessionUpdate(BaseModel):
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = Field(default=None, ge=15, le=240)
+    status: Optional[str] = Field(default=None, pattern=r"^(scheduled|completed|cancelled)$")
+    attendance: Optional[str] = Field(default=None, pattern=r"^(pending|present|absent|excused)$")
+    lesson_topic: Optional[str] = Field(default=None, min_length=2, max_length=200)
+    lesson_notes: Optional[str] = Field(default=None, max_length=5000)
+    homework: Optional[str] = Field(default=None, max_length=3000)
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def updated_schedule_must_include_timezone(cls, value: Optional[datetime]) -> Optional[datetime]:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("scheduled_at must include a timezone offset.")
+        return value
+
+    @field_validator("lesson_topic")
+    @classmethod
+    def updated_topic_must_contain_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            cleaned = value.strip()
+            if not cleaned:
+                raise ValueError("Lesson topic cannot be blank.")
+            return cleaned
+        return value
+
+
+class TutoringSessionResponse(BaseModel):
+    id: int
+    assignment_id: int
+    scheduled_at: datetime
+    duration_minutes: int
+    status: str
+    attendance: str
+    lesson_topic: str
+    lesson_notes: Optional[str] = None
+    homework: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TutoringSessionListResponse(BaseModel):
+    sessions: list[TutoringSessionResponse]
+    total: int
