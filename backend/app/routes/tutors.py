@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 from datetime import datetime, timezone
 from collections import defaultdict, deque
 from typing import Optional
@@ -12,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 from app.auth import get_optional_telegram_user
 from app.bot.bot_instance import format_schedule, send_tutor_registration_card
-from app.config import UPLOAD_DIR
+from app.config import UPLOAD_DIR, settings
+from app.services.document_storage import content_type_for, upload_document
 from app.database import get_db
 from app.models import Assignment, MatchInvite, ParentRequest, RegistrationFunnelEvent, SessionFeedback, Tutor, TutorVerification
 from app.schemas import (
@@ -134,6 +136,19 @@ async def upload_tutor_document(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty."
+        )
+
+    try:
+        await asyncio.to_thread(upload_document, file_path, safe_filename, content_type_for(safe_filename))
+        if settings.DOCUMENT_STORAGE_BACKEND == "s3":
+            os.remove(file_path)
+    except Exception:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        logger.exception("Private document storage failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Secure document storage is temporarily unavailable. Please try again later.",
         )
 
     file_url = f"/uploads/{safe_filename}"

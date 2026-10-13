@@ -1,4 +1,5 @@
 from collections import defaultdict
+import asyncio
 import os
 import re
 from datetime import datetime, time, timedelta, timezone
@@ -9,7 +10,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import String, cast, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -71,6 +72,7 @@ from app.schemas import (
 from app.services.audit import log_action
 from app.services.assignment import AssignmentWorkflowError, assign_tutor_to_request
 from app.services.export_service import generate_assignments_csv, generate_parents_csv, generate_tutors_csv
+from app.services.document_storage import document_filename, local_document_path, read_private_document
 from app.services.matcher import get_tiered_matches
 from app.services.scheduler import claim_event, run_all_scheduled_tasks
 
@@ -923,25 +925,10 @@ async def reject_admin_tutor(
     return AdminActionResponse(ok=True, message="Tutor rejected.")
 
 
-_UPLOAD_FILENAME_RE = re.compile(r"[0-9a-f]{32}\.(?:pdf|png|jpe?g)\Z", re.IGNORECASE)
-
-
 def _resolve_uploaded_document_path(document_url: str, upload_dir: str = UPLOAD_DIR) -> Optional[str]:
-    """Resolve only app-generated upload URLs to files inside the private upload directory."""
-    if not isinstance(document_url, str) or not document_url.startswith("/uploads/"):
-        return None
-    filename = document_url[len("/uploads/"):]
-    if not _UPLOAD_FILENAME_RE.fullmatch(filename):
-        return None
-
-    root = os.path.realpath(upload_dir)
-    file_path = os.path.realpath(os.path.join(root, filename))
-    try:
-        if os.path.commonpath((root, file_path)) != root:
-            return None
-    except ValueError:
-        return None
-    return file_path
+    """Resolve only generated upload URLs to files inside the private local directory."""
+    filename = document_filename(document_url)
+    return local_document_path(filename, upload_dir) if filename else None
 
 
 @router.get("/tutors/{tutor_id}/document", summary="View tutor ID document")
@@ -954,12 +941,31 @@ async def get_admin_tutor_document(
     if not tutor or not tutor.id_document_url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
-    file_path = _resolve_uploaded_document_path(tutor.id_document_url)
-    if not file_path or not os.path.isfile(file_path):
-        # Never let user-controlled document URLs become arbitrary server file paths.
+    filename = document_filename(tutor.id_document_url)
+    if not filename:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file missing.")
 
-    filename = os.path.basename(file_path)
+    if settings.DOCUMENT_STORAGE_BACKEND == "s3":
+        try:
+            content, media_type = await asyncio.to_thread(read_private_document, filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file missing.")
+        except Exception:
+            logger.exception("Private object storage read failed for tutor #%s", tutor_id)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Document storage is temporarily unavailable.")
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, no-store",
+            },
+        )
+
+    file_path = _resolve_uploaded_document_path(tutor.id_document_url)
+    if not file_path or not os.path.isfile(file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file missing.")
     ext = os.path.splitext(filename)[1].lower()
     media_type = "application/octet-stream"
     if ext == ".pdf":
