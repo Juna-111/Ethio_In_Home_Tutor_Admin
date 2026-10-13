@@ -16,6 +16,7 @@ from app.schemas import (
     MockExamStartRequest,
     MockExamStartResponse,
     PracticeQuestionAdminResponse,
+    PracticeQuestionAdminListResponse,
     PracticeQuestionCreate,
     PracticeQuestionListResponse,
     PracticeQuestionResponse,
@@ -101,7 +102,7 @@ async def create_practice_question(
     return _admin_question(question)
 
 
-@router.get("/admin/questions", response_model=PracticeQuestionListResponse)
+@router.get("/admin/questions", response_model=PracticeQuestionAdminListResponse)
 async def list_admin_questions(
     subject: Optional[str] = Query(default=None, max_length=120),
     topic: Optional[str] = Query(default=None, max_length=200),
@@ -115,7 +116,7 @@ async def list_admin_questions(
         query = query.where(func.lower(PracticeQuestion.topic) == topic.strip().lower())
     rows = await db.execute(query.order_by(PracticeQuestion.created_at.desc(), PracticeQuestion.id.desc()))
     questions = rows.scalars().all()
-    return PracticeQuestionListResponse(questions=[_question_for_student(q) for q in questions], total=len(questions))
+    return PracticeQuestionAdminListResponse(questions=[_admin_question(q) for q in questions], total=len(questions))
 
 
 @router.patch("/admin/questions/{question_id}/active")
