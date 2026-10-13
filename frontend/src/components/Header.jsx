@@ -21,7 +21,7 @@ export default function Header({ user, lang, onToggleLanguage, showHome, onHome 
           type="button"
           onClick={showHome ? onHome : undefined}
           className={`flex min-w-0 items-center gap-3 text-left ${showHome ? 'cursor-pointer' : 'cursor-default'}`}
-          aria-label={showHome ? 'Back to Ethio In-Home Tutor home' : 'Ethio In-Home Tutor'}
+          aria-label={showHome ? 'Back to MentorLink home' : 'MentorLink'}
         >
           {showHome ? (
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10">
