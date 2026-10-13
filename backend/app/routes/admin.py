@@ -1,4 +1,6 @@
 from collections import defaultdict
+import os
+import re
 from datetime import datetime, time, timedelta, timezone
 from time import perf_counter
 import hmac
@@ -921,7 +923,26 @@ async def reject_admin_tutor(
     return AdminActionResponse(ok=True, message="Tutor rejected.")
 
 
-import os
+_UPLOAD_FILENAME_RE = re.compile(r"[0-9a-f]{32}\.(?:pdf|png|jpe?g)\Z", re.IGNORECASE)
+
+
+def _resolve_uploaded_document_path(document_url: str, upload_dir: str = UPLOAD_DIR) -> Optional[str]:
+    """Resolve only app-generated upload URLs to files inside the private upload directory."""
+    if not isinstance(document_url, str) or not document_url.startswith("/uploads/"):
+        return None
+    filename = document_url[len("/uploads/"):]
+    if not _UPLOAD_FILENAME_RE.fullmatch(filename):
+        return None
+
+    root = os.path.realpath(upload_dir)
+    file_path = os.path.realpath(os.path.join(root, filename))
+    try:
+        if os.path.commonpath((root, file_path)) != root:
+            return None
+    except ValueError:
+        return None
+    return file_path
+
 
 @router.get("/tutors/{tutor_id}/document", summary="View tutor ID document")
 async def get_admin_tutor_document(
@@ -933,11 +954,12 @@ async def get_admin_tutor_document(
     if not tutor or not tutor.id_document_url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
-    filename = tutor.id_document_url.replace("/uploads/", "")
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    if not os.path.exists(file_path):
+    file_path = _resolve_uploaded_document_path(tutor.id_document_url)
+    if not file_path or not os.path.isfile(file_path):
+        # Never let user-controlled document URLs become arbitrary server file paths.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file missing.")
 
+    filename = os.path.basename(file_path)
     ext = os.path.splitext(filename)[1].lower()
     media_type = "application/octet-stream"
     if ext == ".pdf":
@@ -947,7 +969,13 @@ async def get_admin_tutor_document(
     elif ext in [".jpg", ".jpeg"]:
         media_type = "image/jpeg"
 
-    return FileResponse(file_path, media_type=media_type)
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        filename=filename,
+        content_disposition_type="inline",
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/tutors/{tutor_id}/scorecard", response_model=AdminTutorScorecardResponse, summary="Get tutor scorecard")
