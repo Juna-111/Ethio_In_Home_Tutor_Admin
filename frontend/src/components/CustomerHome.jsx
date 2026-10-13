@@ -46,7 +46,7 @@ export default function CustomerHome({ user, lang, onSelectTab }) {
             <BrandMark large />
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-citrus">
-                Ethio In-Home Tutor
+                MentorLink
               </p>
               <p className="mt-1 text-xs font-medium text-paper/70">
                 {isAm ? 'የተማሪና የአስጠኚ የታመነ መድረክ' : 'A trusted home for families & tutors'}
