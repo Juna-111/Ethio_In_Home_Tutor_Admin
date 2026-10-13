@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     ALLOW_UNVERIFIED_WEB_PREVIEW: bool = False
     CRON_SECRET: Optional[str] = None
+    DOCUMENT_STORAGE_BACKEND: Literal["local", "s3"] = "local"
+    S3_BUCKET: Optional[str] = None
+    S3_ENDPOINT_URL: Optional[str] = None
+    S3_REGION: str = "us-east-1"
+    S3_ACCESS_KEY_ID: Optional[str] = None
+    S3_SECRET_ACCESS_KEY: Optional[str] = None
+    S3_KEY_PREFIX: str = "mentorlink-private"
 
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
@@ -115,6 +122,15 @@ class Settings(BaseSettings):
     def validate_runtime_settings(self):
         if self.ENVIRONMENT.lower() == "production" and self.ALLOW_UNVERIFIED_WEB_PREVIEW:
             raise ValueError("ALLOW_UNVERIFIED_WEB_PREVIEW must be false in production")
+        if self.DOCUMENT_STORAGE_BACKEND == "s3":
+            required_storage = {
+                "S3_BUCKET": self.S3_BUCKET,
+                "S3_ACCESS_KEY_ID": self.S3_ACCESS_KEY_ID,
+                "S3_SECRET_ACCESS_KEY": self.S3_SECRET_ACCESS_KEY,
+            }
+            missing_storage = [key for key, value in required_storage.items() if not value or not value.strip()]
+            if missing_storage:
+                raise ValueError("S3 document storage requires: " + ", ".join(missing_storage))
         if self.BOT_MODE == "webhook":
             if not self.WEBHOOK_URL or not self.WEBHOOK_SECRET:
                 raise ValueError("WEBHOOK_URL and WEBHOOK_SECRET are required when BOT_MODE=webhook")
