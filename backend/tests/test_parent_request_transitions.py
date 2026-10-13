@@ -40,8 +40,9 @@ async def test_parent_cancel_uses_conditional_update_and_commits_only_one_row():
     assert db.committed is True
     assert db.rolled_back is False
     # The status predicate must be part of the single UPDATE, not a prior read.
-    assert "pending" in str(db.executed_statement)
-    assert "reviewing" in str(db.executed_statement)
+    sql = str(db.executed_statement.compile(compile_kwargs={"literal_binds": True}))
+    assert "'pending'" in sql
+    assert "'reviewing'" in sql
 
 
 @pytest.mark.asyncio
