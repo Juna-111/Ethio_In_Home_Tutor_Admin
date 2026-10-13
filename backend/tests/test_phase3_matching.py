@@ -490,7 +490,7 @@ async def test_match_and_assign_preserves_topic_thread_id(db_session: AsyncSessi
         expected_fee_etb=400.0,
         base_subcity="Bole",
         coverage_areas=["Bole"],
-        availability_schedule="Daily",
+        availability_schedule=["Mon"],
         status="verified"
     )
     db_session.add_all([parent, tutor])
