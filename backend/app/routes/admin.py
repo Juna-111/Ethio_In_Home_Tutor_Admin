@@ -659,7 +659,7 @@ async def assign_admin_request(
                     reply_markup=parent_keyboard,
                 )
             except Exception as exc:
-                logger.warning("Failed to DM parent %s on assignment for request #%s: %s", parent.telegram_user_id, request_id, exc)
+                logger.warning("Assignment notification failed role=parent request_id=%s parent_id=%s tutor_id=%s: %s", request_id, parent.telegram_user_id, tutor.id, exc, exc_info=True)
         tutor_card = bot_instance.format_assignment_card_tutor(parent, tutor, assignment.id)
         tutor_keyboard = bot_instance.build_tutor_assignment_keyboard(request_id)
         if tutor.telegram_user_id:
@@ -671,7 +671,7 @@ async def assign_admin_request(
                     reply_markup=tutor_keyboard,
                 )
             except Exception as exc:
-                logger.warning("Failed to DM tutor %s on assignment for request #%s: %s", tutor.telegram_user_id, request_id, exc)
+                logger.warning("Assignment notification failed role=tutor request_id=%s parent_id=%s tutor_id=%s: %s", request_id, parent.telegram_user_id, tutor.id, exc, exc_info=True)
         if parent.telegram_topic_id and settings.ADMIN_GROUP_ID:
             try:
                 await bot.send_message(
