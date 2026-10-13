@@ -14,7 +14,8 @@ from tests.conftest import TestingSessionLocal
 async def test_public_user_start_renders_public_keyboard_with_https_url(monkeypatch):
     """Verifies that non-admin calling /start gets public welcome and keyboard with WebApp button when HTTPS URL is set."""
     monkeypatch.setattr(settings, "SUPER_ADMIN_ID", 999000111)
-    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/app")
+    monkeypatch.setattr(settings, "MINI_APP_URL", "https://t.me/MentorLinkBot/admin")
+    monkeypatch.setattr(settings, "CUSTOMER_MINI_APP_URL", "https://t.me/MentorLinkBot/customer")
 
     mock_message = AsyncMock()
     mock_update = MagicMock()
@@ -26,25 +27,21 @@ async def test_public_user_start_renders_public_keyboard_with_https_url(monkeypa
 
     await bot_handlers.start_command(mock_update, mock_context)
 
-    assert mock_message.reply_text.called
-    kwargs = mock_message.reply_text.call_args.kwargs
-    assert "Welcome to MentorLink" in kwargs["text"]
-
-    reply_markup = kwargs["reply_markup"]
+    assert mock_message.reply_text.await_count == 2
+    welcome_kwargs = mock_message.reply_text.call_args_list[0].kwargs
+    assert "Welcome to MentorLink" in welcome_kwargs["text"]
+    reply_markup = welcome_kwargs["reply_markup"]
     assert reply_markup.resize_keyboard is True
     assert reply_markup.is_persistent is True
     assert reply_markup.one_time_keyboard is False
+    assert len(reply_markup.keyboard) == 1
+    assert reply_markup.keyboard[0][0].text == "ℹ️ About Us"
+    assert reply_markup.keyboard[0][1].text == "📞 Contact"
 
-    keyboard = reply_markup.keyboard
-    assert len(keyboard) == 1 and len(keyboard[0]) == 2
-    # Row 1: WebApp button
-    assert keyboard[0][0].text == "Register"
-    assert keyboard[0][0].web_app.url == "https://t.me/MentorLinkBot/app"
-    # Row 2: Customer buttons
-    assert keyboard[1][0].text == "ℹ️ About Us"
-    assert keyboard[1][1].text == "📞 Contact"
-
-
+    register_kwargs = mock_message.reply_text.call_args_list[1].kwargs
+    register_button = register_kwargs["reply_markup"].inline_keyboard[0][0]
+    assert register_button.text == "🚀 Register"
+    assert register_button.url == "https://t.me/MentorLinkBot/customer"
 @pytest.mark.asyncio
 async def test_public_user_start_fallback_when_mini_app_url_invalid_or_missing(monkeypatch):
     """
