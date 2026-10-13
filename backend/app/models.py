@@ -274,3 +274,44 @@ class TutoringSession(Base):
     created_by_tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class LearnerProfile(Base):
+    """Parent-controlled learning context, kept separate from public matching data."""
+
+    __tablename__ = "learner_profiles"
+    __table_args__ = (
+        UniqueConstraint("child_id", name="uq_learner_profile_child"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    child_id: Mapped[int] = mapped_column(ForeignKey("children.id"), nullable=False, index=True)
+    parent_telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    current_level: Mapped[str] = mapped_column(String(100), nullable=False)
+    subjects: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    learning_goals: Mapped[str] = mapped_column(Text, nullable=False)
+    strengths: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    focus_areas: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    learning_preferences: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class DiagnosticAssessment(Base):
+    """Tutor-authored baseline/progress assessment scoped to one assignment."""
+
+    __tablename__ = "diagnostic_assessments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    assignment_id: Mapped[int] = mapped_column(ForeignKey("assignments.id"), nullable=False, index=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("parent_requests.id"), nullable=False, index=True)
+    child_id: Mapped[Optional[int]] = mapped_column(ForeignKey("children.id"), nullable=True, index=True)
+    created_by_tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(120), nullable=False)
+    assessment_type: Mapped[str] = mapped_column(String(20), nullable=False, default="baseline")
+    score_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    strengths: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    focus_areas: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    next_steps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
