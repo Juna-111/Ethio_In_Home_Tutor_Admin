@@ -251,3 +251,26 @@ class MarketplaceFavorite(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+
+class TutoringSession(Base):
+    """A scheduled lesson and its tutor-recorded attendance and learning log."""
+
+    __tablename__ = "tutoring_sessions"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "scheduled_at", name="uq_tutoring_session_assignment_time"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    assignment_id: Mapped[int] = mapped_column(ForeignKey("assignments.id"), nullable=False, index=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled", index=True)
+    attendance: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    lesson_topic: Mapped[str] = mapped_column(String(200), nullable=False)
+    lesson_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    homework: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_tutor_id: Mapped[int] = mapped_column(ForeignKey("tutors.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
