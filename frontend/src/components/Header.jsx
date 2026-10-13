@@ -1,14 +1,8 @@
 import React from 'react';
 import { ArrowLeft, Globe, User } from 'lucide-react';
+import BrandMark from './BrandMark';
 import { TRANSLATIONS } from '../constants/translations';
 
-function BrandMark() {
-  return (
-    <div className="relative flex h-[29px] w-[29px] shrink-0 rotate-[-7deg] items-center justify-center rounded-[8px] border border-white/50 bg-white/10 shadow-inner" aria-hidden="true">
-      <span className="h-[10px] w-[10px] rounded-[2px] bg-citrus" />
-    </div>
-  );
-}
 
 export default function Header({ user, lang, onToggleLanguage, showHome, onHome }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
@@ -27,7 +21,7 @@ export default function Header({ user, lang, onToggleLanguage, showHome, onHome 
               <ArrowLeft className="h-4 w-4 text-paper" />
             </span>
           ) : (
-            <BrandMark />
+            <BrandMark size="small" />
           )}
           <span className="min-w-0">
             <span className="block truncate text-sm font-black tracking-tight text-paper sm:text-base">
