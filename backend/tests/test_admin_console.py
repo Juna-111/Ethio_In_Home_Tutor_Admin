@@ -36,7 +36,7 @@ async def test_public_user_start_renders_public_keyboard_with_https_url(monkeypa
     assert reply_markup.one_time_keyboard is False
 
     keyboard = reply_markup.keyboard
-    assert len(keyboard) == 2
+    assert len(keyboard) == 1 and len(keyboard[0]) == 2
     # Row 1: WebApp button
     assert keyboard[0][0].text == "Register"
     assert keyboard[0][0].web_app.url == "https://t.me/MentorLinkBot/app"
