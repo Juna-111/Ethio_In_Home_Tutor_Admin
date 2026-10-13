@@ -181,19 +181,19 @@ export default function ParentForm({ user, lang, onSuccess }) {
   return (
     <form onSubmit={handleSubmit} noValidate className="px-4 pb-12 space-y-5">
       {globalError && (
-        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
-          <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+        <div className="p-3.5 bg-coral/10 border border-coral/30 text-coral text-xs rounded-2xl flex items-start space-x-2.5 transition-all duration-200">
+          <AlertCircle className="w-4 h-4 text-coral shrink-0 mt-0.5" />
           <span className="leading-relaxed whitespace-pre-line font-medium">{globalError}</span>
         </div>
       )}
 
       {/* Parent Contact Details */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionContact}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-3.5">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{t.parentForm.sectionContact}</h2>
         
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {t.parentForm.parentName} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {t.parentForm.parentName} <span className="text-coral">*</span>
           </label>
           <input
             type="text"
@@ -205,17 +205,17 @@ export default function ParentForm({ user, lang, onSuccess }) {
             }}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
               errors.parent_name
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20'
                 : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
             }`}
           />
-          {errors.parent_name && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.parent_name}</p>}
+          {errors.parent_name && <p className="text-[11px] text-coral mt-1 font-medium">{errors.parent_name}</p>}
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="block text-xs font-semibold text-gray-700">
-              {t.parentForm.phone} <span className="text-red-500">*</span>
+            <label className="block text-xs font-semibold text-ink">
+              {t.parentForm.phone} <span className="text-coral">*</span>
             </label>
             <span className="text-[10px] text-muted font-medium">09... / 07...</span>
           </div>
@@ -234,20 +234,20 @@ export default function ParentForm({ user, lang, onSuccess }) {
               }}
               className={`w-full text-xs pl-[76px] pr-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
                 errors.phone_number
-                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                  ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20'
                   : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
               }`}
             />
           </div>
-          {errors.phone_number && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.phone_number}</p>}
+          {errors.phone_number && <p className="text-[11px] text-coral mt-1 font-medium">{errors.phone_number}</p>}
         </div>
       </div>
 
       {/* Student Academic Details */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionStudent}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-4">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{t.parentForm.sectionStudent}</h2>
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">Student / child <span className="text-red-500">*</span></label>
+          <label className="block text-xs font-semibold text-ink mb-1.5">Student / child <span className="text-coral">*</span></label>
           {children.length > 0 && (
             <select value={formData.child_id} onChange={(e) => setFormData({ ...formData, child_id: e.target.value, child_name: '' })} className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-line bg-white focus:outline-none focus:border-pine">
               <option value="">New child</option>
@@ -258,12 +258,12 @@ export default function ParentForm({ user, lang, onSuccess }) {
             <input value={formData.child_name} onChange={(e) => setFormData({ ...formData, child_name: e.target.value })} placeholder="Child's name" className="mt-2 w-full text-xs px-3.5 py-2.5 rounded-xl border border-line focus:outline-none focus:border-pine" />
           )}
           {targetTutor && <p className="mt-2 rounded-xl bg-citrus/10 border border-citrus/30 p-2 text-[10px] font-bold text-ink">Direct request for {targetTutor.full_name}. The tutor must still accept before assignment.</p>}
-          {errors.child_name && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.child_name}</p>}
+          {errors.child_name && <p className="text-[11px] text-coral mt-1 font-medium">{errors.child_name}</p>}
         </div>
         
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-            {t.parentForm.studentLevel} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1.5">
+            {t.parentForm.studentLevel} <span className="text-coral">*</span>
           </label>
           <select
             value={formData.student_level}
@@ -273,7 +273,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             }}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
               errors.student_level
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20 text-coral'
                 : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10 text-ink'
             }`}
           >
@@ -282,18 +282,18 @@ export default function ParentForm({ user, lang, onSuccess }) {
               <option key={level} value={level}>{choices.studentLevels?.[level] || level}</option>
             ))}
           </select>
-          {errors.student_level && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.student_level}</p>}
+          {errors.student_level && <p className="text-[11px] text-coral mt-1 font-medium">{errors.student_level}</p>}
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-gray-700">
-              {t.parentForm.subjectsNeeded} <span className="text-red-500">*</span>
+            <label className="text-xs font-semibold text-ink">
+              {t.parentForm.subjectsNeeded} <span className="text-coral">*</span>
             </label>
             <span className="text-[11px] text-pine font-semibold">{formData.subjects.length} {t.parentForm.subjectsSelected}</span>
           </div>
           <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border transition ${
-            errors.subjects ? 'border-red-300 bg-red-50/10' : 'border-transparent'
+            errors.subjects ? 'border-coral/40 bg-coral/10/10' : 'border-transparent'
           }`}>
             {SUBJECTS_LIST.map((subject) => {
               const selected = formData.subjects.includes(subject);
@@ -305,7 +305,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   className={`py-1.5 px-3 rounded-full text-xs font-medium transition flex items-center space-x-1 ${
                     selected
                       ? 'bg-pine text-paper shadow-sm font-semibold'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-line/60 text-muted hover:bg-line'
                   }`}
                 >
                   {selected && <Check className="w-3 h-3 mr-0.5" />}
@@ -314,17 +314,17 @@ export default function ParentForm({ user, lang, onSuccess }) {
               );
             })}
           </div>
-          {errors.subjects && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.subjects}</p>}
+          {errors.subjects && <p className="text-[11px] text-coral mt-1 font-medium">{errors.subjects}</p>}
         </div>
       </div>
 
       {/* Location */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionLocation}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-3.5">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{t.parentForm.sectionLocation}</h2>
         
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {t.parentForm.subcity} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {t.parentForm.subcity} <span className="text-coral">*</span>
           </label>
           <select
             value={formData.location_subcity}
@@ -334,7 +334,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             }}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
               errors.location_subcity
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20 text-coral'
                 : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10 text-ink'
             }`}
           >
@@ -343,11 +343,11 @@ export default function ParentForm({ user, lang, onSuccess }) {
               <option key={subcity} value={subcity}>{choices.subcities?.[subcity] || subcity}</option>
             ))}
           </select>
-          {errors.location_subcity && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.location_subcity}</p>}
+          {errors.location_subcity && <p className="text-[11px] text-coral mt-1 font-medium">{errors.location_subcity}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">{t.parentForm.landmark}</label>
+          <label className="block text-xs font-semibold text-ink mb-1">{t.parentForm.landmark}</label>
           <input
             type="text"
             placeholder={t.parentForm.landmarkPlaceholder}
@@ -359,12 +359,12 @@ export default function ParentForm({ user, lang, onSuccess }) {
       </div>
 
       {/* Schedule & Budget Calculation */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionSchedule}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-4">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{t.parentForm.sectionSchedule}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-2">
-            {t.parentForm.preferredDays} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-2">
+            {t.parentForm.preferredDays} <span className="text-coral">*</span>
           </label>
           <div className="grid grid-cols-4 gap-1.5">
             {DAYS_OF_WEEK.map((day) => {
@@ -377,7 +377,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                   className={`py-2 rounded-xl text-xs font-semibold transition ${
                     selected
                       ? 'bg-pine text-paper shadow-sm'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-line/60 text-muted hover:bg-line'
                   }`}
                 >
                   {choices.days?.[day] || day}
@@ -385,12 +385,12 @@ export default function ParentForm({ user, lang, onSuccess }) {
               );
             })}
           </div>
-          {errors.schedule_days && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.schedule_days}</p>}
+          {errors.schedule_days && <p className="text-[11px] text-coral mt-1 font-medium">{errors.schedule_days}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-            {t.parentForm.timeSlot} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1.5">
+            {t.parentForm.timeSlot} <span className="text-coral">*</span>
           </label>
           <div className="flex flex-wrap gap-1.5 mb-2">
             {[
@@ -409,7 +409,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                 className={`py-1 px-2.5 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
                   formData.time_slot === preset.val
                     ? 'border-pine bg-pine/10 text-pine font-bold'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'border-line text-muted hover:bg-paper'
                 }`}
               >
                 {preset.label}
@@ -426,16 +426,16 @@ export default function ParentForm({ user, lang, onSuccess }) {
             }}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none ${
               errors.time_slot
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20'
                 : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10'
             }`}
           />
-          {errors.time_slot && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.time_slot}</p>}
+          {errors.time_slot && <p className="text-[11px] text-coral mt-1 font-medium">{errors.time_slot}</p>}
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {t.parentForm.duration} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {t.parentForm.duration} <span className="text-coral">*</span>
           </label>
           <select
             value={formData.session_duration}
@@ -445,7 +445,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
             }}
             className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none bg-white font-medium ${
               errors.session_duration
-                ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100 text-red-900'
+                ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20 text-coral'
                 : 'border-line focus:border-pine focus:ring-2 focus:ring-pine/10 text-ink'
             }`}
           >
@@ -454,13 +454,13 @@ export default function ParentForm({ user, lang, onSuccess }) {
               <option key={dur} value={dur}>{choices.durations?.[dur] || dur}</option>
             ))}
           </select>
-          {errors.session_duration && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.session_duration}</p>}
+          {errors.session_duration && <p className="text-[11px] text-coral mt-1 font-medium">{errors.session_duration}</p>}
         </div>
 
         {/* Budget per Hour with Dynamic Monthly Estimation */}
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            {t.parentForm.budgetPerHour} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1">
+            {t.parentForm.budgetPerHour} <span className="text-coral">*</span>
           </label>
           <div className="relative">
             <input
@@ -475,34 +475,34 @@ export default function ParentForm({ user, lang, onSuccess }) {
               }}
               className={`w-full text-xs px-3.5 py-2.5 rounded-xl border transition focus:outline-none font-semibold ${
                 errors.budget_etb
-                  ? 'border-red-500 bg-red-50/20 ring-2 ring-red-100'
+                  ? 'border-coral bg-coral/10/20 ring-2 ring-coral/20'
                   : 'border-line focus:border-pine'
               }`}
             />
-            <span className="absolute right-3.5 top-2.5 text-xs text-gray-400 font-medium">{t.parentForm.perHour}</span>
+            <span className="absolute right-3.5 top-2.5 text-xs text-muted font-medium">{t.parentForm.perHour}</span>
           </div>
-          {errors.budget_etb && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.budget_etb}</p>}
+          {errors.budget_etb && <p className="text-[11px] text-coral mt-1 font-medium">{errors.budget_etb}</p>}
 
           {/* Dynamic Monthly Cost Card */}
           <div className="mt-2.5 p-3 rounded-xl bg-pine/5 border border-pine/15 flex items-start space-x-2.5">
             <Calculator className="w-4 h-4 text-pine shrink-0 mt-0.5" />
             <div className="text-xs">
-              <span className="text-gray-600">{t.parentForm.estimatedMonthly}: </span>
+              <span className="text-muted">{t.parentForm.estimatedMonthly}: </span>
               <span className="font-bold text-pine">
                 {hourlyRate > 0 ? `≈ ${estimatedMonthly.toLocaleString()} ${t.parentForm.perMonth}` : `— ${t.parentForm.perMonth}`}
               </span>
-              <p className="text-[10px] text-gray-400 mt-0.5">{t.parentForm.formulaNote}</p>
+              <p className="text-[10px] text-muted mt-0.5">{t.parentForm.formulaNote}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Tutor Preferences */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-3.5">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.parentForm.sectionPreferences}</h2>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-line space-y-3.5">
+        <h2 className="text-xs font-bold text-muted uppercase tracking-wider">{t.parentForm.sectionPreferences}</h2>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t.parentForm.genderPref}</label>
+          <label className="block text-xs font-semibold text-ink mb-1.5">{t.parentForm.genderPref}</label>
           <div className="grid grid-cols-3 gap-2">
             {[
               { val: "No preference", label: t.options.noPreference },
@@ -516,7 +516,7 @@ export default function ParentForm({ user, lang, onSuccess }) {
                 className={`py-2 px-1 text-[11px] rounded-xl font-medium border transition text-center ${
                   formData.preferred_gender === val
                     ? 'border-pine bg-pine/10 text-pine font-semibold'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'border-line text-muted hover:bg-paper'
                 }`}
               >
                 {label}
@@ -526,8 +526,8 @@ export default function ParentForm({ user, lang, onSuccess }) {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-            {t.parentForm.expPref} <span className="text-red-500">*</span>
+          <label className="block text-xs font-semibold text-ink mb-1.5">
+            {t.parentForm.expPref} <span className="text-coral">*</span>
           </label>
           <div className="grid grid-cols-3 gap-2">
             {PREFERRED_EXPERIENCES.map((exp) => (
@@ -541,14 +541,14 @@ export default function ParentForm({ user, lang, onSuccess }) {
                 className={`py-2 px-1 text-[10px] sm:text-[11px] rounded-xl font-medium border transition text-center leading-tight ${
                   formData.preferred_experience === exp
                     ? 'border-pine bg-pine/10 text-pine font-semibold'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'border-line text-muted hover:bg-paper'
                 }`}
               >
                 {choices.experiences?.[exp] || exp}
               </button>
             ))}
           </div>
-          {errors.preferred_experience && <p className="text-[11px] text-red-500 mt-1 font-medium">{errors.preferred_experience}</p>}
+          {errors.preferred_experience && <p className="text-[11px] text-coral mt-1 font-medium">{errors.preferred_experience}</p>}
         </div>
       </div>
 

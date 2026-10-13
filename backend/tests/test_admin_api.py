@@ -305,9 +305,11 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
     monkeypatch.setattr(settings, "ALLOW_UNVERIFIED_WEB_PREVIEW", False)
     parent = _parent_request("Assign Parent")
     tutor = _tutor("Assign Tutor", status="verified")
+    tutor.availability_schedule = ["Mon"]
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    db_session.add(_complete_verification(tutor))
     await db_session.commit()
 
     response = await async_client.post(
@@ -316,7 +318,7 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
         headers=_telegram_auth_header(admin_id, bot_token),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assignments = (await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))).scalars().all()
     audits = (await db_session.execute(select(AuditLog).where(
         AuditLog.target_type == "parent_request", AuditLog.target_id == parent.id,
@@ -349,10 +351,12 @@ async def test_admin_assignment_notifies_parent_and_tutor(
     parent = _parent_request("Notify Parent")
     parent.telegram_user_id = 900001
     tutor = _tutor("Notify Tutor", status="verified")
+    tutor.availability_schedule = ["Mon"]
     tutor.telegram_user_id = 900002
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    db_session.add(_complete_verification(tutor))
     await db_session.commit()
 
     response = await async_client.post(
@@ -361,7 +365,7 @@ async def test_admin_assignment_notifies_parent_and_tutor(
         headers=_telegram_auth_header(admin_id, bot_token),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert mock_bot.send_message.await_count == 2
     calls = mock_bot.send_message.await_args_list
     recipients = {c.kwargs["chat_id"] for c in calls}
@@ -395,10 +399,12 @@ async def test_admin_assignment_notification_failure_does_not_break_assignment(
     parent = _parent_request("Blocked Parent")
     parent.telegram_user_id = 900003
     tutor = _tutor("Blocked Tutor", status="verified")
+    tutor.availability_schedule = ["Mon"]
     tutor.telegram_user_id = 900004
     db_session.add_all([AdminUser(telegram_id=admin_id, role="matcher", is_active=True), parent, tutor])
     await db_session.flush()
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
+    db_session.add(_complete_verification(tutor))
     await db_session.commit()
 
     response = await async_client.post(
@@ -407,7 +413,7 @@ async def test_admin_assignment_notification_failure_does_not_break_assignment(
         headers=_telegram_auth_header(admin_id, bot_token),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assignments = (await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))).scalars().all()
     assert len(assignments) == 1
 
@@ -772,7 +778,3 @@ async def test_parent_can_cancel_only_owned_unassigned_requests(
 
     await db_session.refresh(owned)
     assert owned.status == "cancelled"
-
-    db_session.add(_complete_verification(tutor))
-    db_session.add(_complete_verification(tutor))
-    db_session.add(_complete_verification(tutor))

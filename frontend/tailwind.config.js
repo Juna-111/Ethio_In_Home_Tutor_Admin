@@ -14,6 +14,7 @@ export default {
         citrus: '#a88221',
         muted: '#78847c',
         line: '#e2e7df',
+        canvas: '#f1f3ef',
         green: {
           DEFAULT: '#27715e',
           50: '#f0fdf4',

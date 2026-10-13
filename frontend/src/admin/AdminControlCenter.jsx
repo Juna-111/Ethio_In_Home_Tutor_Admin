@@ -69,7 +69,7 @@ export default function AdminControlCenter({ onNavigate }) {
     <section className="control-center">
       <header className="control-heading">
         <div>
-          <p className="eyebrow">ETHIO IN-HOME TUTOR · ADMIN</p>
+          <p className="eyebrow">MENTORLINK · ADMIN</p>
           <h1>{urgent.length ? `${urgent.length} thing${urgent.length === 1 ? '' : 's'} need your attention.` : 'Everything is under control.'}</h1>
           <p>{urgent.length ? 'The platform has already done the routine work. Here is what still needs a human decision.' : 'No urgent decision is waiting. The platform is monitoring matching, verification and assignments.'}</p>
         </div>

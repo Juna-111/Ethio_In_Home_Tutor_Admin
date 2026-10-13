@@ -70,9 +70,9 @@ export default function AdminApp() {
   return (
     <div className="admin-app">
       <header className="admin-topbar">
-        <a className="admin-brand" href="/admin.html" aria-label="Ethio In-Home Tutor Admin home">
-          <span className="brand-mark" aria-hidden="true"><span>E</span></span>
-          <span className="brand-copy"><strong>Ethio In-Home Tutor</strong><span className="brand-admin">ADMIN CONSOLE</span></span>
+        <a className="admin-brand" href="/admin.html" aria-label="MentorLink Admin home">
+          <span className="brand-mark" aria-hidden="true"><span className="brand-mark-dot" /></span>
+          <span className="brand-copy"><strong>MentorLink</strong><span className="brand-admin">ADMIN CONSOLE</span></span>
         </a>
         <div className="topbar-status"><span className="status-dot" />{dashboard ? 'SIGNED IN · ' + (dashboard.admin_role || 'ADMIN').toUpperCase() : 'ADMIN OPERATIONS'}</div>
       </header>
@@ -94,7 +94,7 @@ export default function AdminApp() {
             {view.status === 'ready' && activeSection === 'coverage' && <><CoverageBoard /><div style={{ marginTop: 30 }}><IdleTutors /></div></>}
             {view.status === 'ready' && activeSection === 'export' && <ExportCenter />}
             {view.status === 'ready' && activeSection === 'admins' && dashboard?.admin_role === 'super_admin' && <AdminManagement />}
-            {view.status === 'ready' && activeSection !== 'overview' && <footer className="admin-footer"><span><span className="status-dot" /> LIVE DATA CONNECTED</span><span>ETHIO IN-HOME TUTOR <i>·</i> ADMIN OPERATIONS</span></footer>}
+            {view.status === 'ready' && activeSection !== 'overview' && <footer className="admin-footer"><span><span className="status-dot" /> LIVE DATA CONNECTED</span><span>MENTORLINK <i>·</i> ADMIN OPERATIONS</span></footer>}
           </>
         )}
       </main>

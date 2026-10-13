@@ -332,11 +332,11 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
           <div className="space-y-2">{schedules.map((schedule) => (
             <div key={schedule.id} className="rounded-2xl border border-line bg-white/70 p-3">
               <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-black text-pine">{schedule.tutor}</p><span className="text-[8px] font-bold text-muted">#{schedule.id}</span></div>
-              <div className="mt-2 grid grid-cols-2 gap-2"><div className="rounded-xl bg-[#f1f3ef] p-2"><p className="text-[8px] font-bold text-muted">{isAm ? 'ቀናት' : 'Days'}</p><p className="mt-0.5 text-[10px] font-black text-ink">{schedule.days.length ? schedule.days.join(' · ') : '—'}</p></div><div className="rounded-xl bg-[#f1f3ef] p-2"><p className="text-[8px] font-bold text-muted">{isAm ? 'ሰዓት' : 'Time'}</p><p className="mt-0.5 text-[10px] font-black text-ink">{schedule.time}</p></div></div>
+              <div className="mt-2 grid grid-cols-2 gap-2"><div className="rounded-xl bg-canvas p-2"><p className="text-[8px] font-bold text-muted">{isAm ? 'ቀናት' : 'Days'}</p><p className="mt-0.5 text-[10px] font-black text-ink">{schedule.days.length ? schedule.days.join(' · ') : '—'}</p></div><div className="rounded-xl bg-canvas p-2"><p className="text-[8px] font-bold text-muted">{isAm ? 'ሰዓት' : 'Time'}</p><p className="mt-0.5 text-[10px] font-black text-ink">{schedule.time}</p></div></div>
               <div className="mt-2 flex items-center gap-3 text-[9px] text-muted"><span className="flex items-center gap-1"><Clock className="h-3 w-3" />{schedule.duration}</span><span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{schedule.subjects.join(', ') || '—'}</span></div>
             </div>
           ))}</div>
-        ) : <div className="rounded-2xl bg-[#f1f3ef] p-4 text-center text-[10px] text-muted">{isAm ? 'አስጠኚ ሲመደብ የጊዜ ሰሌዳው እዚህ ይታያል።' : 'Your schedule will appear here once a tutor is matched.'}</div>}
+        ) : <div className="rounded-2xl bg-canvas p-4 text-center text-[10px] text-muted">{isAm ? 'አስጠኚ ሲመደብ የጊዜ ሰሌዳው እዚህ ይታያል።' : 'Your schedule will appear here once a tutor is matched.'}</div>}
       </section>
 
       <section className="rounded-3xl border border-line bg-paper p-4 shadow-sm">
@@ -345,12 +345,12 @@ export default function ParentPortal({ user, lang, onSelectTab }) {
           <div><h3 className="text-sm font-black text-ink">{isAm ? 'ማሳወቂያዎች' : 'Notifications'}</h3><p className="mt-0.5 text-[10px] text-muted">{isAm ? 'በጥያቄዎችዎ ላይ የቅርብ ጊዜ እንቅስቃሴ።' : 'Recent activity from your tutoring requests.'}</p></div>
         </div>
         {notifications.length ? <div className="space-y-1">{notifications.map((item) => (
-          <button key={item.id} type="button" onClick={() => { setTimeout(() => document.getElementById('parent-request-list')?.scrollIntoView({ behavior: 'smooth' }), 0); }} className="flex w-full items-start gap-2.5 rounded-2xl p-2.5 text-left hover:bg-[#f1f3ef]">
+          <button key={item.id} type="button" onClick={() => { setTimeout(() => document.getElementById('parent-request-list')?.scrollIntoView({ behavior: 'smooth' }), 0); }} className="flex w-full items-start gap-2.5 rounded-2xl p-2.5 text-left hover:bg-canvas">
             <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-citrus/15 text-citrus"><Bell className="h-3.5 w-3.5" /></span>
             <span className="min-w-0 flex-1"><strong className="block text-[10px] font-black text-ink">{item.title}</strong><small className="mt-0.5 block text-[9px] text-muted">{item.body}</small><small className="mt-1 block text-[8px] font-bold text-muted">{item.date ? new Date(item.date).toLocaleDateString() : '—'}</small></span>
             <ChevronRight className="mt-2 h-3.5 w-3.5 shrink-0 text-muted" />
           </button>
-        ))}</div> : <div className="rounded-2xl bg-[#f1f3ef] p-4 text-center text-[10px] text-muted">{isAm ? 'አዲስ ማሳወቂያ የለም።' : 'No notifications yet.'}</div>}
+        ))}</div> : <div className="rounded-2xl bg-canvas p-4 text-center text-[10px] text-muted">{isAm ? 'አዲስ ማሳወቂያ የለም።' : 'No notifications yet.'}</div>}
       </section>
 
       <div id="parent-request-list">

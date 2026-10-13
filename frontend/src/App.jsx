@@ -119,7 +119,7 @@ export default function App() {
   const goHome = () => setActiveTab('home');
 
   return (
-    <div className="min-h-screen bg-[#f1f3ef] flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans text-ink">
+    <div className="min-h-screen bg-canvas flex flex-col max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans text-ink">
       <Header
         user={user}
         lang={lang}

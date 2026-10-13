@@ -41,7 +41,7 @@ export default function TabNavigation({ activeTab, onSelectTab, lang }) {
               onClick={() => { triggerSelectionHaptic(); onSelectTab(tab.id); }}
               className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2.5 text-[10px] font-black transition-all ${
                 isActive
-                  ? 'border border-citrus/50 bg-citrus/20 text-ink shadow-sm'
+                  ? 'border border-pine bg-paper text-pine shadow-sm'
                   : 'text-muted hover:bg-white hover:text-ink'
               }`}
             >

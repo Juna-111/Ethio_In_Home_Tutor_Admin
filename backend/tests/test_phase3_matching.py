@@ -3,10 +3,15 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Assignment, MatchInvite, ParentRequest, Tutor
+from app.config import settings
+from app.models import Assignment, MatchInvite, ParentRequest, Tutor, TutorVerification
 from app.services.matcher import find_top_matches
 from tests.conftest import TestingSessionLocal
 import app.bot.handlers as bot_handlers
+
+
+def _complete_verification(tutor):
+    return TutorVerification(tutor_id=tutor.id, id_verified=True, entrance_result_verified=True, phone_confirmed=True, claims_plausible=True)
 
 
 @pytest.mark.asyncio
@@ -95,7 +100,7 @@ async def test_matching_engine_filters_and_ranking(db_session: AsyncSession):
         expected_fee_etb=300.0,
         base_subcity="Bole",
         coverage_areas=["Bole"],
-        availability_schedule="Flexible",
+        availability_schedule=["Tue", "Thu"],
         status="pending"  # NOT verified!
     )
 
@@ -362,6 +367,7 @@ async def test_close_parent_callback_updates_db(db_session: AsyncSession, monkey
 
 @pytest.mark.asyncio
 async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_GROUP_ID", -1001234567890)
     """Verifies that assigning a tutor updates parent status to 'matched', closes dedicated topic, and alerts both tutor and parent."""
     parent = ParentRequest(
         telegram_user_id=777666555,
@@ -373,7 +379,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
         preferred_experience="Fresh Graduate",
         location_subcity="Kolfe",
         location_landmark="Near Total",
-        schedule_days=["Tue", "Thu"],
+        schedule_days=["Tuesday", "Thursday"],
         time_slot="5:00 PM - 7:00 PM",
         session_duration="2 hrs",
         budget_etb=4200.0,
@@ -394,13 +400,14 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
         expected_fee_etb=400.0,
         base_subcity="Kolfe",
         coverage_areas=["Kolfe"],
-        availability_schedule="Flexible",
+        availability_schedule={"days": ["Tuesday", "Thursday"]},
         status="verified"
     )
     db_session.add_all([parent, tutor])
     await db_session.commit()
     await db_session.refresh(parent)
     await db_session.refresh(tutor)
+    db_session.add(_complete_verification(tutor))
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
     await db_session.commit()
 
@@ -423,7 +430,7 @@ async def test_assign_match_callback_updates_db_and_alerts_tutor(db_session: Asy
     await bot_handlers.handle_assign_match(mock_update, mock_context, f"assign_match:{parent.id}:{tutor.id}")
 
     await db_session.refresh(parent)
-    assert parent.status == "matched"
+    assert parent.status == "matched", mock_query.answer.await_args
 
     # Verify Assignment record created
     from app.models import Assignment
@@ -485,13 +492,14 @@ async def test_match_and_assign_preserves_topic_thread_id(db_session: AsyncSessi
         expected_fee_etb=400.0,
         base_subcity="Bole",
         coverage_areas=["Bole"],
-        availability_schedule="Daily",
+        availability_schedule=["Mon"],
         status="verified"
     )
     db_session.add_all([parent, tutor])
     await db_session.commit()
     await db_session.refresh(parent)
     await db_session.refresh(tutor)
+    db_session.add(_complete_verification(tutor))
     db_session.add(MatchInvite(request_id=parent.id, tutor_id=tutor.id, status="yes"))
     await db_session.commit()
 

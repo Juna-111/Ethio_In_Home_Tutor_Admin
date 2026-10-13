@@ -26,8 +26,8 @@ export default class AppErrorBoundary extends React.Component {
           display: 'grid',
           placeItems: 'center',
           padding: 24,
-          background: isAdmin ? '#f1f3ef' : '#fbfcf9',
-          color: '#172924',
+          background: isAdmin ? 'var(--canvas)' : 'var(--paper)',
+          color: 'var(--ink)',
           fontFamily: "'Plus Jakarta Sans', 'Noto Sans Ethiopic', system-ui, sans-serif",
           textAlign: 'center',
         }}
@@ -36,7 +36,7 @@ export default class AppErrorBoundary extends React.Component {
           <h1 style={{ margin: '0 0 10px', fontSize: 22 }}>
             {isAdmin ? 'Admin app unavailable' : 'Something went wrong'}
           </h1>
-          <p style={{ margin: '0 0 18px', color: '#78847c', lineHeight: 1.6, fontSize: 14 }}>
+          <p style={{ margin: '0 0 18px', color: 'var(--muted)', lineHeight: 1.6, fontSize: 14 }}>
             Please reopen the Mini App. If the problem continues, contact support.
           </p>
           <button
@@ -46,8 +46,8 @@ export default class AppErrorBoundary extends React.Component {
               border: 0,
               borderRadius: 10,
               padding: '11px 18px',
-              background: '#183b34',
-              color: '#fbfcf9',
+              background: 'var(--pine)',
+              color: 'var(--paper)',
               fontWeight: 700,
               cursor: 'pointer',
             }}

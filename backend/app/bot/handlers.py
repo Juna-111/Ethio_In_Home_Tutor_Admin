@@ -312,7 +312,7 @@ async def _handle_review_deeplink(update: Update, param: str) -> bool:
     async with AsyncSessionLocal() as session:
         role = await resolve_admin_role(session, user.id)
     if role is None:
-        await message.reply_text("This review link is only for Ethio In-Home Tutor admins.")
+        await message.reply_text("This review link is only for MentorLink admins.")
         return True
     base = _get_webapp_url()
     if not base:
@@ -344,7 +344,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_super_admin(update):
         admin_keyboard = get_admin_reply_keyboard()
         await message.reply_text(
-            text="👑 <b>Ethio In-Home Tutor — SUPER ADMIN CONSOLE</b>\n\n"
+            text="👑 <b>MentorLink — SUPER ADMIN CONSOLE</b>\n\n"
                  "Welcome, Super Admin! Select an action from the menu below or tap an inline option.",
             reply_markup=admin_keyboard,
             parse_mode=ParseMode.HTML
@@ -352,7 +352,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     welcome_text = (
-        "👋 <b>Welcome to Ethio In-Home Tutor!</b>\n\n"
+        "👋 <b>Welcome to MentorLink!</b>\n\n"
         "Connecting families with verified in-home tutors and university mentors across Addis Ababa.\n\n"
         "<blockquote><b>How It Works:</b>\n"
         "1️⃣ <b>Find a Tutor:</b> Tap <b>Register</b> to request an expert mentor matching your child's curriculum, location, and schedule.\n"
@@ -1213,7 +1213,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     admin_keyboard = get_admin_reply_keyboard()
     await msg.reply_text(
-        text="👑 <b>Ethio In-Home Tutor — SUPER ADMIN CONSOLE</b>\n\n"
+        text="👑 <b>MentorLink — SUPER ADMIN CONSOLE</b>\n\n"
              "Welcome, Super Admin! Select an action from the menu below or tap an inline option.",
         reply_markup=admin_keyboard,
         parse_mode=ParseMode.HTML
@@ -1338,8 +1338,8 @@ async def handle_about_us(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not bio_text:
         bio_text = (
-            "🌟 About Ethio In-Home Tutor\n\n"
-            "Ethio In-Home Tutor is Addis Ababa's premier home tutoring network connecting university "
+            "🌟 About MentorLink\n\n"
+            "MentorLink is Addis Ababa's premier home tutoring network connecting university "
             "scholars and verified educators with students across all grade levels.\n\n"
             "✨ Our Standards:\n"
             "• Rigorous credential & ID verification\n"

@@ -4,9 +4,8 @@ import { TRANSLATIONS } from '../constants/translations';
 
 function BrandMark() {
   return (
-    <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-citrus/40 bg-white/10 shadow-inner">
-      <span className="absolute text-sm font-black text-citrus">E</span>
-      <span className="absolute bottom-1.5 h-px w-5 bg-paper/80" />
+    <div className="relative flex h-[29px] w-[29px] shrink-0 rotate-[-7deg] items-center justify-center rounded-[8px] border border-white/50 bg-white/10 shadow-inner" aria-hidden="true">
+      <span className="h-[10px] w-[10px] rounded-[2px] bg-citrus" />
     </div>
   );
 }
@@ -21,7 +20,7 @@ export default function Header({ user, lang, onToggleLanguage, showHome, onHome 
           type="button"
           onClick={showHome ? onHome : undefined}
           className={`flex min-w-0 items-center gap-3 text-left ${showHome ? 'cursor-pointer' : 'cursor-default'}`}
-          aria-label={showHome ? 'Back to Ethio In-Home Tutor home' : 'Ethio In-Home Tutor'}
+          aria-label={showHome ? 'Back to MentorLink home' : 'MentorLink'}
         >
           {showHome ? (
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10">

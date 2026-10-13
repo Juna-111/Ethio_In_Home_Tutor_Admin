@@ -7,6 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import ParentRequest, Tutor
 
 
+def _authenticate_preview(user_id=123456789):
+    from app.auth import get_optional_telegram_user
+    from app.main import app
+    app.dependency_overrides[get_optional_telegram_user] = lambda: user_id
+
+
+@pytest.fixture(autouse=True)
+def clear_preview_auth_override():
+    from app.auth import get_optional_telegram_user
+    from app.main import app
+    app.dependency_overrides.pop(get_optional_telegram_user, None)
+    yield
+    app.dependency_overrides.pop(get_optional_telegram_user, None)
+
+
 @pytest.mark.asyncio
 async def test_healthcheck(async_client: AsyncClient):
     """Verifies the health check endpoint returns 200 and healthy database status."""
@@ -36,6 +51,7 @@ async def test_create_parent_request_success(async_client: AsyncClient, db_sessi
         "budget_etb": 4500.0
     }
 
+    _authenticate_preview()
     response = await async_client.post("/api/v1/parents/request", json=payload)
     assert response.status_code == 201
     data = response.json()
@@ -71,6 +87,7 @@ async def test_create_parent_request_validation_failure(async_client: AsyncClien
         "budget_etb": -100.0  # Invalid negative budget
     }
 
+    _authenticate_preview()
     response = await async_client.post("/api/v1/parents/request", json=invalid_payload)
     assert response.status_code == 422
 
@@ -255,6 +272,7 @@ async def test_parent_request_forwards_to_telegram(async_client: AsyncClient, mo
         "budget_etb": 3500.0
     }
 
+    _authenticate_preview(123456790)
     response = await async_client.post("/api/v1/parents/request", json=payload)
     assert response.status_code == 201
     created_id = response.json()["id"]
@@ -382,6 +400,7 @@ async def test_topic_routing_when_configured(async_client: AsyncClient, monkeypa
         "session_duration": "1 hr",
         "budget_etb": 2000.0
     }
+    _authenticate_preview(123456791)
     resp1 = await async_client.post("/api/v1/parents/request", json=payload_parent)
     assert resp1.status_code == 201
     assert mock_send_message.call_args.kwargs.get("message_thread_id") == 101
@@ -438,6 +457,7 @@ async def test_topic_routing_fallback_to_main_group(async_client: AsyncClient, m
         "session_duration": "1 hr",
         "budget_etb": 2500.0
     }
+    _authenticate_preview(123456792)
     resp = await async_client.post("/api/v1/parents/request", json=payload)
     assert resp.status_code == 201
     assert "message_thread_id" not in mock_send_message.call_args.kwargs
@@ -529,6 +549,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
         "budget_etb": 500.0
     }
 
+    _authenticate_preview(123456793)
     response = await async_client.post("/api/v1/parents/request", json=payload)
     assert response.status_code == 201
     created_id = response.json()["id"]
@@ -570,7 +591,7 @@ async def test_parent_request_dynamic_forum_topic_and_index_card(async_client: A
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_parent_request_allowed_in_production(async_client: AsyncClient, monkeypatch):
+async def test_unauthenticated_parent_request_rejected_in_production(async_client: AsyncClient, monkeypatch):
     """
     Public browser intake works in production without Telegram initData and never trusts a client-supplied Telegram ID.
     """
@@ -592,8 +613,7 @@ async def test_unauthenticated_parent_request_allowed_in_production(async_client
         "budget_etb": 350.0
     }
     resp = await async_client.post("/api/v1/parents/request", json=payload)
-    assert resp.status_code == 201
-    assert resp.json()["telegram_user_id"] is None
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

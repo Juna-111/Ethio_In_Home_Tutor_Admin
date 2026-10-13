@@ -1,7 +1,7 @@
 export const TRANSLATIONS = {
   en: {
-    appTitle: "Ethio In-Home Tutor",
-    appSubtitle: "Trusted In-Home Learning",
+    appTitle: "MentorLink",
+    appSubtitle: "Trusted In-Home Learning · የታመነ የቤት ውስጥ ትምህርት",
     webPreview: "Web Preview",
     tabs: {
       findTutor: "Find a Tutor",
@@ -123,7 +123,7 @@ export const TRANSLATIONS = {
   },
 
   am: {
-    appTitle: "ኢትዮ ኢን-ሆም ቱተር",
+    appTitle: "MentorLink",
     appSubtitle: "የታመነ የቤት ውስጥ ትምህርት",
     webPreview: "ገጽ",
     tabs: {

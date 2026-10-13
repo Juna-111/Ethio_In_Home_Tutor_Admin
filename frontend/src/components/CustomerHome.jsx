@@ -46,7 +46,7 @@ export default function CustomerHome({ user, lang, onSelectTab }) {
             <BrandMark large />
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-citrus">
-                Ethio In-Home Tutor
+                MentorLink
               </p>
               <p className="mt-1 text-xs font-medium text-paper/70">
                 {isAm ? 'የተማሪና የአስጠኚ የታመነ መድረክ' : 'A trusted home for families & tutors'}
@@ -180,7 +180,7 @@ export default function CustomerHome({ user, lang, onSelectTab }) {
             { n: '02', title: isAm ? 'ይጀምሩ' : 'Start', text: isAm ? 'ቀላል ምዝገባ' : 'Simple onboarding' },
             { n: '03', title: isAm ? 'ያስተዳድሩ' : 'Manage', text: isAm ? 'በፖርታልዎ' : 'Inside your portal' },
           ].map((step) => (
-            <div key={step.n} className="rounded-xl bg-[#f1f3ef] p-2.5">
+            <div key={step.n} className="rounded-xl bg-canvas p-2.5">
               <span className="text-[9px] font-black text-citrus">{step.n}</span>
               <p className="mt-1 text-[10px] font-black text-ink">{step.title}</p>
               <p className="mt-0.5 text-[9px] leading-relaxed text-muted">{step.text}</p>
