@@ -1,27 +1,15 @@
 import React from 'react';
+import BrandMark from './BrandMark';
 import {
   ArrowRight,
   BadgeCheck,
-  BookOpen,
   BriefcaseBusiness,
   GraduationCap,
-  Home,
   ShieldCheck,
   Sparkles,
   UsersRound,
 } from 'lucide-react';
 
-function BrandMark({ large = false }) {
-  return (
-    <div
-      className={`relative flex items-center justify-center rounded-2xl border border-citrus/40 bg-white/10 shadow-inner ${large ? 'h-16 w-16' : 'h-10 w-10'}`}
-      aria-hidden="true"
-    >
-      <Home className={large ? 'absolute h-8 w-8 text-citrus' : 'absolute h-5 w-5 text-citrus'} strokeWidth={1.8} />
-      <BookOpen className={large ? 'absolute h-5 w-5 translate-y-1 text-paper' : 'absolute h-3.5 w-3.5 translate-y-0.5 text-paper'} strokeWidth={2.2} />
-    </div>
-  );
-}
 
 export default function CustomerHome({ user, lang, onSelectTab }) {
   const isAm = lang === 'am';
@@ -43,7 +31,7 @@ export default function CustomerHome({ user, lang, onSelectTab }) {
 
         <div className="relative">
           <div className="mb-5 flex items-center gap-3">
-            <BrandMark large />
+            <BrandMark size="large" />
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-citrus">
                 MentorLink
