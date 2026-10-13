@@ -318,7 +318,7 @@ async def test_admin_assignment_commits_one_assignment_and_audit_row(
         headers=_telegram_auth_header(admin_id, bot_token),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assignments = (await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))).scalars().all()
     audits = (await db_session.execute(select(AuditLog).where(
         AuditLog.target_type == "parent_request", AuditLog.target_id == parent.id,
@@ -365,7 +365,7 @@ async def test_admin_assignment_notifies_parent_and_tutor(
         headers=_telegram_auth_header(admin_id, bot_token),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert mock_bot.send_message.await_count == 2
     calls = mock_bot.send_message.await_args_list
     recipients = {c.kwargs["chat_id"] for c in calls}
@@ -413,7 +413,7 @@ async def test_admin_assignment_notification_failure_does_not_break_assignment(
         headers=_telegram_auth_header(admin_id, bot_token),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assignments = (await db_session.execute(select(Assignment).where(Assignment.request_id == parent.id))).scalars().all()
     assert len(assignments) == 1
 
