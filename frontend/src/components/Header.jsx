@@ -4,9 +4,8 @@ import { TRANSLATIONS } from '../constants/translations';
 
 function BrandMark() {
   return (
-    <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-citrus/40 bg-white/10 shadow-inner">
-      <span className="absolute text-sm font-black text-citrus">E</span>
-      <span className="absolute bottom-1.5 h-px w-5 bg-paper/80" />
+    <div className="relative flex h-[29px] w-[29px] shrink-0 rotate-[-7deg] items-center justify-center rounded-[8px] border border-white/50 bg-white/10 shadow-inner" aria-hidden="true">
+      <span className="h-[10px] w-[10px] rounded-[2px] bg-citrus" />
     </div>
   );
 }
