@@ -38,7 +38,7 @@ export default function SuccessModal({ data, type, lang, onClose }) {
           <X className="w-4 h-4" />
         </button>
 
-        <div className="w-16 h-16 bg-green-100 text-green rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+        <div className="w-16 h-16 bg-green/10 text-green rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
           <CheckCircle2 className="w-10 h-10" />
         </div>
 
