@@ -958,3 +958,9 @@ class MockExamResultResponse(BaseModel):
 class PracticeQuestionListResponse(BaseModel):
     questions: list[PracticeQuestionResponse]
     total: int
+
+
+class PracticeQuestionAdminResponse(PracticeQuestionResponse):
+    correct_option_index: int
+    explanation: Optional[str] = None
+    is_active: bool
